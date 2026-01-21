@@ -65,6 +65,48 @@ APIs may change until the first stable release.
 
 ---
 
+## Building from Source
+
+### Prerequisites
+
+- Rust 1.75 or later (install via [rustup](https://rustup.rs/))
+
+### Build
+
+```bash
+# Clone the repository
+git clone https://github.com/jcucci/meldr.git
+cd meldr
+
+# Build all crates
+cargo build
+
+# Run tests
+cargo test
+
+# Run the CLI
+cargo run --bin meldr -- --help
+
+# Check formatting and lints
+cargo fmt --check
+cargo clippy --workspace
+```
+
+### Development
+
+```bash
+# Format code
+cargo fmt
+
+# Run clippy with auto-fix
+cargo clippy --fix --workspace --allow-dirty
+
+# Build documentation
+cargo doc --workspace --open
+```
+
+---
+
 ## Architecture
 
 `meldr` is built as a collection of small, focused crates:

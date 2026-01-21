@@ -1,0 +1,23 @@
+[package]
+name = "meldr-cli"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "CLI orchestration and headless mode for meldr"
+keywords = ["cli", "merge", "conflict"]
+categories = ["command-line-utilities"]
+
+[[bin]]
+name = "meldr"
+path = "src/main.rs"
+
+[lints]
+workspace = true
+
+[dependencies]
+meldr-core.workspace = true
+clap.workspace = true
+thiserror.workspace = true

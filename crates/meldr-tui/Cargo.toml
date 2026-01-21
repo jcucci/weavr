@@ -1,0 +1,20 @@
+[package]
+name = "meldr-tui"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Terminal UI for meldr merge conflict resolver"
+keywords = ["tui", "terminal", "ratatui", "merge"]
+categories = ["command-line-interface"]
+
+[lints]
+workspace = true
+
+[dependencies]
+meldr-core.workspace = true
+ratatui.workspace = true
+crossterm.workspace = true
+thiserror.workspace = true

@@ -1,0 +1,18 @@
+[package]
+name = "meldr-core"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Pure merge logic engine for meldr - no IO, no UI, no Git"
+keywords = ["merge", "conflict", "resolution"]
+categories = ["algorithms", "data-structures"]
+
+[lints]
+workspace = true
+
+[dependencies]
+thiserror.workspace = true
+serde.workspace = true
