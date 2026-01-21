@@ -237,13 +237,13 @@ mod tests {
 
     #[test]
     fn from_conflicted_parses_hunks() {
-        let content = r#"before
+        let content = r"before
 <<<<<<< HEAD
 left content
 =======
 right content
 >>>>>>> feature
-after"#;
+after";
 
         let session =
             MergeSession::from_conflicted(content, PathBuf::from("test.rs")).expect("should parse");
@@ -257,21 +257,21 @@ after"#;
     fn from_conflicted_no_conflicts_returns_validated() {
         let content = "clean content\nno conflicts here";
 
-        let session =
-            MergeSession::from_conflicted(content, PathBuf::from("clean.rs")).expect("should parse");
+        let session = MergeSession::from_conflicted(content, PathBuf::from("clean.rs"))
+            .expect("should parse");
         assert!(session.hunks().is_empty());
         assert_eq!(session.state(), MergeState::Validated);
     }
 
     #[test]
     fn from_conflicted_preserves_segments() {
-        let content = r#"before
+        let content = r"before
 <<<<<<< HEAD
 left
 =======
 right
 >>>>>>> feature
-after"#;
+after";
 
         let session =
             MergeSession::from_conflicted(content, PathBuf::from("test.rs")).expect("should parse");
@@ -288,8 +288,8 @@ after"#;
 
     #[test]
     fn from_conflicted_error_on_malformed() {
-        let content = r#"<<<<<<< HEAD
-unclosed conflict"#;
+        let content = r"<<<<<<< HEAD
+unclosed conflict";
 
         let result = MergeSession::from_conflicted(content, PathBuf::from("bad.rs"));
         assert!(result.is_err());

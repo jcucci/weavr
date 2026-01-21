@@ -2,7 +2,7 @@
 //!
 //! These tests verify parsing against real conflict samples.
 
-use meldr_core::{parse_conflict_markers, HunkState};
+use meldr_core::{parse_conflict_markers, HunkState, Segment};
 
 #[test]
 fn golden_simple_two_way() {
@@ -35,10 +35,7 @@ fn golden_diff3_three_way() {
     assert_eq!(hunk.left.text, "    println!(\"Hello from HEAD\");");
     assert_eq!(hunk.right.text, "    println!(\"Hello from feature\");");
     assert!(hunk.base.is_some(), "diff3 conflict should have base");
-    assert_eq!(
-        hunk.base.as_ref().unwrap().text,
-        "    println!(\"Hello\");"
-    );
+    assert_eq!(hunk.base.as_ref().unwrap().text, "    println!(\"Hello\");");
 }
 
 #[test]
@@ -98,7 +95,6 @@ fn golden_segments_structure() {
     assert!(!parsed.segments.is_empty());
 
     // Verify segments alternate between clean and conflict
-    use meldr_core::Segment;
     let mut saw_clean = false;
     let mut saw_conflict = false;
     for segment in &parsed.segments {
@@ -107,5 +103,8 @@ fn golden_segments_structure() {
             Segment::Conflict(_) => saw_conflict = true,
         }
     }
-    assert!(saw_clean && saw_conflict, "should have both clean and conflict segments");
+    assert!(
+        saw_clean && saw_conflict,
+        "should have both clean and conflict segments"
+    );
 }

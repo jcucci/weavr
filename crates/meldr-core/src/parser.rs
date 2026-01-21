@@ -65,7 +65,9 @@ fn detect_marker(line: &str) -> Option<Marker> {
         Some(Marker::Start)
     } else if line.starts_with("|||||||") {
         Some(Marker::Base)
-    } else if line == "=======" || line.starts_with("=======") && line[7..].chars().all(char::is_whitespace) {
+    } else if line == "======="
+        || line.starts_with("=======") && line[7..].chars().all(char::is_whitespace)
+    {
         Some(Marker::Separator)
     } else if line.starts_with(">>>>>>>") {
         Some(Marker::End)
@@ -205,7 +207,9 @@ pub fn parse_conflict_markers(content: &str) -> Result<ParsedConflict, ParseErro
                     right: HunkContent {
                         text: right_buffer.join("\n"),
                     },
-                    base: base_buffer.take().map(|b| HunkContent { text: b.join("\n") }),
+                    base: base_buffer
+                        .take()
+                        .map(|b| HunkContent { text: b.join("\n") }),
                     context: HunkContext {
                         before,
                         after: Vec::new(), // Will be filled after parsing completes
@@ -323,13 +327,13 @@ mod tests {
 
     #[test]
     fn parse_simple_two_way_conflict() {
-        let content = r#"before
+        let content = r"before
 <<<<<<< HEAD
 left content
 =======
 right content
 >>>>>>> feature
-after"#;
+after";
 
         let result = parse_conflict_markers(content).unwrap();
         assert_eq!(result.hunks.len(), 1);
@@ -340,7 +344,7 @@ after"#;
 
     #[test]
     fn parse_diff3_three_way_conflict() {
-        let content = r#"before
+        let content = r"before
 <<<<<<< HEAD
 left content
 ||||||| merged common ancestors
@@ -348,7 +352,7 @@ base content
 =======
 right content
 >>>>>>> feature
-after"#;
+after";
 
         let result = parse_conflict_markers(content).unwrap();
         assert_eq!(result.hunks.len(), 1);
@@ -360,7 +364,7 @@ after"#;
 
     #[test]
     fn parse_multiple_hunks() {
-        let content = r#"// header
+        let content = r"// header
 <<<<<<< HEAD
 first left
 =======
@@ -372,7 +376,7 @@ second left
 =======
 second right
 >>>>>>> feature
-// footer"#;
+// footer";
 
         let result = parse_conflict_markers(content).unwrap();
         assert_eq!(result.hunks.len(), 2);
@@ -398,7 +402,8 @@ second right
 
     #[test]
     fn preserves_exact_line_content_no_trimming() {
-        let content = "<<<<<<< HEAD\n  indented with spaces  \n=======\n\ttabbed content\t\n>>>>>>> feature";
+        let content =
+            "<<<<<<< HEAD\n  indented with spaces  \n=======\n\ttabbed content\t\n>>>>>>> feature";
 
         let result = parse_conflict_markers(content).unwrap();
         assert_eq!(result.hunks[0].left.text, "  indented with spaces  ");
@@ -407,13 +412,13 @@ second right
 
     #[test]
     fn preserves_empty_lines_in_content() {
-        let content = r#"<<<<<<< HEAD
+        let content = r"<<<<<<< HEAD
 line one
 
 line three
 =======
 right
->>>>>>> feature"#;
+>>>>>>> feature";
 
         let result = parse_conflict_markers(content).unwrap();
         assert_eq!(result.hunks[0].left.text, "line one\n\nline three");
@@ -421,12 +426,12 @@ right
 
     #[test]
     fn conflict_at_file_start() {
-        let content = r#"<<<<<<< HEAD
+        let content = r"<<<<<<< HEAD
 left
 =======
 right
 >>>>>>> feature
-after"#;
+after";
 
         let result = parse_conflict_markers(content).unwrap();
         assert_eq!(result.hunks.len(), 1);
@@ -435,12 +440,12 @@ after"#;
 
     #[test]
     fn conflict_at_file_end() {
-        let content = r#"before
+        let content = r"before
 <<<<<<< HEAD
 left
 =======
 right
->>>>>>> feature"#;
+>>>>>>> feature";
 
         let result = parse_conflict_markers(content).unwrap();
         assert_eq!(result.hunks.len(), 1);
@@ -449,10 +454,10 @@ right
 
     #[test]
     fn empty_left_side() {
-        let content = r#"<<<<<<< HEAD
+        let content = r"<<<<<<< HEAD
 =======
 right content
->>>>>>> feature"#;
+>>>>>>> feature";
 
         let result = parse_conflict_markers(content).unwrap();
         assert_eq!(result.hunks[0].left.text, "");
@@ -461,10 +466,10 @@ right content
 
     #[test]
     fn empty_right_side() {
-        let content = r#"<<<<<<< HEAD
+        let content = r"<<<<<<< HEAD
 left content
 =======
->>>>>>> feature"#;
+>>>>>>> feature";
 
         let result = parse_conflict_markers(content).unwrap();
         assert_eq!(result.hunks[0].left.text, "left content");
@@ -473,9 +478,9 @@ left content
 
     #[test]
     fn empty_both_sides() {
-        let content = r#"<<<<<<< HEAD
+        let content = r"<<<<<<< HEAD
 =======
->>>>>>> feature"#;
+>>>>>>> feature";
 
         let result = parse_conflict_markers(content).unwrap();
         assert_eq!(result.hunks[0].left.text, "");
@@ -484,7 +489,7 @@ left content
 
     #[test]
     fn context_lines_captured_correctly() {
-        let content = r#"line 1
+        let content = r"line 1
 line 2
 line 3
 line 4
@@ -496,7 +501,7 @@ right
 line 5
 line 6
 line 7
-line 8"#;
+line 8";
 
         let result = parse_conflict_markers(content).unwrap();
         // Should capture 3 lines before (line 2, 3, 4)
@@ -513,12 +518,12 @@ line 8"#;
 
     #[test]
     fn line_numbers_are_one_indexed() {
-        let content = r#"line 1
+        let content = r"line 1
 <<<<<<< HEAD
 left content
 =======
 right content
->>>>>>> feature"#;
+>>>>>>> feature";
 
         let result = parse_conflict_markers(content).unwrap();
         // <<<<<<< is on line 2, so left content starts on line 3
@@ -529,13 +534,13 @@ right content
 
     #[test]
     fn error_on_nested_start_marker() {
-        let content = r#"<<<<<<< HEAD
+        let content = r"<<<<<<< HEAD
 left
 <<<<<<< nested
 nested left
 =======
 right
->>>>>>> feature"#;
+>>>>>>> feature";
 
         let result = parse_conflict_markers(content);
         assert!(matches!(result, Err(ParseError::InvalidMarkers(msg)) if msg.contains("nested")));
@@ -546,7 +551,9 @@ right
         let content = "some content\n=======\nmore content";
 
         let result = parse_conflict_markers(content);
-        assert!(matches!(result, Err(ParseError::InvalidMarkers(msg)) if msg.contains("unexpected separator")));
+        assert!(
+            matches!(result, Err(ParseError::InvalidMarkers(msg)) if msg.contains("unexpected separator"))
+        );
     }
 
     #[test]
@@ -554,23 +561,27 @@ right
         let content = "some content\n>>>>>>> feature\nmore content";
 
         let result = parse_conflict_markers(content);
-        assert!(matches!(result, Err(ParseError::InvalidMarkers(msg)) if msg.contains("unexpected end marker")));
+        assert!(
+            matches!(result, Err(ParseError::InvalidMarkers(msg)) if msg.contains("unexpected end marker"))
+        );
     }
 
     #[test]
     fn error_on_unclosed_conflict() {
-        let content = r#"<<<<<<< HEAD
+        let content = r"<<<<<<< HEAD
 left content
 =======
-right content"#;
+right content";
 
         let result = parse_conflict_markers(content);
-        assert!(matches!(result, Err(ParseError::InvalidMarkers(msg)) if msg.contains("unclosed conflict")));
+        assert!(
+            matches!(result, Err(ParseError::InvalidMarkers(msg)) if msg.contains("unclosed conflict"))
+        );
     }
 
     #[test]
     fn error_on_duplicate_base_marker() {
-        let content = r#"<<<<<<< HEAD
+        let content = r"<<<<<<< HEAD
 left
 ||||||| base
 first base
@@ -578,33 +589,37 @@ first base
 second
 =======
 right
->>>>>>> feature"#;
+>>>>>>> feature";
 
         let result = parse_conflict_markers(content);
-        assert!(matches!(result, Err(ParseError::InvalidMarkers(msg)) if msg.contains("duplicate base")));
+        assert!(
+            matches!(result, Err(ParseError::InvalidMarkers(msg)) if msg.contains("duplicate base"))
+        );
     }
 
     #[test]
     fn error_on_duplicate_separator() {
-        let content = r#"<<<<<<< HEAD
+        let content = r"<<<<<<< HEAD
 left
 =======
 middle
 =======
 right
->>>>>>> feature"#;
+>>>>>>> feature";
 
         let result = parse_conflict_markers(content);
-        assert!(matches!(result, Err(ParseError::InvalidMarkers(msg)) if msg.contains("duplicate separator")));
+        assert!(
+            matches!(result, Err(ParseError::InvalidMarkers(msg)) if msg.contains("duplicate separator"))
+        );
     }
 
     #[test]
     fn marker_with_label_parsed_correctly() {
-        let content = r#"<<<<<<< HEAD (some label here)
+        let content = r"<<<<<<< HEAD (some label here)
 left
 =======
 right
->>>>>>> feature-branch-name"#;
+>>>>>>> feature-branch-name";
 
         let result = parse_conflict_markers(content).unwrap();
         assert_eq!(result.hunks.len(), 1);
@@ -621,7 +636,7 @@ right
 
     #[test]
     fn hunk_ids_are_sequential() {
-        let content = r#"<<<<<<< HEAD
+        let content = r"<<<<<<< HEAD
 a
 =======
 b
@@ -635,7 +650,7 @@ d
 e
 =======
 f
->>>>>>> feature"#;
+>>>>>>> feature";
 
         let result = parse_conflict_markers(content).unwrap();
         assert_eq!(result.hunks[0].id, HunkId(0));
@@ -645,7 +660,7 @@ f
 
     #[test]
     fn segments_preserve_file_structure() {
-        let content = r#"before
+        let content = r"before
 <<<<<<< HEAD
 left
 =======
@@ -657,7 +672,7 @@ left2
 =======
 right2
 >>>>>>> feature
-after"#;
+after";
 
         let result = parse_conflict_markers(content).unwrap();
         assert_eq!(result.segments.len(), 5);
@@ -670,11 +685,11 @@ after"#;
 
     #[test]
     fn all_hunks_start_unresolved() {
-        let content = r#"<<<<<<< HEAD
+        let content = r"<<<<<<< HEAD
 left
 =======
 right
->>>>>>> feature"#;
+>>>>>>> feature";
 
         let result = parse_conflict_markers(content).unwrap();
         assert_eq!(result.hunks[0].state, HunkState::Unresolved);
