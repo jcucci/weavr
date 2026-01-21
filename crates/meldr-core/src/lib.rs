@@ -8,6 +8,14 @@
 //! - Network/AI providers
 //!
 //! All merge decisions are explicit and deterministic.
+//!
+//! # Stability
+//!
+//! This crate follows [Semantic Versioning](https://semver.org/). All public types
+//! and methods are considered **stable** unless documented otherwise.
+//!
+//! See the [README](https://github.com/jcucci/meldr/blob/main/crates/meldr-core/README.md)
+//! for the full API stability policy.
 
 #![forbid(unsafe_code)]
 #![warn(missing_docs)]

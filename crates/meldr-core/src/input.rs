@@ -1,4 +1,6 @@
 //! Input types for merge operations.
+//!
+//! All types in this module are **stable** and covered by semantic versioning.
 
 use std::path::PathBuf;
 

@@ -1,4 +1,6 @@
 //! Error types for meldr-core.
+//!
+//! All error types in this module are **stable** and covered by semantic versioning.
 
 use thiserror::Error;
 

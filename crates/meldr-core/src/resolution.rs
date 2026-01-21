@@ -1,4 +1,6 @@
 //! Resolution types for merge conflicts.
+//!
+//! All types in this module are **stable** and covered by semantic versioning.
 
 use serde::{Deserialize, Serialize};
 

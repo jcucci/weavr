@@ -1,4 +1,6 @@
 //! Merge session management.
+//!
+//! All types in this module are **stable** and covered by semantic versioning.
 
 use std::collections::HashMap;
 

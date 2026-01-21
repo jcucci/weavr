@@ -15,6 +15,18 @@ The `meldr-core` API is designed to be:
 
 ---
 
+## Stability Policy
+
+All public types and methods documented on this page are considered **stable** and follow [Semantic Versioning](https://semver.org/):
+
+- **Breaking changes** require a major version bump
+- **New features** may be added in minor versions
+- **Bug fixes** may be added in patch versions
+
+For the full stability policy including what constitutes a breaking change, see the [meldr-core README](../crates/meldr-core/README.md#api-stability-policy).
+
+---
+
 ## Primary Type
 
 ```rust

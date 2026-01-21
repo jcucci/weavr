@@ -13,6 +13,10 @@ categories = ["algorithms", "data-structures"]
 [lints]
 workspace = true
 
+[features]
+default = []
+# No experimental features yet - infrastructure ready for future use
+
 [dependencies]
 thiserror.workspace = true
 serde.workspace = true
