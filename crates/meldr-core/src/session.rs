@@ -3,10 +3,14 @@
 //! All types in this module are **stable** and covered by semantic versioning.
 
 use std::collections::HashMap;
+use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
-use crate::{ConflictHunk, HunkId, HunkState, MergeInput, ParseError, Resolution};
+use crate::{
+    parse_conflict_markers, ConflictHunk, FileVersion, HunkId, HunkState, MergeInput, ParseError,
+    ParsedConflict, Resolution, Segment,
+};
 
 /// The state of a merge session.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
@@ -35,6 +39,8 @@ pub struct MergeSession {
     input: MergeInput,
     /// Parsed conflict regions.
     hunks: Vec<ConflictHunk>,
+    /// File structure (clean segments and conflict references).
+    segments: Vec<Segment>,
     /// Current session state.
     state: MergeState,
     /// Applied resolutions.
@@ -44,6 +50,9 @@ pub struct MergeSession {
 impl MergeSession {
     /// Creates a new merge session from input.
     ///
+    /// Note: This constructor is intended for future 3-way merge generation.
+    /// For parsing existing Git conflicts, use [`from_conflicted`](Self::from_conflicted).
+    ///
     /// # Errors
     ///
     /// Returns `ParseError` if conflict markers cannot be parsed.
@@ -52,8 +61,73 @@ impl MergeSession {
         Ok(Self {
             input,
             hunks: Vec::new(),
+            segments: Vec::new(),
             state: MergeState::Parsed,
             resolutions: HashMap::new(),
+        })
+    }
+
+    /// Creates a merge session by parsing existing conflict markers.
+    ///
+    /// This is the primary entry point for resolving Git merge conflicts.
+    /// The content should be the working copy file containing conflict markers.
+    ///
+    /// # Arguments
+    ///
+    /// * `content` - File content with Git conflict markers.
+    /// * `path` - Path for identification (not used for I/O).
+    ///
+    /// # Errors
+    ///
+    /// Returns `ParseError` if conflict markers are malformed.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use std::path::PathBuf;
+    /// use meldr_core::MergeSession;
+    ///
+    /// let content = r#"before
+    /// <<<<<<< HEAD
+    /// left
+    /// =======
+    /// right
+    /// >>>>>>> feature
+    /// after"#;
+    ///
+    /// let session = MergeSession::from_conflicted(content, PathBuf::from("file.rs")).unwrap();
+    /// assert_eq!(session.hunks().len(), 1);
+    /// ```
+    pub fn from_conflicted(content: &str, path: PathBuf) -> Result<Self, ParseError> {
+        let ParsedConflict { hunks, segments } = parse_conflict_markers(content)?;
+
+        // Determine state based on whether conflicts were found
+        let state = if hunks.is_empty() {
+            MergeState::Validated // No conflicts = already clean
+        } else {
+            MergeState::Parsed
+        };
+
+        // Store segments for later reconstruction
+        // For now, we store the original content in the input
+        let input = MergeInput {
+            left: FileVersion {
+                path: path.clone(),
+                content: content.to_string(),
+            },
+            right: FileVersion {
+                path,
+                content: String::new(), // Not used for conflict parsing
+            },
+            base: None,
+        };
+
+        Ok(Self {
+            input,
+            hunks,
+            state,
+            resolutions: HashMap::new(),
+            segments,
         })
     }
 
@@ -79,6 +153,14 @@ impl MergeSession {
     #[must_use]
     pub fn resolutions(&self) -> &HashMap<HunkId, Resolution> {
         &self.resolutions
+    }
+
+    /// Returns the file segments (clean text and conflict references).
+    ///
+    /// This preserves the file structure for reconstruction after resolution.
+    #[must_use]
+    pub fn segments(&self) -> &[Segment] {
+        &self.segments
     }
 
     /// Checks if all hunks are resolved.
@@ -151,5 +233,65 @@ mod tests {
         let input = test_input();
         let session = MergeSession::new(input.clone()).expect("should create session");
         assert_eq!(session.input().left.content, "left content");
+    }
+
+    #[test]
+    fn from_conflicted_parses_hunks() {
+        let content = r#"before
+<<<<<<< HEAD
+left content
+=======
+right content
+>>>>>>> feature
+after"#;
+
+        let session =
+            MergeSession::from_conflicted(content, PathBuf::from("test.rs")).expect("should parse");
+        assert_eq!(session.hunks().len(), 1);
+        assert_eq!(session.hunks()[0].left.text, "left content");
+        assert_eq!(session.hunks()[0].right.text, "right content");
+        assert_eq!(session.state(), MergeState::Parsed);
+    }
+
+    #[test]
+    fn from_conflicted_no_conflicts_returns_validated() {
+        let content = "clean content\nno conflicts here";
+
+        let session =
+            MergeSession::from_conflicted(content, PathBuf::from("clean.rs")).expect("should parse");
+        assert!(session.hunks().is_empty());
+        assert_eq!(session.state(), MergeState::Validated);
+    }
+
+    #[test]
+    fn from_conflicted_preserves_segments() {
+        let content = r#"before
+<<<<<<< HEAD
+left
+=======
+right
+>>>>>>> feature
+after"#;
+
+        let session =
+            MergeSession::from_conflicted(content, PathBuf::from("test.rs")).expect("should parse");
+        assert_eq!(session.segments().len(), 3);
+    }
+
+    #[test]
+    fn from_conflicted_stores_original_content() {
+        let content = "some content";
+        let session =
+            MergeSession::from_conflicted(content, PathBuf::from("test.rs")).expect("should parse");
+        assert_eq!(session.input().left.content, content);
+    }
+
+    #[test]
+    fn from_conflicted_error_on_malformed() {
+        let content = r#"<<<<<<< HEAD
+unclosed conflict"#;
+
+        let result = MergeSession::from_conflicted(content, PathBuf::from("bad.rs"));
+        assert!(result.is_err());
     }
 }

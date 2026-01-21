@@ -1,0 +1,15 @@
+<<<<<<< HEAD
+conflict at start
+=======
+first conflict
+>>>>>>> feature
+middle content
+<<<<<<< HEAD
+=======
+empty left side
+>>>>>>> feature
+more content
+<<<<<<< HEAD
+empty right side
+=======
+>>>>>>> feature

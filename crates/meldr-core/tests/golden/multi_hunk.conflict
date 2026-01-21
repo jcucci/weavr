@@ -1,0 +1,26 @@
+// File header
+use std::io;
+
+<<<<<<< HEAD
+fn foo() {
+    println!("foo from HEAD");
+}
+=======
+fn foo() {
+    println!("foo from feature");
+}
+>>>>>>> feature
+
+fn bar() {
+    // unchanged
+}
+
+<<<<<<< HEAD
+fn baz() {
+    println!("baz from HEAD");
+}
+=======
+fn baz() {
+    println!("baz from feature");
+}
+>>>>>>> feature

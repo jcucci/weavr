@@ -1,0 +1,9 @@
+fn main() {
+<<<<<<< HEAD
+    println!("Hello from HEAD");
+||||||| merged common ancestors
+    println!("Hello");
+=======
+    println!("Hello from feature");
+>>>>>>> feature-branch
+}
