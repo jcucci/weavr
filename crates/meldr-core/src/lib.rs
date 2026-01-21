@@ -23,6 +23,7 @@
 mod error;
 mod hunk;
 mod input;
+mod parser;
 mod resolution;
 mod result;
 mod session;
@@ -30,6 +31,7 @@ mod session;
 pub use error::*;
 pub use hunk::*;
 pub use input::*;
+pub use parser::*;
 pub use resolution::*;
 pub use result::*;
 pub use session::*;

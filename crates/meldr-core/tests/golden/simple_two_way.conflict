@@ -1,0 +1,7 @@
+fn main() {
+<<<<<<< HEAD
+    println!("Hello from HEAD");
+=======
+    println!("Hello from feature");
+>>>>>>> feature-branch
+}
