@@ -41,8 +41,7 @@ fn combine_with_dedup(first: &str, second: &str, trim_whitespace: bool) -> Strin
             line.to_string()
         };
 
-        if !seen.contains(&key) {
-            seen.insert(key);
+        if seen.insert(key) {
             result_lines.push(line);
         }
     }
