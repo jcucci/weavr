@@ -4,7 +4,7 @@
 
 use thiserror::Error;
 
-use crate::HunkId;
+use crate::{HunkId, MergeState};
 
 /// Error parsing conflict markers.
 #[derive(Debug, Clone, Error, PartialEq, Eq)]
@@ -62,6 +62,32 @@ pub enum CompletionError {
     /// Apply failed.
     #[error("apply failed: {0}")]
     ApplyFailed(#[from] ApplyError),
+    /// Lifecycle error.
+    #[error("lifecycle error: {0}")]
+    LifecycleError(LifecycleError),
+}
+
+/// Error for invalid lifecycle transitions.
+#[derive(Debug, Clone, Error, PartialEq, Eq)]
+pub enum LifecycleError {
+    /// Attempted invalid state transition.
+    #[error("invalid transition from {from:?} to {to:?}: {reason}")]
+    InvalidTransition {
+        /// Current state.
+        from: MergeState,
+        /// Target state.
+        to: MergeState,
+        /// Reason for failure.
+        reason: String,
+    },
+    /// Operation not allowed in current state.
+    #[error("operation '{operation}' not allowed in state {state:?}")]
+    OperationNotAllowed {
+        /// The operation that was attempted.
+        operation: &'static str,
+        /// The current state.
+        state: MergeState,
+    },
 }
 
 #[cfg(test)]
