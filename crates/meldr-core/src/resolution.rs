@@ -2,9 +2,63 @@
 //!
 //! All types in this module are **stable** and covered by semantic versioning.
 
+use std::collections::HashSet;
+
 use serde::{Deserialize, Serialize};
 
 use crate::hunk::ConflictHunk;
+
+/// Simple concatenation with proper newline handling.
+fn combine_simple(first: &str, second: &str) -> String {
+    if first.ends_with('\n') {
+        format!("{first}{second}")
+    } else {
+        format!("{first}\n{second}")
+    }
+}
+
+/// Combine with deduplication, preserving first occurrence.
+fn combine_with_dedup(first: &str, second: &str, trim_whitespace: bool) -> String {
+    let mut seen: HashSet<String> = HashSet::new();
+    let mut result_lines: Vec<&str> = Vec::new();
+
+    // Process first side - all lines are "first occurrence"
+    for line in first.lines() {
+        let key = if trim_whitespace {
+            line.trim().to_string()
+        } else {
+            line.to_string()
+        };
+        seen.insert(key);
+        result_lines.push(line);
+    }
+
+    // Process second side - skip duplicates
+    for line in second.lines() {
+        let key = if trim_whitespace {
+            line.trim().to_string()
+        } else {
+            line.to_string()
+        };
+
+        if !seen.contains(&key) {
+            seen.insert(key);
+            result_lines.push(line);
+        }
+    }
+
+    // Join with newlines
+    let mut result = result_lines.join("\n");
+
+    // Preserve trailing newline if either input had one
+    let first_has_trailing = first.ends_with('\n');
+    let second_has_trailing = second.ends_with('\n');
+    if first_has_trailing || second_has_trailing {
+        result.push('\n');
+    }
+
+    result
+}
 
 /// Order for `AcceptBoth` strategy.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
@@ -99,6 +153,57 @@ impl Resolution {
         Resolution {
             kind: ResolutionStrategyKind::AcceptRight,
             content: hunk.right.text.clone(),
+            metadata: ResolutionMetadata::default(),
+        }
+    }
+
+    /// Create a resolution that combines both left and right content.
+    ///
+    /// Options control the combination behavior:
+    /// - `order`: Whether left or right content appears first
+    /// - `deduplicate`: Remove lines that appear identically in both sides
+    /// - `trim_whitespace`: Normalize whitespace before deduplication comparison
+    #[must_use]
+    pub fn accept_both(hunk: &ConflictHunk, options: &AcceptBothOptions) -> Resolution {
+        // Determine ordering
+        let (first, second) = match options.order {
+            BothOrder::LeftThenRight => (&hunk.left.text, &hunk.right.text),
+            BothOrder::RightThenLeft => (&hunk.right.text, &hunk.left.text),
+        };
+
+        // Handle empty content cases
+        if first.is_empty() && second.is_empty() {
+            return Resolution {
+                kind: ResolutionStrategyKind::AcceptBoth(options.clone()),
+                content: String::new(),
+                metadata: ResolutionMetadata::default(),
+            };
+        }
+        if first.is_empty() {
+            return Resolution {
+                kind: ResolutionStrategyKind::AcceptBoth(options.clone()),
+                content: second.clone(),
+                metadata: ResolutionMetadata::default(),
+            };
+        }
+        if second.is_empty() {
+            return Resolution {
+                kind: ResolutionStrategyKind::AcceptBoth(options.clone()),
+                content: first.clone(),
+                metadata: ResolutionMetadata::default(),
+            };
+        }
+
+        // Combine content
+        let content = if options.deduplicate {
+            combine_with_dedup(first, second, options.trim_whitespace)
+        } else {
+            combine_simple(first, second)
+        };
+
+        Resolution {
+            kind: ResolutionStrategyKind::AcceptBoth(options.clone()),
+            content,
             metadata: ResolutionMetadata::default(),
         }
     }
@@ -204,6 +309,153 @@ mod tests {
         let hunk = test_hunk("left content", "right content");
         let res1 = Resolution::accept_right(&hunk);
         let res2 = Resolution::accept_right(&hunk);
+        assert_eq!(res1, res2);
+    }
+
+    // accept_both tests
+
+    #[test]
+    fn accept_both_left_then_right_order() {
+        let hunk = test_hunk("left\n", "right\n");
+        let opts = AcceptBothOptions::default();
+        let resolution = Resolution::accept_both(&hunk, &opts);
+        assert_eq!(resolution.content, "left\nright\n");
+    }
+
+    #[test]
+    fn accept_both_right_then_left_order() {
+        let hunk = test_hunk("left\n", "right\n");
+        let opts = AcceptBothOptions {
+            order: BothOrder::RightThenLeft,
+            ..Default::default()
+        };
+        let resolution = Resolution::accept_both(&hunk, &opts);
+        assert_eq!(resolution.content, "right\nleft\n");
+    }
+
+    #[test]
+    fn accept_both_dedup_removes_exact_matches() {
+        let hunk = test_hunk("import foo\nimport bar\n", "import bar\nimport baz\n");
+        let opts = AcceptBothOptions {
+            deduplicate: true,
+            ..Default::default()
+        };
+        let resolution = Resolution::accept_both(&hunk, &opts);
+        assert_eq!(resolution.content, "import foo\nimport bar\nimport baz\n");
+    }
+
+    #[test]
+    fn accept_both_no_dedup_keeps_duplicates() {
+        let hunk = test_hunk("import foo\nimport bar\n", "import bar\nimport baz\n");
+        let opts = AcceptBothOptions::default();
+        let resolution = Resolution::accept_both(&hunk, &opts);
+        assert_eq!(
+            resolution.content,
+            "import foo\nimport bar\nimport bar\nimport baz\n"
+        );
+    }
+
+    #[test]
+    fn accept_both_dedup_preserves_first_occurrence() {
+        let hunk = test_hunk("  indented\n", "indented\n");
+        let opts = AcceptBothOptions {
+            deduplicate: true,
+            trim_whitespace: true,
+            ..Default::default()
+        };
+        let resolution = Resolution::accept_both(&hunk, &opts);
+        // First occurrence (with indent) is preserved
+        assert_eq!(resolution.content, "  indented\n");
+    }
+
+    #[test]
+    fn accept_both_trim_whitespace_for_comparison() {
+        let hunk = test_hunk("  foo  \n", "foo\n");
+        let opts = AcceptBothOptions {
+            deduplicate: true,
+            trim_whitespace: true,
+            ..Default::default()
+        };
+        let resolution = Resolution::accept_both(&hunk, &opts);
+        // Only one "foo" line, preserving first occurrence's whitespace
+        assert_eq!(resolution.content, "  foo  \n");
+    }
+
+    #[test]
+    fn accept_both_no_trim_keeps_whitespace_variants() {
+        let hunk = test_hunk("  foo  \n", "foo\n");
+        let opts = AcceptBothOptions {
+            deduplicate: true,
+            trim_whitespace: false,
+            ..Default::default()
+        };
+        let resolution = Resolution::accept_both(&hunk, &opts);
+        // Different whitespace = different lines
+        assert_eq!(resolution.content, "  foo  \nfoo\n");
+    }
+
+    #[test]
+    fn accept_both_left_empty() {
+        let hunk = test_hunk("", "right content\n");
+        let opts = AcceptBothOptions::default();
+        let resolution = Resolution::accept_both(&hunk, &opts);
+        assert_eq!(resolution.content, "right content\n");
+    }
+
+    #[test]
+    fn accept_both_right_empty() {
+        let hunk = test_hunk("left content\n", "");
+        let opts = AcceptBothOptions::default();
+        let resolution = Resolution::accept_both(&hunk, &opts);
+        assert_eq!(resolution.content, "left content\n");
+    }
+
+    #[test]
+    fn accept_both_both_empty() {
+        let hunk = test_hunk("", "");
+        let opts = AcceptBothOptions::default();
+        let resolution = Resolution::accept_both(&hunk, &opts);
+        assert_eq!(resolution.content, "");
+    }
+
+    #[test]
+    fn accept_both_sets_correct_kind() {
+        let hunk = test_hunk("left\n", "right\n");
+        let opts = AcceptBothOptions {
+            order: BothOrder::RightThenLeft,
+            deduplicate: true,
+            trim_whitespace: true,
+        };
+        let resolution = Resolution::accept_both(&hunk, &opts);
+
+        match resolution.kind {
+            ResolutionStrategyKind::AcceptBoth(stored_opts) => {
+                assert_eq!(stored_opts.order, BothOrder::RightThenLeft);
+                assert!(stored_opts.deduplicate);
+                assert!(stored_opts.trim_whitespace);
+            }
+            _ => panic!("Expected AcceptBoth kind"),
+        }
+    }
+
+    #[test]
+    fn accept_both_metadata_defaults_to_user_source() {
+        let hunk = test_hunk("left\n", "right\n");
+        let opts = AcceptBothOptions::default();
+        let resolution = Resolution::accept_both(&hunk, &opts);
+        assert_eq!(resolution.metadata.source, ResolutionSource::User);
+        assert!(resolution.metadata.notes.is_none());
+    }
+
+    #[test]
+    fn accept_both_is_idempotent() {
+        let hunk = test_hunk("import foo\n", "import bar\n");
+        let opts = AcceptBothOptions {
+            deduplicate: true,
+            ..Default::default()
+        };
+        let res1 = Resolution::accept_both(&hunk, &opts);
+        let res2 = Resolution::accept_both(&hunk, &opts);
         assert_eq!(res1, res2);
     }
 }
