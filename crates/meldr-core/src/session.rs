@@ -358,31 +358,8 @@ impl MergeSession {
             return Err(ApplyError::NotFullyResolved);
         }
 
-        // Build output from segments
-        let mut output = String::new();
-        let segment_count = self.segments.len();
-
-        for (i, segment) in self.segments.iter().enumerate() {
-            match segment {
-                Segment::Clean(text) => {
-                    output.push_str(text);
-                }
-                Segment::Conflict(hunk_index) => {
-                    let hunk = &self.hunks[*hunk_index];
-                    if let HunkState::Resolved(resolution) = &hunk.state {
-                        output.push_str(&resolution.content);
-                    } else {
-                        return Err(ApplyError::InternalError(format!(
-                            "hunk {hunk_index} not resolved"
-                        )));
-                    }
-                }
-            }
-            // Add newline between segments if not last
-            if i < segment_count - 1 {
-                output.push('\n');
-            }
-        }
+        // Generate output using shared helper
+        let output = self.generate_output()?;
 
         // Transition to Applied state
         self.state = MergeState::Applied;
@@ -420,14 +397,18 @@ impl MergeSession {
     }
 
     /// Counts conflict markers in all resolved content.
+    ///
+    /// Only counts markers at line starts to match Git's conflict marker format.
     fn count_conflict_markers(&self) -> usize {
         let mut count = 0;
         for hunk in &self.hunks {
             if let HunkState::Resolved(resolution) = &hunk.state {
-                if resolution.content.contains("<<<<<<<")
-                    || resolution.content.contains("=======")
-                    || resolution.content.contains(">>>>>>>")
-                {
+                let has_markers = resolution.content.lines().any(|line| {
+                    line.starts_with("<<<<<<<")
+                        || line.starts_with("=======")
+                        || line.starts_with(">>>>>>>")
+                });
+                if has_markers {
                     count += 1;
                 }
             }
@@ -748,7 +729,7 @@ after";
     fn full_lifecycle_roundtrip() {
         let mut session = session_with_conflict();
 
-        // Parse → Active (set resolution)
+        // Parsed → FullyResolved (single hunk, resolving it completes all)
         let hunk_id = session.hunks()[0].id;
         let resolution = Resolution::accept_left(&session.hunks()[0]);
         session.set_resolution(hunk_id, resolution).unwrap();
@@ -866,7 +847,8 @@ after";
         let hunk_id = session.hunks()[0].id;
 
         // Create a resolution that contains conflict markers
-        let bad_resolution = Resolution::manual("<<<<<<< HEAD\nfoo\n=======\nbar\n>>>>>>>".to_string());
+        let bad_resolution =
+            Resolution::manual("<<<<<<< HEAD\nfoo\n=======\nbar\n>>>>>>>".to_string());
         session.set_resolution(hunk_id, bad_resolution).unwrap();
         let _ = session.apply().unwrap();
 
