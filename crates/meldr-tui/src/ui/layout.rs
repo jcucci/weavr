@@ -47,18 +47,12 @@ pub fn calculate_layout(area: Rect) -> PaneAreas {
     .areas(area);
 
     // Split main area into top (left/right) and bottom (result)
-    let [top_row, result_pane] = Layout::vertical([
-        Constraint::Ratio(1, 2),
-        Constraint::Ratio(1, 2),
-    ])
-    .areas(main_area);
+    let [top_row, result_pane] =
+        Layout::vertical([Constraint::Ratio(1, 2), Constraint::Ratio(1, 2)]).areas(main_area);
 
     // Horizontal split for top row: left, right
-    let [left_pane, right_pane] = Layout::horizontal([
-        Constraint::Ratio(1, 2),
-        Constraint::Ratio(1, 2),
-    ])
-    .areas(top_row);
+    let [left_pane, right_pane] =
+        Layout::horizontal([Constraint::Ratio(1, 2), Constraint::Ratio(1, 2)]).areas(top_row);
 
     PaneAreas {
         title_bar,
