@@ -206,6 +206,32 @@ impl Resolution {
             metadata: ResolutionMetadata::default(),
         }
     }
+
+    /// Create a resolution with user-provided content.
+    ///
+    /// This is the escape hatch for complex merges where automated strategies
+    /// don't fit. The content is preserved exactly as provided - no trimming
+    /// or normalization is performed.
+    ///
+    /// # Arguments
+    /// * `content` - Arbitrary content, preserved exactly
+    ///
+    /// # Examples
+    /// ```
+    /// use meldr_core::Resolution;
+    ///
+    /// // User provides custom merged content
+    /// let resolution = Resolution::manual("custom merged content".to_string());
+    /// assert_eq!(resolution.content, "custom merged content");
+    /// ```
+    #[must_use]
+    pub fn manual(content: String) -> Resolution {
+        Resolution {
+            kind: ResolutionStrategyKind::Manual,
+            content,
+            metadata: ResolutionMetadata::default(),
+        }
+    }
 }
 
 #[cfg(test)]
@@ -455,6 +481,75 @@ mod tests {
         };
         let res1 = Resolution::accept_both(&hunk, &opts);
         let res2 = Resolution::accept_both(&hunk, &opts);
+        assert_eq!(res1, res2);
+    }
+
+    // manual() tests
+
+    #[test]
+    fn manual_preserves_content_exactly() {
+        let content = "user provided content";
+        let resolution = Resolution::manual(content.to_string());
+        assert_eq!(resolution.content, content);
+        assert_eq!(resolution.kind, ResolutionStrategyKind::Manual);
+    }
+
+    #[test]
+    fn manual_allows_empty_content() {
+        let resolution = Resolution::manual(String::new());
+        assert_eq!(resolution.content, "");
+        assert_eq!(resolution.kind, ResolutionStrategyKind::Manual);
+    }
+
+    #[test]
+    fn manual_preserves_content_with_conflict_markers() {
+        // Edge case: user content may contain conflict markers
+        // This is valid but will fail validation later
+        let content = "<<<<<<< HEAD\nfoo\n=======\nbar\n>>>>>>>";
+        let resolution = Resolution::manual(content.to_string());
+        assert_eq!(resolution.content, content);
+    }
+
+    #[test]
+    fn manual_preserves_multiline_content() {
+        let content = "line1\nline2\nline3\n";
+        let resolution = Resolution::manual(content.to_string());
+        assert_eq!(resolution.content, content);
+    }
+
+    #[test]
+    fn manual_preserves_crlf_line_endings() {
+        let content = "line1\r\nline2\r\n";
+        let resolution = Resolution::manual(content.to_string());
+        assert_eq!(resolution.content, content);
+    }
+
+    #[test]
+    fn manual_preserves_mixed_line_endings() {
+        let content = "line1\nline2\r\nline3\r";
+        let resolution = Resolution::manual(content.to_string());
+        assert_eq!(resolution.content, content);
+    }
+
+    #[test]
+    fn manual_preserves_whitespace() {
+        let content = "  indented\n\ttabbed\n  \n";
+        let resolution = Resolution::manual(content.to_string());
+        assert_eq!(resolution.content, content);
+    }
+
+    #[test]
+    fn manual_metadata_source_is_user() {
+        let resolution = Resolution::manual("content".to_string());
+        assert_eq!(resolution.metadata.source, ResolutionSource::User);
+        assert!(resolution.metadata.notes.is_none());
+    }
+
+    #[test]
+    fn manual_is_idempotent() {
+        let content = "same content".to_string();
+        let res1 = Resolution::manual(content.clone());
+        let res2 = Resolution::manual(content);
         assert_eq!(res1, res2);
     }
 }
