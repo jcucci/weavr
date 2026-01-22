@@ -4,6 +4,8 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::hunk::ConflictHunk;
+
 /// Order for `AcceptBoth` strategy.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub enum BothOrder {
@@ -80,9 +82,47 @@ pub struct Resolution {
     pub metadata: ResolutionMetadata,
 }
 
+impl Resolution {
+    /// Create a resolution that accepts the left (`HEAD`/ours) content verbatim.
+    #[must_use]
+    pub fn accept_left(hunk: &ConflictHunk) -> Resolution {
+        Resolution {
+            kind: ResolutionStrategyKind::AcceptLeft,
+            content: hunk.left.text.clone(),
+            metadata: ResolutionMetadata::default(),
+        }
+    }
+
+    /// Create a resolution that accepts the right (`MERGE_HEAD`/theirs) content verbatim.
+    #[must_use]
+    pub fn accept_right(hunk: &ConflictHunk) -> Resolution {
+        Resolution {
+            kind: ResolutionStrategyKind::AcceptRight,
+            content: hunk.right.text.clone(),
+            metadata: ResolutionMetadata::default(),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::hunk::{HunkContent, HunkContext, HunkId, HunkState};
+
+    fn test_hunk(left: &str, right: &str) -> ConflictHunk {
+        ConflictHunk {
+            id: HunkId(1),
+            left: HunkContent {
+                text: left.to_string(),
+            },
+            right: HunkContent {
+                text: right.to_string(),
+            },
+            base: None,
+            context: HunkContext::default(),
+            state: HunkState::default(),
+        }
+    }
 
     #[test]
     fn both_order_default() {
@@ -117,5 +157,53 @@ mod tests {
             metadata: ResolutionMetadata::default(),
         };
         assert_eq!(resolution.kind, ResolutionStrategyKind::AcceptLeft);
+    }
+
+    #[test]
+    fn accept_left_returns_exact_left_content() {
+        let hunk = test_hunk("left content", "right content");
+        let resolution = Resolution::accept_left(&hunk);
+        assert_eq!(resolution.content, "left content");
+        assert_eq!(resolution.kind, ResolutionStrategyKind::AcceptLeft);
+    }
+
+    #[test]
+    fn accept_right_returns_exact_right_content() {
+        let hunk = test_hunk("left content", "right content");
+        let resolution = Resolution::accept_right(&hunk);
+        assert_eq!(resolution.content, "right content");
+        assert_eq!(resolution.kind, ResolutionStrategyKind::AcceptRight);
+    }
+
+    #[test]
+    fn accept_left_with_empty_content() {
+        let hunk = test_hunk("", "right content");
+        let resolution = Resolution::accept_left(&hunk);
+        assert_eq!(resolution.content, "");
+        assert_eq!(resolution.kind, ResolutionStrategyKind::AcceptLeft);
+    }
+
+    #[test]
+    fn accept_right_with_empty_content() {
+        let hunk = test_hunk("left content", "");
+        let resolution = Resolution::accept_right(&hunk);
+        assert_eq!(resolution.content, "");
+        assert_eq!(resolution.kind, ResolutionStrategyKind::AcceptRight);
+    }
+
+    #[test]
+    fn accept_left_is_idempotent() {
+        let hunk = test_hunk("left content", "right content");
+        let res1 = Resolution::accept_left(&hunk);
+        let res2 = Resolution::accept_left(&hunk);
+        assert_eq!(res1, res2);
+    }
+
+    #[test]
+    fn accept_right_is_idempotent() {
+        let hunk = test_hunk("left content", "right content");
+        let res1 = Resolution::accept_right(&hunk);
+        let res2 = Resolution::accept_right(&hunk);
+        assert_eq!(res1, res2);
     }
 }
