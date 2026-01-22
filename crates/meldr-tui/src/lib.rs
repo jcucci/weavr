@@ -16,12 +16,29 @@
 
 use meldr_core::MergeSession;
 
+pub mod event;
+pub mod ui;
+
+/// Which pane currently has focus.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum FocusedPane {
+    /// Left pane (ours).
+    #[default]
+    Left,
+    /// Right pane (theirs).
+    Right,
+    /// Result pane (merged output).
+    Result,
+}
+
 /// Application state for the TUI.
 pub struct App {
     /// The active merge session.
     session: Option<MergeSession>,
     /// Whether the application should quit.
     should_quit: bool,
+    /// Which pane has focus.
+    focused_pane: FocusedPane,
 }
 
 impl App {
@@ -31,6 +48,7 @@ impl App {
         Self {
             session: None,
             should_quit: false,
+            focused_pane: FocusedPane::default(),
         }
     }
 
@@ -55,11 +73,47 @@ impl App {
     pub fn quit(&mut self) {
         self.should_quit = true;
     }
+
+    /// Returns the currently focused pane.
+    #[must_use]
+    pub fn focused_pane(&self) -> FocusedPane {
+        self.focused_pane
+    }
+
+    /// Cycles focus to the next pane (Left -> Right -> Result -> Left).
+    pub fn cycle_focus(&mut self) {
+        self.focused_pane = match self.focused_pane {
+            FocusedPane::Left => FocusedPane::Right,
+            FocusedPane::Right => FocusedPane::Result,
+            FocusedPane::Result => FocusedPane::Left,
+        };
+    }
+
+    /// Cycles focus to the previous pane (Left -> Result -> Right -> Left).
+    pub fn cycle_focus_back(&mut self) {
+        self.focused_pane = match self.focused_pane {
+            FocusedPane::Left => FocusedPane::Result,
+            FocusedPane::Right => FocusedPane::Left,
+            FocusedPane::Result => FocusedPane::Right,
+        };
+    }
 }
 
 impl Default for App {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+impl FocusedPane {
+    /// Returns the display title for this pane.
+    #[must_use]
+    pub fn title(self) -> &'static str {
+        match self {
+            Self::Left => "Left (Ours)",
+            Self::Right => "Right (Theirs)",
+            Self::Result => "Result",
+        }
     }
 }
 
@@ -110,5 +164,48 @@ mod tests {
         app.set_session(session);
 
         assert!(app.session().is_some());
+    }
+
+    #[test]
+    fn focused_pane_default_is_left() {
+        let app = App::new();
+        assert_eq!(app.focused_pane(), FocusedPane::Left);
+    }
+
+    #[test]
+    fn cycle_focus_forward() {
+        let mut app = App::new();
+        assert_eq!(app.focused_pane(), FocusedPane::Left);
+
+        app.cycle_focus();
+        assert_eq!(app.focused_pane(), FocusedPane::Right);
+
+        app.cycle_focus();
+        assert_eq!(app.focused_pane(), FocusedPane::Result);
+
+        app.cycle_focus();
+        assert_eq!(app.focused_pane(), FocusedPane::Left);
+    }
+
+    #[test]
+    fn cycle_focus_backward() {
+        let mut app = App::new();
+        assert_eq!(app.focused_pane(), FocusedPane::Left);
+
+        app.cycle_focus_back();
+        assert_eq!(app.focused_pane(), FocusedPane::Result);
+
+        app.cycle_focus_back();
+        assert_eq!(app.focused_pane(), FocusedPane::Right);
+
+        app.cycle_focus_back();
+        assert_eq!(app.focused_pane(), FocusedPane::Left);
+    }
+
+    #[test]
+    fn focused_pane_titles() {
+        assert_eq!(FocusedPane::Left.title(), "Left (Ours)");
+        assert_eq!(FocusedPane::Right.title(), "Right (Theirs)");
+        assert_eq!(FocusedPane::Result.title(), "Result");
     }
 }
