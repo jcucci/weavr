@@ -28,8 +28,9 @@ pub fn draw(frame: &mut Frame, app: &App) {
     let areas = calculate_layout(frame.area());
     let theme = app.theme();
 
-    // Title bar
-    let title = Paragraph::new(" meldr").style(theme.ui.title);
+    // Title bar - combine theme style with base background
+    let title_style = theme.ui.title.bg(theme.base.background);
+    let title = Paragraph::new(" meldr").style(title_style);
     frame.render_widget(title, areas.title_bar);
 
     // Pane border styles based on focus
@@ -42,7 +43,8 @@ pub fn draw(frame: &mut Frame, app: &App) {
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
         .border_style(left_style)
-        .title(FocusedPane::Left.title());
+        .title(FocusedPane::Left.title())
+        .title_style(left_style);
     frame.render_widget(left_block, areas.left_pane);
 
     // Right pane
@@ -50,7 +52,8 @@ pub fn draw(frame: &mut Frame, app: &App) {
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
         .border_style(right_style)
-        .title(FocusedPane::Right.title());
+        .title(FocusedPane::Right.title())
+        .title_style(right_style);
     frame.render_widget(right_block, areas.right_pane);
 
     // Result pane
@@ -58,11 +61,13 @@ pub fn draw(frame: &mut Frame, app: &App) {
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
         .border_style(result_style)
-        .title(FocusedPane::Result.title());
+        .title(FocusedPane::Result.title())
+        .title_style(result_style);
     frame.render_widget(result_block, areas.result_pane);
 
-    // Status bar
-    let status = Paragraph::new(" Press q to quit | Tab to cycle focus").style(theme.ui.status);
+    // Status bar - combine theme style with base background
+    let status_style = theme.ui.status.bg(theme.base.background);
+    let status = Paragraph::new(" Press q to quit | Tab to cycle focus").style(status_style);
     frame.render_widget(status, areas.status_bar);
 }
 
