@@ -227,9 +227,10 @@ impl App {
     /// Resolves the current hunk by accepting the left (ours) content.
     pub fn resolve_left(&mut self) {
         let resolution_data = self.session.as_ref().and_then(|session| {
-            session.hunks().get(self.current_hunk_index).map(|hunk| {
-                (hunk.id, Resolution::accept_left(hunk))
-            })
+            session
+                .hunks()
+                .get(self.current_hunk_index)
+                .map(|hunk| (hunk.id, Resolution::accept_left(hunk)))
         });
 
         if let (Some(session), Some((hunk_id, resolution))) =
@@ -242,9 +243,10 @@ impl App {
     /// Resolves the current hunk by accepting the right (theirs) content.
     pub fn resolve_right(&mut self) {
         let resolution_data = self.session.as_ref().and_then(|session| {
-            session.hunks().get(self.current_hunk_index).map(|hunk| {
-                (hunk.id, Resolution::accept_right(hunk))
-            })
+            session
+                .hunks()
+                .get(self.current_hunk_index)
+                .map(|hunk| (hunk.id, Resolution::accept_right(hunk)))
         });
 
         if let (Some(session), Some((hunk_id, resolution))) =

@@ -6,8 +6,8 @@
 use std::io;
 use std::time::Duration;
 
-use weavr_tui::{event, ui, App};
 use ratatui::DefaultTerminal;
+use weavr_tui::{event, ui, App};
 
 fn main() -> io::Result<()> {
     // ratatui::init() sets up terminal and panic hook automatically

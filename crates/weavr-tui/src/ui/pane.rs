@@ -3,7 +3,6 @@
 //! This module handles rendering the full document with conflicts highlighted
 //! in the left, right, and result panes.
 
-use weavr_core::{HunkState, Segment};
 use ratatui::{
     layout::Rect,
     style::{Modifier, Style},
@@ -11,6 +10,7 @@ use ratatui::{
     widgets::{Block, BorderType, Borders, Paragraph},
     Frame,
 };
+use weavr_core::{HunkState, Segment};
 
 use crate::{App, FocusedPane};
 
@@ -63,15 +63,13 @@ fn render_side_pane(frame: &mut Frame, area: Rect, app: &App, side: PaneSide) {
     };
 
     let content = match app.session() {
-        Some(session) => {
-            build_side_document(
-                session.segments(),
-                session.hunks(),
-                side,
-                app.current_hunk_index(),
-                theme,
-            )
-        }
+        Some(session) => build_side_document(
+            session.segments(),
+            session.hunks(),
+            side,
+            app.current_hunk_index(),
+            theme,
+        ),
         None => vec![Line::from(Span::styled(
             "No file loaded",
             Style::default().fg(theme.base.muted),
@@ -103,14 +101,12 @@ pub fn render_result_pane(frame: &mut Frame, area: Rect, app: &App) {
     };
 
     let content = match app.session() {
-        Some(session) => {
-            build_result_document(
-                session.segments(),
-                session.hunks(),
-                app.current_hunk_index(),
-                theme,
-            )
-        }
+        Some(session) => build_result_document(
+            session.segments(),
+            session.hunks(),
+            app.current_hunk_index(),
+            theme,
+        ),
         None => vec![Line::from(Span::styled(
             "No file loaded",
             Style::default().fg(theme.base.muted),
