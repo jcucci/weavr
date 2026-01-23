@@ -3,67 +3,28 @@
 //! This module handles all rendering logic using ratatui.
 
 mod layout;
+mod pane;
 
 pub use layout::{calculate_layout, PaneAreas};
 
-use ratatui::{
-    style::Style,
-    widgets::{Block, BorderType, Borders, Paragraph},
-    Frame,
-};
+use ratatui::Frame;
 
-use crate::{App, FocusedPane};
-
-/// Returns the border style for a pane based on focus state.
-fn pane_border_style(app: &App, pane: FocusedPane) -> Style {
-    if app.focused_pane() == pane {
-        Style::default().fg(app.theme().ui.border_focused)
-    } else {
-        Style::default().fg(app.theme().ui.border_unfocused)
-    }
-}
+use crate::App;
 
 /// Renders the entire UI to the frame.
 pub fn draw(frame: &mut Frame, app: &App) {
-    let areas = calculate_layout(frame.area());
-    let theme = app.theme();
+    let areas = calculate_layout(frame.area(), app.layout_config());
 
-    // Title bar
-    let title = Paragraph::new(" meldr").style(theme.ui.title);
-    frame.render_widget(title, areas.title_bar);
+    // Title bar with hunk counter
+    pane::render_title_bar(frame, areas.title_bar, app);
 
-    // Pane border styles based on focus
-    let left_style = pane_border_style(app, FocusedPane::Left);
-    let right_style = pane_border_style(app, FocusedPane::Right);
-    let result_style = pane_border_style(app, FocusedPane::Result);
+    // Three panes with full document content
+    pane::render_left_pane(frame, areas.left_pane, app);
+    pane::render_right_pane(frame, areas.right_pane, app);
+    pane::render_result_pane(frame, areas.result_pane, app);
 
-    // Left pane
-    let left_block = Block::default()
-        .borders(Borders::ALL)
-        .border_type(BorderType::Rounded)
-        .border_style(left_style)
-        .title(FocusedPane::Left.title());
-    frame.render_widget(left_block, areas.left_pane);
-
-    // Right pane
-    let right_block = Block::default()
-        .borders(Borders::ALL)
-        .border_type(BorderType::Rounded)
-        .border_style(right_style)
-        .title(FocusedPane::Right.title());
-    frame.render_widget(right_block, areas.right_pane);
-
-    // Result pane
-    let result_block = Block::default()
-        .borders(Borders::ALL)
-        .border_type(BorderType::Rounded)
-        .border_style(result_style)
-        .title(FocusedPane::Result.title());
-    frame.render_widget(result_block, areas.result_pane);
-
-    // Status bar
-    let status = Paragraph::new(" Press q to quit | Tab to cycle focus").style(theme.ui.status);
-    frame.render_widget(status, areas.status_bar);
+    // Status bar with context-sensitive help
+    pane::render_status_bar(frame, areas.status_bar, app);
 }
 
 #[cfg(test)]
@@ -106,21 +67,8 @@ mod tests {
         let last_line: String = (0..buffer.area.width)
             .map(|x| buffer.cell((x, 23)).unwrap().symbol().to_string())
             .collect();
-        assert!(last_line.contains("Press q to quit"));
-    }
-
-    #[test]
-    fn pane_border_style_returns_focused_style() {
-        let app = App::new();
-        let style = pane_border_style(&app, FocusedPane::Left);
-        assert_eq!(style.fg, Some(app.theme().ui.border_focused));
-    }
-
-    #[test]
-    fn pane_border_style_returns_unfocused_style() {
-        let app = App::new();
-        let style = pane_border_style(&app, FocusedPane::Right);
-        assert_eq!(style.fg, Some(app.theme().ui.border_unfocused));
+        // Status bar shows context-sensitive help
+        assert!(last_line.contains("quit"));
     }
 
     #[test]

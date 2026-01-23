@@ -14,11 +14,26 @@
 #![forbid(unsafe_code)]
 #![warn(missing_docs)]
 
-use meldr_core::MergeSession;
+use meldr_core::{ConflictHunk, HunkState, MergeSession};
 
 pub mod event;
 pub mod theme;
 pub mod ui;
+
+/// Configuration for the three-pane layout.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct LayoutConfig {
+    /// Percentage of height for top row (left/right panes). Default: 60
+    pub top_ratio_percent: u16,
+}
+
+impl Default for LayoutConfig {
+    fn default() -> Self {
+        Self {
+            top_ratio_percent: 60,
+        }
+    }
+}
 
 use theme::{Theme, ThemeName};
 
@@ -44,6 +59,14 @@ pub struct App {
     focused_pane: FocusedPane,
     /// The active theme.
     theme: Theme,
+    /// Current hunk index (0-based).
+    current_hunk_index: usize,
+    /// Synchronized scroll offset for left/right panes.
+    left_right_scroll: u16,
+    /// Independent scroll offset for result pane.
+    result_scroll: u16,
+    /// Layout configuration.
+    layout_config: LayoutConfig,
 }
 
 impl App {
@@ -55,6 +78,10 @@ impl App {
             should_quit: false,
             focused_pane: FocusedPane::default(),
             theme: Theme::from(ThemeName::default()),
+            current_hunk_index: 0,
+            left_right_scroll: 0,
+            result_scroll: 0,
+            layout_config: LayoutConfig::default(),
         }
     }
 
@@ -66,6 +93,10 @@ impl App {
             should_quit: false,
             focused_pane: FocusedPane::default(),
             theme: Theme::from(theme_name),
+            current_hunk_index: 0,
+            left_right_scroll: 0,
+            result_scroll: 0,
+            layout_config: LayoutConfig::default(),
         }
     }
 
@@ -124,6 +155,121 @@ impl App {
     /// Sets the theme by name.
     pub fn set_theme(&mut self, name: ThemeName) {
         self.theme = Theme::from(name);
+    }
+
+    /// Returns a reference to the current hunk, if any.
+    #[must_use]
+    pub fn current_hunk(&self) -> Option<&ConflictHunk> {
+        self.session
+            .as_ref()
+            .and_then(|s| s.hunks().get(self.current_hunk_index))
+    }
+
+    /// Returns the current hunk index (0-based).
+    #[must_use]
+    pub fn current_hunk_index(&self) -> usize {
+        self.current_hunk_index
+    }
+
+    /// Returns the total number of hunks.
+    #[must_use]
+    pub fn total_hunks(&self) -> usize {
+        self.session.as_ref().map_or(0, |s| s.hunks().len())
+    }
+
+    /// Moves to the next hunk.
+    pub fn next_hunk(&mut self) {
+        let total = self.total_hunks();
+        if total > 0 && self.current_hunk_index < total - 1 {
+            self.current_hunk_index += 1;
+            self.reset_scroll();
+        }
+    }
+
+    /// Moves to the previous hunk.
+    pub fn prev_hunk(&mut self) {
+        if self.current_hunk_index > 0 {
+            self.current_hunk_index -= 1;
+            self.reset_scroll();
+        }
+    }
+
+    /// Moves to a specific hunk by index.
+    pub fn go_to_hunk(&mut self, index: usize) {
+        let total = self.total_hunks();
+        if total > 0 && index < total {
+            self.current_hunk_index = index;
+            self.reset_scroll();
+        }
+    }
+
+    /// Moves to the next unresolved hunk, wrapping around if necessary.
+    pub fn next_unresolved_hunk(&mut self) {
+        if let Some(session) = &self.session {
+            let hunks = session.hunks();
+            let total = hunks.len();
+            if total == 0 {
+                return;
+            }
+
+            // Search forward from current position
+            for i in 1..=total {
+                let idx = (self.current_hunk_index + i) % total;
+                if matches!(hunks[idx].state, HunkState::Unresolved) {
+                    self.current_hunk_index = idx;
+                    self.reset_scroll();
+                    return;
+                }
+            }
+        }
+    }
+
+    /// Scrolls up by the specified number of lines.
+    pub fn scroll_up(&mut self, lines: u16) {
+        match self.focused_pane {
+            FocusedPane::Left | FocusedPane::Right => {
+                self.left_right_scroll = self.left_right_scroll.saturating_sub(lines);
+            }
+            FocusedPane::Result => {
+                self.result_scroll = self.result_scroll.saturating_sub(lines);
+            }
+        }
+    }
+
+    /// Scrolls down by the specified number of lines.
+    pub fn scroll_down(&mut self, lines: u16) {
+        match self.focused_pane {
+            FocusedPane::Left | FocusedPane::Right => {
+                self.left_right_scroll = self.left_right_scroll.saturating_add(lines);
+            }
+            FocusedPane::Result => {
+                self.result_scroll = self.result_scroll.saturating_add(lines);
+            }
+        }
+    }
+
+    /// Returns the scroll offset for left/right panes.
+    #[must_use]
+    pub fn left_right_scroll(&self) -> u16 {
+        self.left_right_scroll
+    }
+
+    /// Returns the scroll offset for the result pane.
+    #[must_use]
+    pub fn result_scroll(&self) -> u16 {
+        self.result_scroll
+    }
+
+    /// Returns a reference to the layout configuration.
+    #[must_use]
+    pub fn layout_config(&self) -> &LayoutConfig {
+        &self.layout_config
+    }
+
+    /// Resets scroll positions when changing hunks.
+    fn reset_scroll(&mut self) {
+        self.left_right_scroll = 0;
+        self.result_scroll = 0;
     }
 }
 
@@ -256,5 +402,60 @@ mod tests {
             app.theme().base.background,
             ratatui::style::Color::Rgb(40, 42, 54)
         );
+    }
+
+    #[test]
+    fn layout_config_default() {
+        let config = LayoutConfig::default();
+        assert_eq!(config.top_ratio_percent, 60);
+    }
+
+    #[test]
+    fn app_initial_hunk_state() {
+        let app = App::new();
+        assert_eq!(app.current_hunk_index(), 0);
+        assert_eq!(app.total_hunks(), 0);
+        assert!(app.current_hunk().is_none());
+    }
+
+    #[test]
+    fn app_hunk_navigation_without_session() {
+        let mut app = App::new();
+        // Should not panic with no session
+        app.next_hunk();
+        app.prev_hunk();
+        app.go_to_hunk(5);
+        app.next_unresolved_hunk();
+        assert_eq!(app.current_hunk_index(), 0);
+    }
+
+    #[test]
+    fn app_scroll_state() {
+        let mut app = App::new();
+        assert_eq!(app.left_right_scroll(), 0);
+        assert_eq!(app.result_scroll(), 0);
+
+        // Left pane focused by default, scroll affects left_right
+        app.scroll_down(5);
+        assert_eq!(app.left_right_scroll(), 5);
+        assert_eq!(app.result_scroll(), 0);
+
+        app.scroll_up(2);
+        assert_eq!(app.left_right_scroll(), 3);
+
+        // Switch to result pane
+        app.cycle_focus();
+        app.cycle_focus(); // Now on Result
+        app.scroll_down(10);
+        assert_eq!(app.left_right_scroll(), 3);
+        assert_eq!(app.result_scroll(), 10);
+    }
+
+    #[test]
+    fn app_scroll_saturates() {
+        let mut app = App::new();
+        // Scroll up from 0 should stay at 0
+        app.scroll_up(100);
+        assert_eq!(app.left_right_scroll(), 0);
     }
 }

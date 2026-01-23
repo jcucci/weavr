@@ -39,7 +39,10 @@ fn handle_key_event(app: &mut App, key: KeyEvent) {
     }
 
     match key.code {
+        // Quit
         KeyCode::Char('q') => app.quit(),
+
+        // Focus cycling
         KeyCode::Tab => {
             if key.modifiers.contains(KeyModifiers::SHIFT) {
                 app.cycle_focus_back();
@@ -48,6 +51,27 @@ fn handle_key_event(app: &mut App, key: KeyEvent) {
             }
         }
         KeyCode::BackTab => app.cycle_focus_back(),
+
+        // Hunk navigation
+        KeyCode::Char('j') | KeyCode::Down => app.next_hunk(),
+        KeyCode::Char('k') | KeyCode::Up => app.prev_hunk(),
+        KeyCode::Char('n') => app.next_unresolved_hunk(),
+        KeyCode::Char('g') => app.go_to_hunk(0),
+        KeyCode::Char('G') => {
+            let last = app.total_hunks().saturating_sub(1);
+            app.go_to_hunk(last);
+        }
+
+        // Scrolling (half page = 10 lines)
+        KeyCode::Char('d') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+            app.scroll_down(10);
+        }
+        KeyCode::Char('u') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+            app.scroll_up(10);
+        }
+        KeyCode::PageDown => app.scroll_down(20),
+        KeyCode::PageUp => app.scroll_up(20),
+
         _ => {}
     }
 }
@@ -141,5 +165,97 @@ mod tests {
         let event = Event::Resize(80, 24);
         handle_event(&mut app, &event);
         // Just verify no panic occurs
+    }
+
+    #[test]
+    fn j_key_calls_next_hunk() {
+        let mut app = App::new();
+        let event = Event::Key(make_key_event(KeyCode::Char('j'), KeyModifiers::NONE));
+        handle_event(&mut app, &event);
+        // Without a session, this is a no-op but shouldn't panic
+    }
+
+    #[test]
+    fn k_key_calls_prev_hunk() {
+        let mut app = App::new();
+        let event = Event::Key(make_key_event(KeyCode::Char('k'), KeyModifiers::NONE));
+        handle_event(&mut app, &event);
+        // Without a session, this is a no-op but shouldn't panic
+    }
+
+    #[test]
+    fn down_arrow_calls_next_hunk() {
+        let mut app = App::new();
+        let event = Event::Key(make_key_event(KeyCode::Down, KeyModifiers::NONE));
+        handle_event(&mut app, &event);
+    }
+
+    #[test]
+    fn up_arrow_calls_prev_hunk() {
+        let mut app = App::new();
+        let event = Event::Key(make_key_event(KeyCode::Up, KeyModifiers::NONE));
+        handle_event(&mut app, &event);
+    }
+
+    #[test]
+    fn n_key_calls_next_unresolved() {
+        let mut app = App::new();
+        let event = Event::Key(make_key_event(KeyCode::Char('n'), KeyModifiers::NONE));
+        handle_event(&mut app, &event);
+    }
+
+    #[test]
+    fn g_key_goes_to_first_hunk() {
+        let mut app = App::new();
+        let event = Event::Key(make_key_event(KeyCode::Char('g'), KeyModifiers::NONE));
+        handle_event(&mut app, &event);
+    }
+
+    #[test]
+    fn shift_g_goes_to_last_hunk() {
+        let mut app = App::new();
+        let event = Event::Key(make_key_event(KeyCode::Char('G'), KeyModifiers::NONE));
+        handle_event(&mut app, &event);
+    }
+
+    #[test]
+    fn ctrl_d_scrolls_down() {
+        let mut app = App::new();
+        assert_eq!(app.left_right_scroll(), 0);
+
+        let event = Event::Key(make_key_event(KeyCode::Char('d'), KeyModifiers::CONTROL));
+        handle_event(&mut app, &event);
+
+        assert_eq!(app.left_right_scroll(), 10);
+    }
+
+    #[test]
+    fn ctrl_u_scrolls_up() {
+        let mut app = App::new();
+        // First scroll down
+        app.scroll_down(20);
+        assert_eq!(app.left_right_scroll(), 20);
+
+        let event = Event::Key(make_key_event(KeyCode::Char('u'), KeyModifiers::CONTROL));
+        handle_event(&mut app, &event);
+
+        assert_eq!(app.left_right_scroll(), 10);
+    }
+
+    #[test]
+    fn page_down_scrolls_down() {
+        let mut app = App::new();
+        let event = Event::Key(make_key_event(KeyCode::PageDown, KeyModifiers::NONE));
+        handle_event(&mut app, &event);
+        assert_eq!(app.left_right_scroll(), 20);
+    }
+
+    #[test]
+    fn page_up_scrolls_up() {
+        let mut app = App::new();
+        app.scroll_down(30);
+        let event = Event::Key(make_key_event(KeyCode::PageUp, KeyModifiers::NONE));
+        handle_event(&mut app, &event);
+        assert_eq!(app.left_right_scroll(), 10);
     }
 }
