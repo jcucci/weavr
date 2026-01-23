@@ -72,6 +72,11 @@ fn handle_key_event(app: &mut App, key: KeyEvent) {
         KeyCode::PageDown => app.scroll_down(20),
         KeyCode::PageUp => app.scroll_up(20),
 
+        // Resolution
+        KeyCode::Char('l') => app.resolve_left(),
+        KeyCode::Char('r') => app.resolve_right(),
+        KeyCode::Char('b') => app.resolve_both(),
+
         _ => {}
     }
 }

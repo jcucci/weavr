@@ -168,9 +168,9 @@ pub fn render_status_bar(frame: &mut Frame, area: Rect, app: &App) {
 
     let help_text = match app.focused_pane() {
         FocusedPane::Left | FocusedPane::Right => {
-            " j/k: hunks | n: next unresolved | Tab: focus | q: quit"
+            " j/k: nav | l/r/b: resolve | n: next | Tab: pane | q: quit"
         }
-        FocusedPane::Result => " Tab: focus | q: quit",
+        FocusedPane::Result => " l/r/b: resolve | Tab: pane | q: quit",
     };
 
     let status = Paragraph::new(help_text).style(theme.ui.status);

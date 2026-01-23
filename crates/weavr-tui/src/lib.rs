@@ -14,7 +14,7 @@
 #![forbid(unsafe_code)]
 #![warn(missing_docs)]
 
-use weavr_core::{ConflictHunk, HunkState, MergeSession};
+use weavr_core::{AcceptBothOptions, ConflictHunk, HunkState, MergeSession, Resolution};
 
 pub mod event;
 pub mod theme;
@@ -221,6 +221,52 @@ impl App {
                     return;
                 }
             }
+        }
+    }
+
+    /// Resolves the current hunk by accepting the left (ours) content.
+    pub fn resolve_left(&mut self) {
+        let resolution_data = self.session.as_ref().and_then(|session| {
+            session.hunks().get(self.current_hunk_index).map(|hunk| {
+                (hunk.id, Resolution::accept_left(hunk))
+            })
+        });
+
+        if let (Some(session), Some((hunk_id, resolution))) =
+            (self.session.as_mut(), resolution_data)
+        {
+            let _ = session.set_resolution(hunk_id, resolution);
+        }
+    }
+
+    /// Resolves the current hunk by accepting the right (theirs) content.
+    pub fn resolve_right(&mut self) {
+        let resolution_data = self.session.as_ref().and_then(|session| {
+            session.hunks().get(self.current_hunk_index).map(|hunk| {
+                (hunk.id, Resolution::accept_right(hunk))
+            })
+        });
+
+        if let (Some(session), Some((hunk_id, resolution))) =
+            (self.session.as_mut(), resolution_data)
+        {
+            let _ = session.set_resolution(hunk_id, resolution);
+        }
+    }
+
+    /// Resolves the current hunk by accepting both sides (left then right).
+    pub fn resolve_both(&mut self) {
+        let resolution_data = self.session.as_ref().and_then(|session| {
+            session.hunks().get(self.current_hunk_index).map(|hunk| {
+                let options = AcceptBothOptions::default();
+                (hunk.id, Resolution::accept_both(hunk, &options))
+            })
+        });
+
+        if let (Some(session), Some((hunk_id, resolution))) =
+            (self.session.as_mut(), resolution_data)
+        {
+            let _ = session.set_resolution(hunk_id, resolution);
         }
     }
 
