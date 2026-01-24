@@ -1,12 +1,12 @@
 # Architecture
 
-This document describes the high-level architecture of meldr, including crate structure, dependency direction, and extensibility points.
+This document describes the high-level architecture of weavr, including crate structure, dependency direction, and extensibility points.
 
 ---
 
 ## Design Philosophy
 
-meldr follows a **library-first architecture**:
+weavr follows a **library-first architecture**:
 
 - The core merge logic is a pure library
 - The TUI is one of many possible frontends
@@ -23,21 +23,21 @@ This enables:
 ## Crate Structure
 
 ```
-meldr/
+weavr/
 ├── crates/
-│   ├── meldr-core/     # Pure merge logic (no IO, no UI)
-│   ├── meldr-cli/      # CLI orchestration + headless mode
-│   ├── meldr-tui/      # Terminal UI (ratatui)
-│   ├── meldr-git/      # Git integration
-│   ├── meldr-ast/      # Language-aware merging
-│   └── meldr-ai/       # AI provider integrations
+│   ├── weavr-core/     # Pure merge logic (no IO, no UI)
+│   ├── weavr-cli/      # CLI orchestration + headless mode
+│   ├── weavr-tui/      # Terminal UI (ratatui)
+│   ├── weavr-git/      # Git integration
+│   ├── weavr-ast/      # Language-aware merging
+│   └── weavr-ai/       # AI provider integrations
 ```
 
 ---
 
 ## Crate Responsibilities
 
-### meldr-core
+### weavr-core
 
 The heart of the system. Contains all "hard thinking":
 
@@ -56,7 +56,7 @@ The heart of the system. Contains all "hard thinking":
 
 This separation is **non-negotiable**.
 
-### meldr-cli
+### weavr-cli
 
 Command-line interface and orchestration:
 
@@ -67,12 +67,12 @@ Command-line interface and orchestration:
 - Configuration loading
 
 ```
-meldr              # open all conflicted files
-meldr file.rs      # open specific file
-meldr --headless   # auto-apply rules
+weavr              # open all conflicted files
+weavr file.rs      # open specific file
+weavr --headless   # auto-apply rules
 ```
 
-### meldr-tui
+### weavr-tui
 
 Terminal user interface (ratatui):
 
@@ -84,7 +84,7 @@ Terminal user interface (ratatui):
 
 **Key principle:** The TUI is a thin wrapper. It displays state and captures input but never performs merge logic.
 
-### meldr-git
+### weavr-git
 
 Git integration:
 
@@ -93,7 +93,7 @@ Git integration:
 - Stage resolved files
 - Respect `.gitattributes`
 
-### meldr-ast
+### weavr-ast
 
 Language-aware merging:
 
@@ -108,7 +108,7 @@ Supports (planned):
 - TypeScript
 - Go
 
-### meldr-ai
+### weavr-ai
 
 AI provider integrations:
 
@@ -128,26 +128,26 @@ Providers (planned):
 
 ```
                     ┌─────────────┐
-                    │ meldr-core  │
+                    │ weavr-core  │
                     └──────┬──────┘
                            │
          ┌─────────────────┼─────────────────┐
          │                 │                 │
          ▼                 ▼                 ▼
    ┌──────────┐      ┌──────────┐      ┌──────────┐
-   │ meldr-cli│      │ meldr-tui│      │ meldr-git│
+   │ weavr-cli│      │ weavr-tui│      │ weavr-git│
    └──────────┘      └──────────┘      └──────────┘
          │
          ▼
    ┌──────────┐      ┌──────────┐
-   │ meldr-ast│      │ meldr-ai │
+   │ weavr-ast│      │ weavr-ai │
    └──────────┘      └──────────┘
 ```
 
 **Rules:**
-- `meldr-core` has **no dependencies** on other meldr crates
-- All other crates depend on `meldr-core`
-- `meldr-ast` and `meldr-ai` are optional features
+- `weavr-core` has **no dependencies** on other weavr crates
+- All other crates depend on `weavr-core`
+- `weavr-ast` and `weavr-ai` are optional features
 - No dependency cycles
 
 ---
@@ -205,19 +205,19 @@ Optional functionality is gated behind Cargo features:
 
 | Feature | Crate | Description |
 |---------|-------|-------------|
-| `ast-rust` | meldr-ast | Rust AST merging |
-| `ast-csharp` | meldr-ast | C# AST merging |
-| `ast-typescript` | meldr-ast | TypeScript AST merging |
-| `ast-go` | meldr-ast | Go AST merging |
-| `ai-claude` | meldr-ai | Claude provider |
-| `ai-openai` | meldr-ai | OpenAI provider |
-| `ai-local` | meldr-ai | Local LLM support |
+| `ast-rust` | weavr-ast | Rust AST merging |
+| `ast-csharp` | weavr-ast | C# AST merging |
+| `ast-typescript` | weavr-ast | TypeScript AST merging |
+| `ast-go` | weavr-ast | Go AST merging |
+| `ai-claude` | weavr-ai | Claude provider |
+| `ai-openai` | weavr-ai | OpenAI provider |
+| `ai-local` | weavr-ai | Local LLM support |
 
 ---
 
 ## Theming
 
-Theming is a first-class concern in `meldr-tui`:
+Theming is a first-class concern in `weavr-tui`:
 
 ```rust
 pub struct Theme {
@@ -249,7 +249,7 @@ pub struct ConflictColors {
 Configuration follows XDG conventions:
 
 ```
-~/.config/meldr/config.toml
+~/.config/weavr/config.toml
 ```
 
 Example:
@@ -274,7 +274,7 @@ fail_on_ambiguous = true
 
 ## Non-Goals
 
-The following are explicitly **not** goals for meldr:
+The following are explicitly **not** goals for weavr:
 
 | Non-Goal | Reason |
 |----------|--------|
@@ -289,16 +289,16 @@ The following are explicitly **not** goals for meldr:
 ## Testing Strategy
 
 ### Unit Tests
-- `meldr-core`: Pure function tests, golden file tests
+- `weavr-core`: Pure function tests, golden file tests
 - Determinism tests (same input → same output)
 
 ### Integration Tests
-- `meldr-cli`: End-to-end merge scenarios
-- `meldr-git`: Git repository fixtures
+- `weavr-cli`: End-to-end merge scenarios
+- `weavr-git`: Git repository fixtures
 
 ### Property Tests
 - Resolution application is reversible
 - Validation catches all markers
 
 ### UI Tests
-- `meldr-tui`: Snapshot tests for rendering
+- `weavr-tui`: Snapshot tests for rendering

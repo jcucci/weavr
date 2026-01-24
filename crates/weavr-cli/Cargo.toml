@@ -1,23 +1,23 @@
 [package]
-name = "meldr-cli"
+name = "weavr-cli"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 authors.workspace = true
 license.workspace = true
 repository.workspace = true
-description = "CLI orchestration and headless mode for meldr"
+description = "CLI orchestration and headless mode for weavr"
 keywords = ["cli", "merge", "conflict"]
 categories = ["command-line-utilities"]
 
 [[bin]]
-name = "meldr"
+name = "weavr"
 path = "src/main.rs"
 
 [lints]
 workspace = true
 
 [dependencies]
-meldr-core.workspace = true
+weavr-core.workspace = true
 clap.workspace = true
 thiserror.workspace = true

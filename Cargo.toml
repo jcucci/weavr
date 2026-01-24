@@ -1,18 +1,18 @@
 [workspace]
 resolver = "2"
 members = [
-    "crates/meldr-core",
-    "crates/meldr-cli",
-    "crates/meldr-tui",
+    "crates/weavr-core",
+    "crates/weavr-cli",
+    "crates/weavr-tui",
 ]
 
 [workspace.package]
 version = "0.1.0"
 edition = "2021"
 rust-version = "1.75"
-authors = ["meldr contributors"]
+authors = ["weavr contributors"]
 license = "MIT OR Apache-2.0"
-repository = "https://github.com/jcucci/meldr"
+repository = "https://github.com/jcucci/weavr"
 description = "A terminal-first merge conflict resolver"
 keywords = ["git", "merge", "conflict", "tui", "terminal"]
 categories = ["command-line-utilities", "development-tools"]
@@ -26,7 +26,7 @@ pedantic = "warn"
 
 [workspace.dependencies]
 # Internal crates
-meldr-core = { path = "crates/meldr-core" }
+weavr-core = { path = "crates/weavr-core" }
 
 # CLI dependencies
 clap = { version = "4.4", features = ["derive"] }

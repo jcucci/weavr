@@ -1,6 +1,6 @@
 # Merge Lifecycle
 
-This document defines the lifecycle of a merge operation in meldr.
+This document defines the lifecycle of a merge operation in weavr.
 
 ---
 
@@ -138,7 +138,7 @@ Resolution (decision)
 
 ## Core Transitions (API)
 
-These are the only allowed transitions in `meldr-core`.
+These are the only allowed transitions in `weavr-core`.
 
 ### Parsing
 

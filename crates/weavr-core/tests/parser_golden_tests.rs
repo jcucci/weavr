@@ -2,7 +2,7 @@
 //!
 //! These tests verify parsing against real conflict samples.
 
-use meldr_core::{parse_conflict_markers, HunkState, Segment};
+use weavr_core::{parse_conflict_markers, HunkState, Segment};
 
 #[test]
 fn golden_simple_two_way() {

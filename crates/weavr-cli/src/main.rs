@@ -1,4 +1,4 @@
-//! meldr CLI - Command-line interface for merge conflict resolution
+//! weavr CLI - Command-line interface for merge conflict resolution
 //!
 //! This binary provides:
 //! - Interactive mode (launches TUI)
@@ -13,7 +13,7 @@ use clap::Parser;
 
 /// A terminal-first merge conflict resolver
 #[derive(Parser, Debug)]
-#[command(name = "meldr")]
+#[command(name = "weavr")]
 #[command(author, version, about, long_about = None)]
 struct Cli {
     /// Files to resolve (defaults to all conflicted files)
@@ -33,29 +33,29 @@ fn main() {
     let cli = Cli::parse();
 
     if cli.headless {
-        println!("meldr: headless mode (not yet implemented)");
+        println!("weavr: headless mode (not yet implemented)");
     } else {
-        println!("meldr: interactive mode (not yet implemented)");
+        println!("weavr: interactive mode (not yet implemented)");
     }
 
     if !cli.files.is_empty() {
         println!("Files: {:?}", cli.files);
     }
 
-    // Demonstrate that meldr-core is linked correctly
-    let input = meldr_core::MergeInput {
-        left: meldr_core::FileVersion {
+    // Demonstrate that weavr-core is linked correctly
+    let input = weavr_core::MergeInput {
+        left: weavr_core::FileVersion {
             path: PathBuf::from("example.rs"),
             content: String::from("left"),
         },
-        right: meldr_core::FileVersion {
+        right: weavr_core::FileVersion {
             path: PathBuf::from("example.rs"),
             content: String::from("right"),
         },
         base: None,
     };
 
-    match meldr_core::MergeSession::new(input) {
+    match weavr_core::MergeSession::new(input) {
         Ok(session) => {
             println!("Session state: {:?}", session.state());
         }

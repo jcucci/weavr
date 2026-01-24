@@ -360,34 +360,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "meldr-cli"
-version = "0.1.0"
-dependencies = [
- "clap",
- "meldr-core",
- "thiserror",
-]
-
-[[package]]
-name = "meldr-core"
-version = "0.1.0"
-dependencies = [
- "serde",
- "thiserror",
-]
-
-[[package]]
-name = "meldr-tui"
-version = "0.1.0"
-dependencies = [
- "catppuccin",
- "crossterm",
- "meldr-core",
- "ratatui",
- "thiserror",
-]
-
-[[package]]
 name = "memchr"
 version = "2.7.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -452,18 +424,18 @@ dependencies = [
 
 [[package]]
 name = "proc-macro2"
-version = "1.0.105"
+version = "1.0.106"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "535d180e0ecab6268a3e718bb9fd44db66bbbc256257165fc699dadf70d16fe7"
+checksum = "8fd00f0bb2e90d81d1044c2b32617f68fcb9fa3bb7640c23e9c748e53fb30934"
 dependencies = [
  "unicode-ident",
 ]
 
 [[package]]
 name = "quote"
-version = "1.0.43"
+version = "1.0.44"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "dc74d9a594b72ae6656596548f56f667211f8a97b3d4c3d467150794690dc40a"
+checksum = "21b2ebcf727b7760c461f091f9f0f539b77b8e87f2fd88131e7f1b433b3cece4"
 dependencies = [
  "proc-macro2",
 ]
@@ -720,6 +692,34 @@ name = "wasi"
 version = "0.11.1+wasi-snapshot-preview1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ccf3ec651a847eb01de73ccad15eb7d99f80485de043efb2f370cd654f4ea44b"
+
+[[package]]
+name = "weavr-cli"
+version = "0.1.0"
+dependencies = [
+ "clap",
+ "thiserror",
+ "weavr-core",
+]
+
+[[package]]
+name = "weavr-core"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "thiserror",
+]
+
+[[package]]
+name = "weavr-tui"
+version = "0.1.0"
+dependencies = [
+ "catppuccin",
+ "crossterm",
+ "ratatui",
+ "thiserror",
+ "weavr-core",
+]
 
 [[package]]
 name = "winapi"

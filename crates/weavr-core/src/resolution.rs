@@ -218,7 +218,7 @@ impl Resolution {
     ///
     /// # Examples
     /// ```
-    /// use meldr_core::Resolution;
+    /// use weavr_core::Resolution;
     ///
     /// // User provides custom merged content
     /// let resolution = Resolution::manual("custom merged content".to_string());

@@ -15,7 +15,7 @@
 //! # Example
 //!
 //! ```
-//! use meldr_tui::theme::{ThemeName, Theme};
+//! use weavr_tui::theme::{ThemeName, Theme};
 //!
 //! let theme_name = ThemeName::default(); // Dark
 //! let theme = Theme::from(theme_name);

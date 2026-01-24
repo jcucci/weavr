@@ -1,10 +1,10 @@
 # AGENTS.md
 
-This document defines the expectations, constraints, and guiding principles for human and AI contributors working on meldr.
+This document defines the expectations, constraints, and guiding principles for human and AI contributors working on weavr.
 
 ## Project Intent
 
-meldr is a terminal-first merge conflict resolver built on a structured merge engine.
+weavr is a terminal-first merge conflict resolver built on a structured merge engine.
 Conflicts are treated as explicit domain objects, not raw text.
 
 The core philosophy is:
@@ -14,7 +14,7 @@ The core philosophy is:
 
 ## Golden Rules
 
-1. **meldr-core must remain pure**
+1. **weavr-core must remain pure**
    - No filesystem access
    - No Git invocation
    - No UI dependencies

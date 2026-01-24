@@ -1,12 +1,12 @@
 [package]
-name = "meldr-core"
+name = "weavr-core"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 authors.workspace = true
 license.workspace = true
 repository.workspace = true
-description = "Pure merge logic engine for meldr - no IO, no UI, no Git"
+description = "Pure merge logic engine for weavr - no IO, no UI, no Git"
 keywords = ["merge", "conflict", "resolution"]
 categories = ["algorithms", "data-structures"]
 

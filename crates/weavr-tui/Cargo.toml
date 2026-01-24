@@ -1,12 +1,12 @@
 [package]
-name = "meldr-tui"
+name = "weavr-tui"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 authors.workspace = true
 license.workspace = true
 repository.workspace = true
-description = "Terminal UI for meldr merge conflict resolver"
+description = "Terminal UI for weavr merge conflict resolver"
 keywords = ["tui", "terminal", "ratatui", "merge"]
 categories = ["command-line-interface"]
 
@@ -14,12 +14,12 @@ categories = ["command-line-interface"]
 workspace = true
 
 [dependencies]
-meldr-core.workspace = true
+weavr-core.workspace = true
 ratatui.workspace = true
 crossterm.workspace = true
 thiserror.workspace = true
 catppuccin.workspace = true
 
 [[bin]]
-name = "meldr-tui-dev"
+name = "weavr-tui-dev"
 path = "src/main.rs"

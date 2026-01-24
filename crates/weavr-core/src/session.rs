@@ -86,7 +86,7 @@ impl MergeSession {
     ///
     /// ```
     /// use std::path::PathBuf;
-    /// use meldr_core::MergeSession;
+    /// use weavr_core::MergeSession;
     ///
     /// let content = r#"before
     /// <<<<<<< HEAD

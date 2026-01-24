@@ -1,6 +1,6 @@
-# meldr-core
+# weavr-core
 
-Pure merge logic engine for meldr.
+Pure merge logic engine for weavr.
 
 This crate contains the core domain model and merge logic. It is intentionally pure and has no dependencies on:
 
@@ -50,7 +50,7 @@ Experimental or unstable features are gated behind Cargo features:
 
 ```toml
 [dependencies]
-meldr-core = { version = "0.1", features = ["experimental-feature"] }
+weavr-core = { version = "0.1", features = ["experimental-feature"] }
 ```
 
 Unstable features:
@@ -60,7 +60,7 @@ Unstable features:
 
 ### Current Stability Status
 
-All public types in meldr-core 0.1.x are considered **stable**:
+All public types in weavr-core 0.1.x are considered **stable**:
 
 - Error types: `ParseError`, `ResolutionError`, `ValidationError`, `ApplyError`, `CompletionError`
 - Hunk types: `HunkId`, `HunkContent`, `HunkContext`, `HunkState`, `ConflictHunk`
@@ -72,7 +72,7 @@ All public types in meldr-core 0.1.x are considered **stable**:
 ## Usage
 
 ```rust
-use meldr_core::{MergeSession, MergeInput, FileVersion, Resolution, ResolutionStrategyKind};
+use weavr_core::{MergeSession, MergeInput, FileVersion, Resolution, ResolutionStrategyKind};
 
 // Create input from file versions
 let input = MergeInput {

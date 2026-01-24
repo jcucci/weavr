@@ -1,12 +1,12 @@
-# Public API — meldr-core
+# Public API — weavr-core
 
-This document defines the intended public API surface of `meldr-core`. This API is considered **locked** and changes require careful consideration.
+This document defines the intended public API surface of `weavr-core`. This API is considered **locked** and changes require careful consideration.
 
 ---
 
 ## Design Principles
 
-The `meldr-core` API is designed to be:
+The `weavr-core` API is designed to be:
 
 - **Pure** — No filesystem, no Git, no network, no UI
 - **Deterministic** — Same inputs + same decisions = same output
@@ -23,7 +23,7 @@ All public types and methods documented on this page are considered **stable** a
 - **New features** may be added in minor versions
 - **Bug fixes** may be added in patch versions
 
-For the full stability policy including what constitutes a breaking change, see the [meldr-core README](../crates/meldr-core/README.md#api-stability-policy).
+For the full stability policy including what constitutes a breaking change, see the [weavr-core README](../crates/weavr-core/README.md#api-stability-policy).
 
 ---
 
@@ -316,16 +316,16 @@ pub enum CompletionError {
 
 ## What Core Does NOT Do
 
-The following are explicitly **not** the responsibility of `meldr-core`:
+The following are explicitly **not** the responsibility of `weavr-core`:
 
 | Responsibility | Owner |
 |----------------|-------|
-| Read files from disk | `meldr-cli` / `meldr-git` |
-| Write files to disk | `meldr-cli` |
-| Invoke Git commands | `meldr-git` |
-| Render UI | `meldr-tui` |
-| Call AI providers | `meldr-ai` |
-| Parse AST | `meldr-ast` |
+| Read files from disk | `weavr-cli` / `weavr-git` |
+| Write files to disk | `weavr-cli` |
+| Invoke Git commands | `weavr-git` |
+| Render UI | `weavr-tui` |
+| Call AI providers | `weavr-ai` |
+| Parse AST | `weavr-ast` |
 
 This separation ensures core remains pure and testable.
 
@@ -334,7 +334,7 @@ This separation ensures core remains pure and testable.
 ## Example Usage
 
 ```rust
-use meldr_core::{
+use weavr_core::{
     MergeSession, MergeInput, Resolution, ResolutionStrategyKind,
     AcceptBothStrategy, AcceptBothOptions, BothOrder,
 };

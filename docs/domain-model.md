@@ -1,6 +1,6 @@
 # Domain Model
 
-This document defines the core domain objects used by `meldr-core`.
+This document defines the core domain objects used by `weavr-core`.
 
 The domain model is:
 - UI-agnostic

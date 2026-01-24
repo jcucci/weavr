@@ -1,4 +1,4 @@
-//! Error types for meldr-core.
+//! Error types for weavr-core.
 //!
 //! All error types in this module are **stable** and covered by semantic versioning.
 

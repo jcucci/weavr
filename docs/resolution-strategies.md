@@ -106,7 +106,7 @@ impl ResolutionStrategy for AcceptBothStrategy {
 - Both sides added config entries
 - Additive changes that don't conflict semantically
 
-This strategy alone puts meldr ahead of most merge tools.
+This strategy alone puts weavr ahead of most merge tools.
 
 ### Manual
 
@@ -267,7 +267,7 @@ structured fields. Suggest keeping both with structured fields."
 
 When a user selects a hunk:
 
-1. `meldr-core` requests strategies:
+1. `weavr-core` requests strategies:
    - Text merge options
    - AST merge (if language supported)
    - AI suggestion (if enabled)

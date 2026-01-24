@@ -94,7 +94,7 @@ fn detect_marker(line: &str) -> Option<Marker> {
 /// # Examples
 ///
 /// ```
-/// use meldr_core::parse_conflict_markers;
+/// use weavr_core::parse_conflict_markers;
 ///
 /// let content = r#"before
 /// <<<<<<< HEAD

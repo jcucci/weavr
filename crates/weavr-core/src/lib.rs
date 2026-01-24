@@ -1,6 +1,6 @@
-//! meldr-core: Pure merge logic engine
+//! weavr-core: Pure merge logic engine
 //!
-//! This crate contains the core domain model and merge logic for meldr.
+//! This crate contains the core domain model and merge logic for weavr.
 //! It is intentionally pure and has no dependencies on:
 //! - Filesystem operations
 //! - Git commands
@@ -14,7 +14,7 @@
 //! This crate follows [Semantic Versioning](https://semver.org/). All public types
 //! and methods are considered **stable** unless documented otherwise.
 //!
-//! See the [README](https://github.com/jcucci/meldr/blob/main/crates/meldr-core/README.md)
+//! See the [README](https://github.com/jcucci/weavr/blob/main/crates/weavr-core/README.md)
 //! for the full API stability policy.
 
 #![forbid(unsafe_code)]

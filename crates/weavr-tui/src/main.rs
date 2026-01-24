@@ -1,13 +1,13 @@
-//! Development entry point for meldr-tui.
+//! Development entry point for weavr-tui.
 //!
 //! This binary is for development and testing purposes.
-//! Production use will be through meldr-cli.
+//! Production use will be through weavr-cli.
 
 use std::io;
 use std::time::Duration;
 
-use meldr_tui::{event, ui, App};
 use ratatui::DefaultTerminal;
+use weavr_tui::{event, ui, App};
 
 fn main() -> io::Result<()> {
     // ratatui::init() sets up terminal and panic hook automatically

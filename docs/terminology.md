@@ -1,6 +1,6 @@
 # Terminology
 
-This document defines key terms used throughout the meldr codebase and documentation.
+This document defines key terms used throughout the weavr codebase and documentation.
 
 ---
 
@@ -19,7 +19,7 @@ right content
 >>>>>>> branch-name
 ```
 
-meldr treats conflicts as **structured data**, not raw text.
+weavr treats conflicts as **structured data**, not raw text.
 
 ### Hunk
 
@@ -44,7 +44,7 @@ Resolutions are **inert** until applied—they represent decisions, not output.
 
 ### Strategy
 
-The **method** used to choose a resolution. meldr distinguishes between:
+The **method** used to choose a resolution. weavr distinguishes between:
 
 - **`ResolutionStrategy`** (trait) — Defines behavior for generating resolution proposals. Strategies implement `propose()` to suggest resolutions and `kind()` to identify their type.
 - **`ResolutionStrategyKind`** (enum) — Describes the **source** of a resolution (how it was chosen). Stored in each `Resolution` to record provenance.
@@ -144,27 +144,27 @@ Finalize the session and return an immutable `MergeResult`.
 
 ## Architectural Terms
 
-### meldr-core
+### weavr-core
 
 The pure merge logic library. Has no dependencies on IO, Git, or UI.
 
-### meldr-cli
+### weavr-cli
 
 The command-line interface. Handles file operations and orchestration.
 
-### meldr-tui
+### weavr-tui
 
 The terminal user interface. Built on ratatui.
 
-### meldr-git
+### weavr-git
 
 Git integration layer. Detects conflicts, stages files.
 
-### meldr-ast
+### weavr-ast
 
 Language-aware AST merging. Supports structural merge strategies.
 
-### meldr-ai
+### weavr-ai
 
 AI provider integrations. Generates suggestions (never auto-applies).
 
