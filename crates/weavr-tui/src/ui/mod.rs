@@ -67,8 +67,8 @@ mod tests {
         let last_line: String = (0..buffer.area.width)
             .map(|x| buffer.cell((x, 23)).unwrap().symbol().to_string())
             .collect();
-        // Status bar shows context-sensitive help
-        assert!(last_line.contains("quit"));
+        // Status bar shows pane info
+        assert!(last_line.contains("pane"));
     }
 
     #[test]

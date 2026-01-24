@@ -14,7 +14,13 @@
 #![forbid(unsafe_code)]
 #![warn(missing_docs)]
 
+use std::time::{Duration, Instant};
+
+use crossterm::event::KeyCode;
 use weavr_core::{AcceptBothOptions, ConflictHunk, HunkState, MergeSession, Resolution};
+
+/// Timeout for multi-key sequences like 'gg'.
+const KEY_SEQUENCE_TIMEOUT: Duration = Duration::from_millis(500);
 
 pub mod event;
 pub mod theme;
@@ -67,6 +73,8 @@ pub struct App {
     result_scroll: u16,
     /// Layout configuration.
     layout_config: LayoutConfig,
+    /// Pending key for multi-key sequences (e.g., 'gg').
+    pending_key: Option<(KeyCode, Instant)>,
 }
 
 impl App {
@@ -82,6 +90,7 @@ impl App {
             left_right_scroll: 0,
             result_scroll: 0,
             layout_config: LayoutConfig::default(),
+            pending_key: None,
         }
     }
 
@@ -97,6 +106,7 @@ impl App {
             left_right_scroll: 0,
             result_scroll: 0,
             layout_config: LayoutConfig::default(),
+            pending_key: None,
         }
     }
 
@@ -144,6 +154,35 @@ impl App {
             FocusedPane::Right => FocusedPane::Left,
             FocusedPane::Result => FocusedPane::Right,
         };
+    }
+
+    /// Sets focus directly to the result pane.
+    pub fn focus_result(&mut self) {
+        self.focused_pane = FocusedPane::Result;
+    }
+
+    /// Sets a pending key for multi-key sequence detection.
+    pub fn set_pending_key(&mut self, key: KeyCode) {
+        self.pending_key = Some((key, Instant::now()));
+    }
+
+    /// Checks if a pending key matches and is within the timeout.
+    /// Returns true if there's a matching pending key that hasn't expired.
+    /// Clears the pending key if it has expired.
+    pub fn check_pending_key(&mut self, expected: KeyCode) -> bool {
+        if let Some((key, timestamp)) = self.pending_key {
+            if timestamp.elapsed() > KEY_SEQUENCE_TIMEOUT {
+                self.pending_key = None;
+                return false;
+            }
+            return key == expected;
+        }
+        false
+    }
+
+    /// Clears any pending key sequence.
+    pub fn clear_pending_key(&mut self) {
+        self.pending_key = None;
     }
 
     /// Returns a reference to the current theme.
@@ -215,6 +254,27 @@ impl App {
             // Search forward from current position
             for i in 1..=total {
                 let idx = (self.current_hunk_index + i) % total;
+                if matches!(hunks[idx].state, HunkState::Unresolved) {
+                    self.current_hunk_index = idx;
+                    self.reset_scroll();
+                    return;
+                }
+            }
+        }
+    }
+
+    /// Moves to the previous unresolved hunk, wrapping around if necessary.
+    pub fn prev_unresolved_hunk(&mut self) {
+        if let Some(session) = &self.session {
+            let hunks = session.hunks();
+            let total = hunks.len();
+            if total == 0 {
+                return;
+            }
+
+            // Search backward from current position
+            for i in 1..=total {
+                let idx = (self.current_hunk_index + total - i) % total;
                 if matches!(hunks[idx].state, HunkState::Unresolved) {
                     self.current_hunk_index = idx;
                     self.reset_scroll();
@@ -474,7 +534,40 @@ mod tests {
         app.prev_hunk();
         app.go_to_hunk(5);
         app.next_unresolved_hunk();
+        app.prev_unresolved_hunk();
         assert_eq!(app.current_hunk_index(), 0);
+    }
+
+    #[test]
+    fn focus_result_sets_pane() {
+        let mut app = App::new();
+        assert_eq!(app.focused_pane(), FocusedPane::Left);
+
+        app.focus_result();
+        assert_eq!(app.focused_pane(), FocusedPane::Result);
+    }
+
+    #[test]
+    fn pending_key_sequence() {
+        use crossterm::event::KeyCode;
+
+        let mut app = App::new();
+
+        // Initially no pending key
+        assert!(!app.check_pending_key(KeyCode::Char('g')));
+
+        // Set a pending key
+        app.set_pending_key(KeyCode::Char('g'));
+
+        // Check matching key returns true
+        assert!(app.check_pending_key(KeyCode::Char('g')));
+
+        // Check non-matching key returns false
+        assert!(!app.check_pending_key(KeyCode::Char('x')));
+
+        // Clear pending key
+        app.clear_pending_key();
+        assert!(!app.check_pending_key(KeyCode::Char('g')));
     }
 
     #[test]

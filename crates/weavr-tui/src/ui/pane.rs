@@ -162,14 +162,35 @@ pub fn render_title_bar(frame: &mut Frame, area: Rect, app: &App) {
 pub fn render_status_bar(frame: &mut Frame, area: Rect, app: &App) {
     let theme = app.theme();
 
-    let help_text = match app.focused_pane() {
-        FocusedPane::Left | FocusedPane::Right => {
-            " j/k: nav | l/r/b: resolve | n: next | Tab: pane | q: quit"
-        }
-        FocusedPane::Result => " l/r/b: resolve | Tab: pane | q: quit",
+    // Calculate unresolved count
+    let unresolved_count = app.session().map_or(0, |s| {
+        s.hunks()
+            .iter()
+            .filter(|h| matches!(h.state, HunkState::Unresolved))
+            .count()
+    });
+
+    // Build pane indicator
+    let pane_name = match app.focused_pane() {
+        FocusedPane::Left => "Left",
+        FocusedPane::Right => "Right",
+        FocusedPane::Result => "Result",
     };
 
-    let status = Paragraph::new(help_text).style(theme.ui.status.bg(theme.base.background));
+    // Format: "Hunk 2/5 | Left pane | 3 unresolved"
+    let status_text = if app.total_hunks() > 0 {
+        format!(
+            " Hunk {}/{} | {} pane | {} unresolved",
+            app.current_hunk_index() + 1,
+            app.total_hunks(),
+            pane_name,
+            unresolved_count
+        )
+    } else {
+        format!(" {pane_name} pane | No conflicts")
+    };
+
+    let status = Paragraph::new(status_text).style(theme.ui.status.bg(theme.base.background));
     frame.render_widget(status, area);
 }
 
@@ -412,7 +433,7 @@ mod tests {
     }
 
     #[test]
-    fn render_status_bar_shows_help() {
+    fn render_status_bar_shows_pane_and_conflicts() {
         let mut terminal = create_test_terminal();
         let app = App::new();
         terminal
@@ -426,8 +447,9 @@ mod tests {
         let status_line: String = (0..buffer.area.width)
             .map(|x| buffer.cell((x, 0)).unwrap().symbol().to_string())
             .collect();
-        assert!(status_line.contains("j/k"));
-        assert!(status_line.contains("quit"));
+        // New format: "Left pane | No conflicts"
+        assert!(status_line.contains("Left pane"));
+        assert!(status_line.contains("No conflicts"));
     }
 
     #[test]

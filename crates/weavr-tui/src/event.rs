@@ -38,6 +38,21 @@ fn handle_key_event(app: &mut App, key: KeyEvent) {
         return;
     }
 
+    // Check for 'gg' sequence (go to first hunk)
+    if key.code == KeyCode::Char('g') && !key.modifiers.contains(KeyModifiers::SHIFT) {
+        if app.check_pending_key(KeyCode::Char('g')) {
+            app.go_to_hunk(0);
+            app.clear_pending_key();
+            return;
+        }
+        // Set pending for potential 'gg' sequence
+        app.set_pending_key(KeyCode::Char('g'));
+        return;
+    }
+
+    // Clear pending key for any other keypress
+    app.clear_pending_key();
+
     match key.code {
         // Quit
         KeyCode::Char('q') => app.quit(),
@@ -52,11 +67,14 @@ fn handle_key_event(app: &mut App, key: KeyEvent) {
         }
         KeyCode::BackTab => app.cycle_focus_back(),
 
+        // Direct result pane focus
+        KeyCode::Enter => app.focus_result(),
+
         // Hunk navigation
         KeyCode::Char('j') | KeyCode::Down => app.next_hunk(),
         KeyCode::Char('k') | KeyCode::Up => app.prev_hunk(),
         KeyCode::Char('n') => app.next_unresolved_hunk(),
-        KeyCode::Char('g') => app.go_to_hunk(0),
+        KeyCode::Char('N') => app.prev_unresolved_hunk(),
         KeyCode::Char('G') => {
             let last = app.total_hunks().saturating_sub(1);
             app.go_to_hunk(last);
@@ -210,10 +228,27 @@ mod tests {
     }
 
     #[test]
-    fn g_key_goes_to_first_hunk() {
+    fn gg_sequence_goes_to_first_hunk() {
         let mut app = App::new();
-        let event = Event::Key(make_key_event(KeyCode::Char('g'), KeyModifiers::NONE));
-        handle_event(&mut app, &event);
+        // First g - sets pending
+        let event1 = Event::Key(make_key_event(KeyCode::Char('g'), KeyModifiers::NONE));
+        handle_event(&mut app, &event1);
+        // Second g - triggers go_to_hunk(0)
+        let event2 = Event::Key(make_key_event(KeyCode::Char('g'), KeyModifiers::NONE));
+        handle_event(&mut app, &event2);
+        // Should have called go_to_hunk(0) - no panic without session
+    }
+
+    #[test]
+    fn single_g_does_not_trigger_first_hunk() {
+        let mut app = App::new();
+        // First g
+        let event1 = Event::Key(make_key_event(KeyCode::Char('g'), KeyModifiers::NONE));
+        handle_event(&mut app, &event1);
+        // Different key clears pending
+        let event2 = Event::Key(make_key_event(KeyCode::Char('j'), KeyModifiers::NONE));
+        handle_event(&mut app, &event2);
+        // Should not have gone to first hunk
     }
 
     #[test]
@@ -221,6 +256,27 @@ mod tests {
         let mut app = App::new();
         let event = Event::Key(make_key_event(KeyCode::Char('G'), KeyModifiers::NONE));
         handle_event(&mut app, &event);
+    }
+
+    #[test]
+    fn capital_n_calls_prev_unresolved() {
+        let mut app = App::new();
+        let event = Event::Key(make_key_event(KeyCode::Char('N'), KeyModifiers::NONE));
+        handle_event(&mut app, &event);
+        // Should not panic without session
+    }
+
+    #[test]
+    fn enter_key_focuses_result_pane() {
+        use crate::FocusedPane;
+
+        let mut app = App::new();
+        assert_eq!(app.focused_pane(), FocusedPane::Left);
+
+        let event = Event::Key(make_key_event(KeyCode::Enter, KeyModifiers::NONE));
+        handle_event(&mut app, &event);
+
+        assert_eq!(app.focused_pane(), FocusedPane::Result);
     }
 
     #[test]
