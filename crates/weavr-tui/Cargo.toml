@@ -19,6 +19,7 @@ ratatui.workspace = true
 crossterm.workspace = true
 thiserror.workspace = true
 catppuccin.workspace = true
+tempfile = "3"
 
 [[bin]]
 name = "weavr-tui-dev"

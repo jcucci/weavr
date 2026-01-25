@@ -6,6 +6,7 @@ use std::time::Duration;
 
 use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 
+use crate::input::{Dialog, InputMode};
 use crate::App;
 
 /// Polls for an event with the given timeout.
@@ -38,6 +39,15 @@ fn handle_key_event(app: &mut App, key: KeyEvent) {
         return;
     }
 
+    match app.input_mode() {
+        InputMode::Normal => handle_normal_mode(app, key),
+        InputMode::Command => handle_command_mode(app, key),
+        InputMode::Dialog => handle_dialog_mode(app, key),
+    }
+}
+
+/// Handles key events in normal mode.
+fn handle_normal_mode(app: &mut App, key: KeyEvent) {
     // Check for 'gg' sequence (go to first hunk)
     if key.code == KeyCode::Char('g') && !key.modifiers.contains(KeyModifiers::SHIFT) {
         if app.check_pending_key(KeyCode::Char('g')) {
@@ -56,6 +66,9 @@ fn handle_key_event(app: &mut App, key: KeyEvent) {
     match key.code {
         // Quit
         KeyCode::Char('q') => app.quit(),
+
+        // Command mode
+        KeyCode::Char(':') => app.enter_command_mode(),
 
         // Focus cycling
         KeyCode::Tab => {
@@ -91,11 +104,62 @@ fn handle_key_event(app: &mut App, key: KeyEvent) {
         KeyCode::PageUp => app.scroll_up(20),
 
         // Resolution
-        KeyCode::Char('l') => app.resolve_left(),
-        KeyCode::Char('r') => app.resolve_right(),
+        KeyCode::Char('o') => app.resolve_left(), // 'o' for ours
+        KeyCode::Char('t') => app.resolve_right(), // 't' for theirs
         KeyCode::Char('b') => app.resolve_both(),
+        KeyCode::Char('B') => app.show_accept_both_dialog(), // Shift-B for options
+        KeyCode::Char('x') => app.clear_current_resolution(),
+        KeyCode::Char('u') if !key.modifiers.contains(KeyModifiers::CONTROL) => app.undo(),
+        KeyCode::Char('e') => {
+            app.prepare_editor();
+        }
+
+        // Help
+        KeyCode::Char('?') => app.show_help(),
 
         _ => {}
+    }
+}
+
+/// Handles key events in command mode.
+fn handle_command_mode(app: &mut App, key: KeyEvent) {
+    match key.code {
+        KeyCode::Esc => app.exit_command_mode(),
+        KeyCode::Enter => app.execute_command(),
+        KeyCode::Backspace => {
+            app.backspace_command();
+            // Exit command mode if buffer becomes empty
+            if app.command_buffer().is_empty() {
+                app.exit_command_mode();
+            }
+        }
+        KeyCode::Char(c) => app.append_to_command(c),
+        _ => {}
+    }
+}
+
+/// Handles key events in dialog mode.
+fn handle_dialog_mode(app: &mut App, key: KeyEvent) {
+    // Check which dialog is active
+    match app.active_dialog() {
+        Some(Dialog::Help) => {
+            // Help dialog: any key closes it
+            match key.code {
+                KeyCode::Esc | KeyCode::Char('q' | '?') => app.close_dialog(),
+                _ => {}
+            }
+        }
+        Some(Dialog::AcceptBothOptions(_)) => {
+            // AcceptBoth options dialog
+            match key.code {
+                KeyCode::Esc => app.close_dialog(),
+                KeyCode::Char('l' | 'L' | 'r' | 'R') => app.toggle_accept_both_order(),
+                KeyCode::Char(' ') => app.toggle_accept_both_dedupe(),
+                KeyCode::Enter => app.confirm_accept_both(),
+                _ => {}
+            }
+        }
+        None => {}
     }
 }
 
@@ -318,5 +382,87 @@ mod tests {
         let event = Event::Key(make_key_event(KeyCode::PageUp, KeyModifiers::NONE));
         handle_event(&mut app, &event);
         assert_eq!(app.left_right_scroll(), 10);
+    }
+
+    #[test]
+    fn shift_b_opens_accept_both_dialog() {
+        use crate::input::InputMode;
+
+        let mut app = App::new();
+        assert_eq!(app.input_mode(), InputMode::Normal);
+
+        let event = Event::Key(make_key_event(KeyCode::Char('B'), KeyModifiers::NONE));
+        handle_event(&mut app, &event);
+
+        assert_eq!(app.input_mode(), InputMode::Dialog);
+        assert!(app.active_dialog().is_some());
+    }
+
+    #[test]
+    fn e_key_prepares_editor() {
+        let mut app = App::new();
+
+        // Without a session, prepare_editor returns false but doesn't crash
+        let event = Event::Key(make_key_event(KeyCode::Char('e'), KeyModifiers::NONE));
+        handle_event(&mut app, &event);
+        // No crash is success
+    }
+
+    #[test]
+    fn accept_both_dialog_l_toggles_order() {
+        use crate::input::Dialog;
+        use weavr_core::BothOrder;
+
+        let mut app = App::new();
+        app.show_accept_both_dialog();
+
+        // Verify initial state
+        if let Some(Dialog::AcceptBothOptions(state)) = app.active_dialog() {
+            assert_eq!(state.order, BothOrder::LeftThenRight);
+        }
+
+        // Press 'l' to toggle
+        let event = Event::Key(make_key_event(KeyCode::Char('l'), KeyModifiers::NONE));
+        handle_event(&mut app, &event);
+
+        if let Some(Dialog::AcceptBothOptions(state)) = app.active_dialog() {
+            assert_eq!(state.order, BothOrder::RightThenLeft);
+        }
+    }
+
+    #[test]
+    fn accept_both_dialog_space_toggles_dedupe() {
+        use crate::input::Dialog;
+
+        let mut app = App::new();
+        app.show_accept_both_dialog();
+
+        // Verify initial state
+        if let Some(Dialog::AcceptBothOptions(state)) = app.active_dialog() {
+            assert!(!state.deduplicate);
+        }
+
+        // Press space to toggle
+        let event = Event::Key(make_key_event(KeyCode::Char(' '), KeyModifiers::NONE));
+        handle_event(&mut app, &event);
+
+        if let Some(Dialog::AcceptBothOptions(state)) = app.active_dialog() {
+            assert!(state.deduplicate);
+        }
+    }
+
+    #[test]
+    fn accept_both_dialog_esc_closes() {
+        use crate::input::InputMode;
+
+        let mut app = App::new();
+        app.show_accept_both_dialog();
+        assert_eq!(app.input_mode(), InputMode::Dialog);
+
+        let event = Event::Key(make_key_event(KeyCode::Esc, KeyModifiers::NONE));
+        handle_event(&mut app, &event);
+
+        assert_eq!(app.input_mode(), InputMode::Normal);
+        assert!(app.active_dialog().is_none());
     }
 }

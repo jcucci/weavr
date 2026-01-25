@@ -3,6 +3,8 @@
 //! This module handles rendering the full document with conflicts highlighted
 //! in the left, right, and result panes.
 
+use std::time::Duration;
+
 use ratatui::{
     layout::Rect,
     style::{Modifier, Style},
@@ -12,6 +14,7 @@ use ratatui::{
 };
 use weavr_core::{HunkState, Segment};
 
+use crate::input::InputMode;
 use crate::{App, FocusedPane};
 
 /// Which side of the conflict to render.
@@ -158,9 +161,37 @@ pub fn render_title_bar(frame: &mut Frame, area: Rect, app: &App) {
     frame.render_widget(paragraph, area);
 }
 
+/// Duration before status messages auto-clear.
+const STATUS_MESSAGE_DURATION: Duration = Duration::from_secs(3);
+
 /// Renders the status bar with context-sensitive help.
 pub fn render_status_bar(frame: &mut Frame, area: Rect, app: &App) {
     let theme = app.theme();
+
+    // Command mode: show the command line
+    if app.input_mode() == InputMode::Command {
+        let cmd_line = format!(":{}", app.command_buffer());
+        let status = Paragraph::new(cmd_line).style(
+            Style::default()
+                .fg(theme.base.foreground)
+                .bg(theme.base.background),
+        );
+        frame.render_widget(status, area);
+        return;
+    }
+
+    // Check for status message first (auto-clears after timeout)
+    if let Some((msg, timestamp)) = app.status_message() {
+        if timestamp.elapsed() < STATUS_MESSAGE_DURATION {
+            let status = Paragraph::new(format!(" {msg}")).style(
+                Style::default()
+                    .fg(theme.base.accent)
+                    .bg(theme.base.background),
+            );
+            frame.render_widget(status, area);
+            return;
+        }
+    }
 
     // Calculate unresolved count
     let unresolved_count = app.session().map_or(0, |s| {
@@ -326,7 +357,7 @@ fn build_result_document<'a>(
                         style.add_modifier(Modifier::BOLD),
                     )));
                     lines.push(Line::from(Span::styled(
-                        "  Select: [l]eft  [r]ight  [b]oth",
+                        "  Select: [o]urs  [t]heirs  [b]oth",
                         Style::default().fg(theme.base.muted),
                     )));
                     if is_current {

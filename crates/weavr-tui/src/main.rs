@@ -3,7 +3,7 @@
 //! This binary is for development and testing purposes.
 //! Production use will be through weavr-cli.
 
-use std::io;
+use std::io::{self, Write};
 use std::time::Duration;
 
 use ratatui::DefaultTerminal;
@@ -25,6 +25,26 @@ fn main() -> io::Result<()> {
 /// Main event loop.
 fn run(terminal: &mut DefaultTerminal, app: &mut App) -> io::Result<()> {
     while !app.should_quit() {
+        // Check for pending editor (Phase 7)
+        if let Some(content) = app.take_editor_pending() {
+            // Suspend TUI
+            ratatui::restore();
+
+            // Run external editor
+            let result = run_editor(&content)?;
+
+            // Resume TUI
+            *terminal = ratatui::init();
+
+            // Apply result if editor succeeded
+            if let Some(new_content) = result {
+                app.apply_editor_result(&new_content);
+            } else {
+                app.set_status_message("Editor cancelled");
+            }
+            continue;
+        }
+
         terminal.draw(|frame| ui::draw(frame, app))?;
 
         if let Some(evt) = event::poll_event(Duration::from_millis(100))? {
@@ -33,4 +53,27 @@ fn run(terminal: &mut DefaultTerminal, app: &mut App) -> io::Result<()> {
     }
 
     Ok(())
+}
+
+/// Runs the external editor with the given content.
+///
+/// Returns `Some(content)` if the editor exited successfully, `None` otherwise.
+fn run_editor(content: &str) -> io::Result<Option<String>> {
+    let editor = std::env::var("EDITOR").unwrap_or_else(|_| "vi".into());
+
+    // Create temp file with content
+    let mut tmp = tempfile::NamedTempFile::new()?;
+    tmp.write_all(content.as_bytes())?;
+    tmp.flush()?;
+
+    // Run editor
+    let status = std::process::Command::new(&editor)
+        .arg(tmp.path())
+        .status()?;
+
+    if status.success() {
+        Ok(Some(std::fs::read_to_string(tmp.path())?))
+    } else {
+        Ok(None) // Editor exited with error, cancel
+    }
 }
