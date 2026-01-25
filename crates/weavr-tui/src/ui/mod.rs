@@ -3,12 +3,14 @@
 //! This module handles all rendering logic using ratatui.
 
 mod layout;
+mod overlay;
 mod pane;
 
 pub use layout::{calculate_layout, PaneAreas};
 
 use ratatui::Frame;
 
+use crate::input::Dialog;
 use crate::App;
 
 /// Renders the entire UI to the frame.
@@ -25,6 +27,16 @@ pub fn draw(frame: &mut Frame, app: &App) {
 
     // Status bar with context-sensitive help
     pane::render_status_bar(frame, areas.status_bar, app);
+
+    // Render overlay dialogs on top
+    if let Some(dialog) = app.active_dialog() {
+        match dialog {
+            Dialog::Help => overlay::render_help_overlay(frame, frame.area(), app.theme()),
+            Dialog::AcceptBothOptions(state) => {
+                overlay::render_accept_both_dialog(frame, frame.area(), app.theme(), state);
+            }
+        }
+    }
 }
 
 #[cfg(test)]

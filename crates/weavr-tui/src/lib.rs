@@ -17,14 +17,19 @@
 use std::time::{Duration, Instant};
 
 use crossterm::event::KeyCode;
-use weavr_core::{AcceptBothOptions, ConflictHunk, HunkState, MergeSession, Resolution};
+use weavr_core::{AcceptBothOptions, BothOrder, ConflictHunk, HunkState, MergeSession, Resolution};
 
 /// Timeout for multi-key sequences like 'gg'.
 const KEY_SEQUENCE_TIMEOUT: Duration = Duration::from_millis(500);
 
 pub mod event;
+pub mod input;
 pub mod theme;
 pub mod ui;
+pub mod undo;
+
+use input::{Command, Dialog, InputMode};
+use undo::UndoStack;
 
 /// Configuration for the three-pane layout.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -75,6 +80,18 @@ pub struct App {
     layout_config: LayoutConfig,
     /// Pending key for multi-key sequences (e.g., 'gg').
     pending_key: Option<(KeyCode, Instant)>,
+    /// Status message to display (with timestamp for auto-clear).
+    status_message: Option<(String, Instant)>,
+    /// Undo stack for resolution changes.
+    undo_stack: UndoStack,
+    /// Current input mode.
+    input_mode: InputMode,
+    /// Command buffer for command mode.
+    command_buffer: String,
+    /// Currently active dialog, if any.
+    active_dialog: Option<Dialog>,
+    /// Content pending for external editor (Phase 7).
+    editor_pending: Option<String>,
 }
 
 impl App {
@@ -91,6 +108,12 @@ impl App {
             result_scroll: 0,
             layout_config: LayoutConfig::default(),
             pending_key: None,
+            status_message: None,
+            undo_stack: UndoStack::new(),
+            input_mode: InputMode::default(),
+            command_buffer: String::new(),
+            active_dialog: None,
+            editor_pending: None,
         }
     }
 
@@ -107,6 +130,12 @@ impl App {
             result_scroll: 0,
             layout_config: LayoutConfig::default(),
             pending_key: None,
+            status_message: None,
+            undo_stack: UndoStack::new(),
+            input_mode: InputMode::default(),
+            command_buffer: String::new(),
+            active_dialog: None,
+            editor_pending: None,
         }
     }
 
@@ -286,49 +315,104 @@ impl App {
 
     /// Resolves the current hunk by accepting the left (ours) content.
     pub fn resolve_left(&mut self) {
-        let resolution_data = self.session.as_ref().and_then(|session| {
-            session
-                .hunks()
-                .get(self.current_hunk_index)
-                .map(|hunk| (hunk.id, Resolution::accept_left(hunk)))
-        });
-
-        if let (Some(session), Some((hunk_id, resolution))) =
-            (self.session.as_mut(), resolution_data)
-        {
-            let _ = session.set_resolution(hunk_id, resolution);
-        }
+        self.apply_resolution("Accept ours", Resolution::accept_left);
     }
 
     /// Resolves the current hunk by accepting the right (theirs) content.
     pub fn resolve_right(&mut self) {
-        let resolution_data = self.session.as_ref().and_then(|session| {
-            session
-                .hunks()
-                .get(self.current_hunk_index)
-                .map(|hunk| (hunk.id, Resolution::accept_right(hunk)))
-        });
-
-        if let (Some(session), Some((hunk_id, resolution))) =
-            (self.session.as_mut(), resolution_data)
-        {
-            let _ = session.set_resolution(hunk_id, resolution);
-        }
+        self.apply_resolution("Accept theirs", Resolution::accept_right);
     }
 
     /// Resolves the current hunk by accepting both sides (left then right).
     pub fn resolve_both(&mut self) {
-        let resolution_data = self.session.as_ref().and_then(|session| {
-            session.hunks().get(self.current_hunk_index).map(|hunk| {
-                let options = AcceptBothOptions::default();
-                (hunk.id, Resolution::accept_both(hunk, &options))
-            })
+        self.apply_resolution("Accept both", |hunk| {
+            Resolution::accept_both(hunk, &AcceptBothOptions::default())
         });
+    }
 
-        if let (Some(session), Some((hunk_id, resolution))) =
-            (self.session.as_mut(), resolution_data)
-        {
-            let _ = session.set_resolution(hunk_id, resolution);
+    /// Clears the resolution for the current hunk, returning it to unresolved state.
+    pub fn clear_current_resolution(&mut self) {
+        // Get hunk info and current resolution for undo
+        let Some((hunk_id, prev)) = self.session.as_ref().and_then(|session| {
+            session
+                .hunks()
+                .get(self.current_hunk_index)
+                .map(|hunk| (hunk.id, session.resolutions().get(&hunk.id).cloned()))
+        }) else {
+            return;
+        };
+
+        if let Some(session) = self.session.as_mut() {
+            match session.clear_resolution(hunk_id) {
+                Ok(()) => {
+                    // Only push undo if there was a resolution to clear
+                    if prev.is_some() {
+                        self.undo_stack.push(hunk_id, prev, "Clear resolution");
+                    }
+                    self.set_status_message("Cleared resolution");
+                }
+                Err(_) => {
+                    self.set_status_message("Failed to clear resolution");
+                }
+            }
+        }
+    }
+
+    /// Applies a resolution to the current hunk with undo support.
+    ///
+    /// This is a helper that handles the common pattern of:
+    /// 1. Getting the current hunk and its previous resolution
+    /// 2. Pushing an undo entry
+    /// 3. Applying the new resolution
+    /// 4. Setting a status message
+    fn apply_resolution<F>(&mut self, action: &str, make_resolution: F)
+    where
+        F: FnOnce(&ConflictHunk) -> Resolution,
+    {
+        // Extract all data upfront to end the immutable borrow
+        let Some((hunk_id, resolution, prev)) = self.session.as_ref().and_then(|session| {
+            session.hunks().get(self.current_hunk_index).map(|hunk| {
+                let prev = session.resolutions().get(&hunk.id).cloned();
+                (hunk.id, make_resolution(hunk), prev)
+            })
+        }) else {
+            return;
+        };
+
+        // Apply resolution and only push undo / set status on success
+        if let Some(session) = self.session.as_mut() {
+            match session.set_resolution(hunk_id, resolution) {
+                Ok(()) => {
+                    self.undo_stack.push(hunk_id, prev, action);
+                    self.set_status_message(action);
+                }
+                Err(_) => {
+                    self.set_status_message("Failed to apply resolution");
+                }
+            }
+        }
+    }
+
+    /// Undoes the last resolution action.
+    pub fn undo(&mut self) {
+        let Some(entry) = self.undo_stack.pop() else {
+            self.set_status_message("Nothing to undo");
+            return;
+        };
+
+        if let Some(session) = &mut self.session {
+            let result = if let Some(resolution) = entry.previous_resolution {
+                // Restore previous resolution
+                session.set_resolution(entry.hunk_id, resolution)
+            } else {
+                // Was unresolved before
+                session.clear_resolution(entry.hunk_id)
+            };
+
+            match result {
+                Ok(()) => self.set_status_message(&format!("Undid: {}", entry.action)),
+                Err(_) => self.set_status_message("Failed to undo"),
+            }
         }
     }
 
@@ -372,6 +456,213 @@ impl App {
     #[must_use]
     pub fn layout_config(&self) -> &LayoutConfig {
         &self.layout_config
+    }
+
+    /// Sets a status message to display in the status bar.
+    ///
+    /// The message will auto-clear after a few seconds.
+    pub fn set_status_message(&mut self, msg: &str) {
+        self.status_message = Some((msg.to_string(), Instant::now()));
+    }
+
+    /// Returns the current status message and its timestamp, if any.
+    #[must_use]
+    pub fn status_message(&self) -> Option<&(String, Instant)> {
+        self.status_message.as_ref()
+    }
+
+    /// Returns the current input mode.
+    #[must_use]
+    pub fn input_mode(&self) -> InputMode {
+        self.input_mode
+    }
+
+    /// Enters command mode (for `:` commands).
+    pub fn enter_command_mode(&mut self) {
+        self.input_mode = InputMode::Command;
+        self.command_buffer.clear();
+    }
+
+    /// Exits command mode and returns to normal mode.
+    pub fn exit_command_mode(&mut self) {
+        self.input_mode = InputMode::Normal;
+        self.command_buffer.clear();
+    }
+
+    /// Returns the current command buffer contents.
+    #[must_use]
+    pub fn command_buffer(&self) -> &str {
+        &self.command_buffer
+    }
+
+    /// Appends a character to the command buffer.
+    pub fn append_to_command(&mut self, c: char) {
+        self.command_buffer.push(c);
+    }
+
+    /// Removes the last character from the command buffer.
+    pub fn backspace_command(&mut self) {
+        self.command_buffer.pop();
+    }
+
+    /// Executes the current command buffer.
+    pub fn execute_command(&mut self) {
+        let cmd = Command::parse(&self.command_buffer);
+        match cmd {
+            Command::Write => self.write_file(),
+            Command::Quit => self.try_quit(),
+            Command::WriteQuit => {
+                // TODO: Implement :wq when file writing is implemented
+                self.set_status_message(":wq not yet implemented - use :q! to force quit");
+            }
+            Command::ForceQuit => self.quit(),
+            Command::Unknown(s) => {
+                if !s.is_empty() {
+                    self.set_status_message(&format!("Unknown command: {s}"));
+                }
+            }
+        }
+        self.exit_command_mode();
+    }
+
+    /// Writes the resolved file. Currently a placeholder.
+    fn write_file(&mut self) {
+        if self.has_unresolved_hunks() {
+            let count = self.unresolved_count();
+            self.set_status_message(&format!("Cannot save: {count} unresolved hunks"));
+        } else {
+            // TODO: Implement actual file writing in Phase 7
+            self.set_status_message("File saved (not yet implemented)");
+        }
+    }
+
+    /// Attempts to quit, showing a warning if there are unresolved hunks.
+    fn try_quit(&mut self) {
+        if self.has_unresolved_hunks() {
+            let count = self.unresolved_count();
+            self.set_status_message(&format!("{count} unresolved hunks. Use :q! to force quit"));
+        } else {
+            self.quit();
+        }
+    }
+
+    /// Returns true if there are unresolved hunks.
+    fn has_unresolved_hunks(&self) -> bool {
+        self.unresolved_count() > 0
+    }
+
+    /// Returns the number of unresolved hunks.
+    fn unresolved_count(&self) -> usize {
+        self.session
+            .as_ref()
+            .map_or(0, |s| s.unresolved_hunks().len())
+    }
+
+    /// Shows the help dialog.
+    pub fn show_help(&mut self) {
+        self.active_dialog = Some(Dialog::Help);
+        self.input_mode = InputMode::Dialog;
+    }
+
+    /// Closes any open dialog and returns to normal mode.
+    pub fn close_dialog(&mut self) {
+        self.active_dialog = None;
+        self.input_mode = InputMode::Normal;
+    }
+
+    /// Returns the currently active dialog, if any.
+    #[must_use]
+    pub fn active_dialog(&self) -> Option<&Dialog> {
+        self.active_dialog.as_ref()
+    }
+
+    /// Shows the `AcceptBoth` options dialog.
+    pub fn show_accept_both_dialog(&mut self) {
+        self.active_dialog = Some(Dialog::AcceptBothOptions(
+            input::AcceptBothOptionsState::default(),
+        ));
+        self.input_mode = InputMode::Dialog;
+    }
+
+    /// Toggles the order in the `AcceptBoth` options dialog.
+    pub fn toggle_accept_both_order(&mut self) {
+        if let Some(Dialog::AcceptBothOptions(ref mut state)) = self.active_dialog {
+            state.order = match state.order {
+                BothOrder::LeftThenRight => BothOrder::RightThenLeft,
+                BothOrder::RightThenLeft => BothOrder::LeftThenRight,
+            };
+        }
+    }
+
+    /// Toggles the deduplicate option in the `AcceptBoth` options dialog.
+    pub fn toggle_accept_both_dedupe(&mut self) {
+        if let Some(Dialog::AcceptBothOptions(ref mut state)) = self.active_dialog {
+            state.deduplicate = !state.deduplicate;
+        }
+    }
+
+    /// Confirms the `AcceptBoth` options and applies the resolution.
+    pub fn confirm_accept_both(&mut self) {
+        // Extract options from dialog
+        let options = if let Some(Dialog::AcceptBothOptions(ref state)) = self.active_dialog {
+            AcceptBothOptions {
+                order: state.order,
+                deduplicate: state.deduplicate,
+                trim_whitespace: false,
+            }
+        } else {
+            return;
+        };
+
+        // Close dialog first
+        self.close_dialog();
+
+        // Apply resolution with extracted options
+        self.apply_resolution("Accept both", |hunk| {
+            Resolution::accept_both(hunk, &options)
+        });
+    }
+
+    // --- Phase 7: Editor Integration ---
+
+    /// Prepares content for external editor and sets pending state.
+    /// Returns true if editor should be launched.
+    pub fn prepare_editor(&mut self) -> bool {
+        if let Some(content) = self.get_current_hunk_content() {
+            self.editor_pending = Some(content);
+            true
+        } else {
+            self.set_status_message("No hunk to edit");
+            false
+        }
+    }
+
+    /// Takes the pending editor content, clearing the pending state.
+    pub fn take_editor_pending(&mut self) -> Option<String> {
+        self.editor_pending.take()
+    }
+
+    /// Applies content returned from the external editor as a manual resolution.
+    pub fn apply_editor_result(&mut self, content: &str) {
+        let owned = content.to_string();
+        self.apply_resolution("Manual edit", |_hunk| Resolution::manual(owned.clone()));
+    }
+
+    /// Gets the content of the current hunk for editing.
+    fn get_current_hunk_content(&self) -> Option<String> {
+        self.session.as_ref().and_then(|session| {
+            session.hunks().get(self.current_hunk_index).map(|hunk| {
+                // If already resolved, use that; otherwise combine left/right
+                if let Some(resolution) = session.resolutions().get(&hunk.id) {
+                    resolution.content.clone()
+                } else {
+                    format!(
+                        "<<<<<<< OURS\n{}\n=======\n{}\n>>>>>>> THEIRS",
+                        hunk.left.text, hunk.right.text
+                    )
+                }
+            })
+        })
     }
 
     /// Resets scroll positions when changing hunks.
@@ -598,5 +889,91 @@ mod tests {
         // Scroll up from 0 should stay at 0
         app.scroll_up(100);
         assert_eq!(app.left_right_scroll(), 0);
+    }
+
+    #[test]
+    fn show_accept_both_dialog_opens_dialog() {
+        let mut app = App::new();
+        assert!(app.active_dialog().is_none());
+        assert_eq!(app.input_mode(), InputMode::Normal);
+
+        app.show_accept_both_dialog();
+
+        assert!(matches!(
+            app.active_dialog(),
+            Some(Dialog::AcceptBothOptions(_))
+        ));
+        assert_eq!(app.input_mode(), InputMode::Dialog);
+    }
+
+    #[test]
+    fn toggle_accept_both_order_changes_order() {
+        let mut app = App::new();
+        app.show_accept_both_dialog();
+
+        // Default is LeftThenRight
+        if let Some(Dialog::AcceptBothOptions(state)) = app.active_dialog() {
+            assert_eq!(state.order, BothOrder::LeftThenRight);
+        }
+
+        app.toggle_accept_both_order();
+
+        if let Some(Dialog::AcceptBothOptions(state)) = app.active_dialog() {
+            assert_eq!(state.order, BothOrder::RightThenLeft);
+        }
+
+        app.toggle_accept_both_order();
+
+        if let Some(Dialog::AcceptBothOptions(state)) = app.active_dialog() {
+            assert_eq!(state.order, BothOrder::LeftThenRight);
+        }
+    }
+
+    #[test]
+    fn toggle_accept_both_dedupe_changes_dedupe() {
+        let mut app = App::new();
+        app.show_accept_both_dialog();
+
+        // Default is false
+        if let Some(Dialog::AcceptBothOptions(state)) = app.active_dialog() {
+            assert!(!state.deduplicate);
+        }
+
+        app.toggle_accept_both_dedupe();
+
+        if let Some(Dialog::AcceptBothOptions(state)) = app.active_dialog() {
+            assert!(state.deduplicate);
+        }
+    }
+
+    #[test]
+    fn close_dialog_from_accept_both() {
+        let mut app = App::new();
+        app.show_accept_both_dialog();
+
+        assert!(app.active_dialog().is_some());
+        app.close_dialog();
+        assert!(app.active_dialog().is_none());
+        assert_eq!(app.input_mode(), InputMode::Normal);
+    }
+
+    #[test]
+    fn prepare_editor_without_session_returns_false() {
+        let mut app = App::new();
+        assert!(!app.prepare_editor());
+        assert!(app.take_editor_pending().is_none());
+    }
+
+    #[test]
+    fn take_editor_pending_clears_pending() {
+        let mut app = App::new();
+        // Manually set pending for testing
+        app.editor_pending = Some("test content".to_string());
+
+        let content = app.take_editor_pending();
+        assert_eq!(content, Some("test content".to_string()));
+
+        // Second call returns None
+        assert!(app.take_editor_pending().is_none());
     }
 }
