@@ -342,15 +342,20 @@ impl App {
             return;
         };
 
-        // Only push undo if there was a resolution to clear
-        if prev.is_some() {
-            self.undo_stack.push(hunk_id, prev, "Clear resolution");
-        }
-
         if let Some(session) = self.session.as_mut() {
-            let _ = session.clear_resolution(hunk_id);
+            match session.clear_resolution(hunk_id) {
+                Ok(()) => {
+                    // Only push undo if there was a resolution to clear
+                    if prev.is_some() {
+                        self.undo_stack.push(hunk_id, prev, "Clear resolution");
+                    }
+                    self.set_status_message("Cleared resolution");
+                }
+                Err(_) => {
+                    self.set_status_message("Failed to clear resolution");
+                }
+            }
         }
-        self.set_status_message("Cleared resolution");
     }
 
     /// Applies a resolution to the current hunk with undo support.
@@ -374,14 +379,18 @@ impl App {
             return;
         };
 
-        // Push undo entry
-        self.undo_stack.push(hunk_id, prev, action);
-
-        // Apply resolution
+        // Apply resolution and only push undo / set status on success
         if let Some(session) = self.session.as_mut() {
-            let _ = session.set_resolution(hunk_id, resolution);
+            match session.set_resolution(hunk_id, resolution) {
+                Ok(()) => {
+                    self.undo_stack.push(hunk_id, prev, action);
+                    self.set_status_message(action);
+                }
+                Err(_) => {
+                    self.set_status_message("Failed to apply resolution");
+                }
+            }
         }
-        self.set_status_message(action);
     }
 
     /// Undoes the last resolution action.
@@ -392,14 +401,18 @@ impl App {
         };
 
         if let Some(session) = &mut self.session {
-            if let Some(resolution) = entry.previous_resolution {
+            let result = if let Some(resolution) = entry.previous_resolution {
                 // Restore previous resolution
-                let _ = session.set_resolution(entry.hunk_id, resolution);
+                session.set_resolution(entry.hunk_id, resolution)
             } else {
                 // Was unresolved before
-                let _ = session.clear_resolution(entry.hunk_id);
+                session.clear_resolution(entry.hunk_id)
+            };
+
+            match result {
+                Ok(()) => self.set_status_message(&format!("Undid: {}", entry.action)),
+                Err(_) => self.set_status_message("Failed to undo"),
             }
-            self.set_status_message(&format!("Undid: {}", entry.action));
         }
     }
 
@@ -499,10 +512,8 @@ impl App {
             Command::Write => self.write_file(),
             Command::Quit => self.try_quit(),
             Command::WriteQuit => {
-                self.write_file();
-                if !self.has_unresolved_hunks() {
-                    self.quit();
-                }
+                // TODO: Implement :wq when file writing is implemented
+                self.set_status_message(":wq not yet implemented - use :q! to force quit");
             }
             Command::ForceQuit => self.quit(),
             Command::Unknown(s) => {

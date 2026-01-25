@@ -20,6 +20,7 @@ crossterm.workspace = true
 thiserror.workspace = true
 catppuccin.workspace = true
 tempfile = "3"
+shell-words = "1"
 
 [[bin]]
 name = "weavr-tui-dev"

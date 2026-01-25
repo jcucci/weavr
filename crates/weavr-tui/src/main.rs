@@ -59,15 +59,29 @@ fn run(terminal: &mut DefaultTerminal, app: &mut App) -> io::Result<()> {
 ///
 /// Returns `Some(content)` if the editor exited successfully, `None` otherwise.
 fn run_editor(content: &str) -> io::Result<Option<String>> {
-    let editor = std::env::var("EDITOR").unwrap_or_else(|_| "vi".into());
+    // Prefer VISUAL, then EDITOR, then fall back to vi
+    let editor_cmd = std::env::var("VISUAL")
+        .or_else(|_| std::env::var("EDITOR"))
+        .unwrap_or_else(|_| "vi".into());
+
+    // Parse the editor command into program + args using shell-style splitting
+    let mut parts = shell_words::split(&editor_cmd)
+        .map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, e))?;
+
+    if parts.is_empty() {
+        parts.push("vi".into());
+    }
+
+    let program = parts.remove(0);
 
     // Create temp file with content
     let mut tmp = tempfile::NamedTempFile::new()?;
     tmp.write_all(content.as_bytes())?;
     tmp.flush()?;
 
-    // Run editor
-    let status = std::process::Command::new(&editor)
+    // Run editor with any additional arguments
+    let status = std::process::Command::new(&program)
+        .args(&parts)
         .arg(tmp.path())
         .status()?;
 

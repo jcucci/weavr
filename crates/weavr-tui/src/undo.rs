@@ -44,8 +44,8 @@ impl UndoStack {
             action: action.to_string(),
         });
 
-        // Trim to max depth
-        while self.entries.len() > MAX_DEPTH {
+        // Trim to max depth: only exceeds by at most 1 per push
+        if self.entries.len() > MAX_DEPTH {
             self.entries.remove(0);
         }
     }

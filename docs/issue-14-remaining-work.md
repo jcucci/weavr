@@ -8,10 +8,12 @@ Issue #14 "Resolution keybindings" is partially implemented on branch `feat/issu
 - Phase 1: Keybindings (`o`/`t`/`b`/`x`)
 - Phase 2: Status messages
 - Phase 3: Undo system (`u`)
-- Phase 4: Command mode (`:w`, `:q`, `:wq`)
+- Phase 4: Command mode (`:w`, `:q`, `:wq`, `:q!`)
 - Phase 5: Help overlay (`?`)
+- Phase 6: AcceptBoth options dialog (`B`)
+- Phase 7: `$EDITOR` integration (`e`)
 
-**Remaining phases:** 6 and 7 (described below)
+**Remaining phases:** None (Issue #14 is fully implemented)
 
 ---
 

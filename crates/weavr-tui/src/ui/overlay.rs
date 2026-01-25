@@ -64,7 +64,7 @@ pub fn render_help_overlay(frame: &mut Frame, area: Rect, theme: &Theme) {
         Line::from("  :q!     Force quit"),
         Line::from(""),
         Line::from(Span::styled(
-            "Press ? or Esc to close",
+            "Press ?, q, or Esc to close",
             Style::default().fg(theme.base.muted),
         )),
     ];
@@ -98,12 +98,12 @@ pub fn render_accept_both_dialog(
     let order_left = if state.order == BothOrder::LeftThenRight {
         "[L]eft first"
     } else {
-        " L eft first"
+        " Left first "
     };
     let order_right = if state.order == BothOrder::RightThenLeft {
         "[R]ight first"
     } else {
-        " R ight first"
+        " Right first "
     };
     let dedupe_check = if state.deduplicate { "[x]" } else { "[ ]" };
 
