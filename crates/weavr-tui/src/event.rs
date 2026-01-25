@@ -7,7 +7,7 @@ use std::time::Duration;
 use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 
 use crate::input::{Dialog, InputMode};
-use crate::App;
+use crate::{App, KEY_SEQUENCE_TIMEOUT};
 
 /// Polls for an event with the given timeout.
 ///
@@ -50,18 +50,18 @@ fn handle_key_event(app: &mut App, key: KeyEvent) {
 fn handle_normal_mode(app: &mut App, key: KeyEvent) {
     // Check for 'gg' sequence (go to first hunk)
     if key.code == KeyCode::Char('g') && !key.modifiers.contains(KeyModifiers::SHIFT) {
-        if app.check_pending_key(KeyCode::Char('g')) {
+        if app.key_sequence.check(KeyCode::Char('g'), KEY_SEQUENCE_TIMEOUT) {
             app.go_to_hunk(0);
-            app.clear_pending_key();
+            app.key_sequence.clear();
             return;
         }
         // Set pending for potential 'gg' sequence
-        app.set_pending_key(KeyCode::Char('g'));
+        app.key_sequence.set(KeyCode::Char('g'));
         return;
     }
 
     // Clear pending key for any other keypress
-    app.clear_pending_key();
+    app.key_sequence.clear();
 
     match key.code {
         // Quit

@@ -16,19 +16,22 @@
 
 use std::time::{Duration, Instant};
 
-use crossterm::event::KeyCode;
-use weavr_core::{AcceptBothOptions, BothOrder, ConflictHunk, HunkState, MergeSession, Resolution};
+use weavr_core::{ConflictHunk, MergeSession};
 
 /// Timeout for multi-key sequences like 'gg'.
 const KEY_SEQUENCE_TIMEOUT: Duration = Duration::from_millis(500);
 
+pub mod dialog;
+pub mod editor;
 pub mod event;
 pub mod input;
+pub mod navigation;
+pub mod resolution;
 pub mod theme;
 pub mod ui;
 pub mod undo;
 
-use input::{Command, Dialog, InputMode};
+use input::{Command, Dialog, InputMode, KeySequence};
 use undo::UndoStack;
 
 /// Configuration for the three-pane layout.
@@ -63,35 +66,35 @@ pub enum FocusedPane {
 /// Application state for the TUI.
 pub struct App {
     /// The active merge session.
-    session: Option<MergeSession>,
+    pub(crate) session: Option<MergeSession>,
     /// Whether the application should quit.
-    should_quit: bool,
+    pub(crate) should_quit: bool,
     /// Which pane has focus.
-    focused_pane: FocusedPane,
+    pub(crate) focused_pane: FocusedPane,
     /// The active theme.
-    theme: Theme,
+    pub(crate) theme: Theme,
     /// Current hunk index (0-based).
-    current_hunk_index: usize,
+    pub(crate) current_hunk_index: usize,
     /// Synchronized scroll offset for left/right panes.
-    left_right_scroll: u16,
+    pub(crate) left_right_scroll: u16,
     /// Independent scroll offset for result pane.
-    result_scroll: u16,
+    pub(crate) result_scroll: u16,
     /// Layout configuration.
-    layout_config: LayoutConfig,
-    /// Pending key for multi-key sequences (e.g., 'gg').
-    pending_key: Option<(KeyCode, Instant)>,
+    pub(crate) layout_config: LayoutConfig,
+    /// Tracker for multi-key sequences (e.g., 'gg').
+    pub(crate) key_sequence: KeySequence,
     /// Status message to display (with timestamp for auto-clear).
-    status_message: Option<(String, Instant)>,
+    pub(crate) status_message: Option<(String, Instant)>,
     /// Undo stack for resolution changes.
-    undo_stack: UndoStack,
+    pub(crate) undo_stack: UndoStack,
     /// Current input mode.
-    input_mode: InputMode,
+    pub(crate) input_mode: InputMode,
     /// Command buffer for command mode.
-    command_buffer: String,
+    pub(crate) command_buffer: String,
     /// Currently active dialog, if any.
-    active_dialog: Option<Dialog>,
+    pub(crate) active_dialog: Option<Dialog>,
     /// Content pending for external editor (Phase 7).
-    editor_pending: Option<String>,
+    pub(crate) editor_pending: Option<String>,
 }
 
 impl App {
@@ -107,7 +110,7 @@ impl App {
             left_right_scroll: 0,
             result_scroll: 0,
             layout_config: LayoutConfig::default(),
-            pending_key: None,
+            key_sequence: KeySequence::new(),
             status_message: None,
             undo_stack: UndoStack::new(),
             input_mode: InputMode::default(),
@@ -129,7 +132,7 @@ impl App {
             left_right_scroll: 0,
             result_scroll: 0,
             layout_config: LayoutConfig::default(),
-            pending_key: None,
+            key_sequence: KeySequence::new(),
             status_message: None,
             undo_stack: UndoStack::new(),
             input_mode: InputMode::default(),
@@ -169,49 +172,17 @@ impl App {
 
     /// Cycles focus to the next pane (Left -> Right -> Result -> Left).
     pub fn cycle_focus(&mut self) {
-        self.focused_pane = match self.focused_pane {
-            FocusedPane::Left => FocusedPane::Right,
-            FocusedPane::Right => FocusedPane::Result,
-            FocusedPane::Result => FocusedPane::Left,
-        };
+        navigation::cycle_focus(self);
     }
 
     /// Cycles focus to the previous pane (Left -> Result -> Right -> Left).
     pub fn cycle_focus_back(&mut self) {
-        self.focused_pane = match self.focused_pane {
-            FocusedPane::Left => FocusedPane::Result,
-            FocusedPane::Right => FocusedPane::Left,
-            FocusedPane::Result => FocusedPane::Right,
-        };
+        navigation::cycle_focus_back(self);
     }
 
     /// Sets focus directly to the result pane.
     pub fn focus_result(&mut self) {
-        self.focused_pane = FocusedPane::Result;
-    }
-
-    /// Sets a pending key for multi-key sequence detection.
-    pub fn set_pending_key(&mut self, key: KeyCode) {
-        self.pending_key = Some((key, Instant::now()));
-    }
-
-    /// Checks if a pending key matches and is within the timeout.
-    /// Returns true if there's a matching pending key that hasn't expired.
-    /// Clears the pending key if it has expired.
-    pub fn check_pending_key(&mut self, expected: KeyCode) -> bool {
-        if let Some((key, timestamp)) = self.pending_key {
-            if timestamp.elapsed() > KEY_SEQUENCE_TIMEOUT {
-                self.pending_key = None;
-                return false;
-            }
-            return key == expected;
-        }
-        false
-    }
-
-    /// Clears any pending key sequence.
-    pub fn clear_pending_key(&mut self) {
-        self.pending_key = None;
+        navigation::focus_result(self);
     }
 
     /// Returns a reference to the current theme.
@@ -247,197 +218,62 @@ impl App {
 
     /// Moves to the next hunk.
     pub fn next_hunk(&mut self) {
-        let total = self.total_hunks();
-        if total > 0 && self.current_hunk_index < total - 1 {
-            self.current_hunk_index += 1;
-            self.reset_scroll();
-        }
+        navigation::next_hunk(self);
     }
 
     /// Moves to the previous hunk.
     pub fn prev_hunk(&mut self) {
-        if self.current_hunk_index > 0 {
-            self.current_hunk_index -= 1;
-            self.reset_scroll();
-        }
+        navigation::prev_hunk(self);
     }
 
     /// Moves to a specific hunk by index.
     pub fn go_to_hunk(&mut self, index: usize) {
-        let total = self.total_hunks();
-        if total > 0 && index < total {
-            self.current_hunk_index = index;
-            self.reset_scroll();
-        }
+        navigation::go_to_hunk(self, index);
     }
 
     /// Moves to the next unresolved hunk, wrapping around if necessary.
     pub fn next_unresolved_hunk(&mut self) {
-        if let Some(session) = &self.session {
-            let hunks = session.hunks();
-            let total = hunks.len();
-            if total == 0 {
-                return;
-            }
-
-            // Search forward from current position
-            for i in 1..=total {
-                let idx = (self.current_hunk_index + i) % total;
-                if matches!(hunks[idx].state, HunkState::Unresolved) {
-                    self.current_hunk_index = idx;
-                    self.reset_scroll();
-                    return;
-                }
-            }
-        }
+        navigation::next_unresolved_hunk(self);
     }
 
     /// Moves to the previous unresolved hunk, wrapping around if necessary.
     pub fn prev_unresolved_hunk(&mut self) {
-        if let Some(session) = &self.session {
-            let hunks = session.hunks();
-            let total = hunks.len();
-            if total == 0 {
-                return;
-            }
-
-            // Search backward from current position
-            for i in 1..=total {
-                let idx = (self.current_hunk_index + total - i) % total;
-                if matches!(hunks[idx].state, HunkState::Unresolved) {
-                    self.current_hunk_index = idx;
-                    self.reset_scroll();
-                    return;
-                }
-            }
-        }
+        navigation::prev_unresolved_hunk(self);
     }
 
     /// Resolves the current hunk by accepting the left (ours) content.
     pub fn resolve_left(&mut self) {
-        self.apply_resolution("Accept ours", Resolution::accept_left);
+        resolution::resolve_left(self);
     }
 
     /// Resolves the current hunk by accepting the right (theirs) content.
     pub fn resolve_right(&mut self) {
-        self.apply_resolution("Accept theirs", Resolution::accept_right);
+        resolution::resolve_right(self);
     }
 
     /// Resolves the current hunk by accepting both sides (left then right).
     pub fn resolve_both(&mut self) {
-        self.apply_resolution("Accept both", |hunk| {
-            Resolution::accept_both(hunk, &AcceptBothOptions::default())
-        });
+        resolution::resolve_both(self);
     }
 
     /// Clears the resolution for the current hunk, returning it to unresolved state.
     pub fn clear_current_resolution(&mut self) {
-        // Get hunk info and current resolution for undo
-        let Some((hunk_id, prev)) = self.session.as_ref().and_then(|session| {
-            session
-                .hunks()
-                .get(self.current_hunk_index)
-                .map(|hunk| (hunk.id, session.resolutions().get(&hunk.id).cloned()))
-        }) else {
-            return;
-        };
-
-        if let Some(session) = self.session.as_mut() {
-            match session.clear_resolution(hunk_id) {
-                Ok(()) => {
-                    // Only push undo if there was a resolution to clear
-                    if prev.is_some() {
-                        self.undo_stack.push(hunk_id, prev, "Clear resolution");
-                    }
-                    self.set_status_message("Cleared resolution");
-                }
-                Err(_) => {
-                    self.set_status_message("Failed to clear resolution");
-                }
-            }
-        }
-    }
-
-    /// Applies a resolution to the current hunk with undo support.
-    ///
-    /// This is a helper that handles the common pattern of:
-    /// 1. Getting the current hunk and its previous resolution
-    /// 2. Pushing an undo entry
-    /// 3. Applying the new resolution
-    /// 4. Setting a status message
-    fn apply_resolution<F>(&mut self, action: &str, make_resolution: F)
-    where
-        F: FnOnce(&ConflictHunk) -> Resolution,
-    {
-        // Extract all data upfront to end the immutable borrow
-        let Some((hunk_id, resolution, prev)) = self.session.as_ref().and_then(|session| {
-            session.hunks().get(self.current_hunk_index).map(|hunk| {
-                let prev = session.resolutions().get(&hunk.id).cloned();
-                (hunk.id, make_resolution(hunk), prev)
-            })
-        }) else {
-            return;
-        };
-
-        // Apply resolution and only push undo / set status on success
-        if let Some(session) = self.session.as_mut() {
-            match session.set_resolution(hunk_id, resolution) {
-                Ok(()) => {
-                    self.undo_stack.push(hunk_id, prev, action);
-                    self.set_status_message(action);
-                }
-                Err(_) => {
-                    self.set_status_message("Failed to apply resolution");
-                }
-            }
-        }
+        resolution::clear_current_resolution(self);
     }
 
     /// Undoes the last resolution action.
     pub fn undo(&mut self) {
-        let Some(entry) = self.undo_stack.pop() else {
-            self.set_status_message("Nothing to undo");
-            return;
-        };
-
-        if let Some(session) = &mut self.session {
-            let result = if let Some(resolution) = entry.previous_resolution {
-                // Restore previous resolution
-                session.set_resolution(entry.hunk_id, resolution)
-            } else {
-                // Was unresolved before
-                session.clear_resolution(entry.hunk_id)
-            };
-
-            match result {
-                Ok(()) => self.set_status_message(&format!("Undid: {}", entry.action)),
-                Err(_) => self.set_status_message("Failed to undo"),
-            }
-        }
+        resolution::undo(self);
     }
 
     /// Scrolls up by the specified number of lines.
     pub fn scroll_up(&mut self, lines: u16) {
-        match self.focused_pane {
-            FocusedPane::Left | FocusedPane::Right => {
-                self.left_right_scroll = self.left_right_scroll.saturating_sub(lines);
-            }
-            FocusedPane::Result => {
-                self.result_scroll = self.result_scroll.saturating_sub(lines);
-            }
-        }
+        navigation::scroll_up(self, lines);
     }
 
     /// Scrolls down by the specified number of lines.
     pub fn scroll_down(&mut self, lines: u16) {
-        match self.focused_pane {
-            FocusedPane::Left | FocusedPane::Right => {
-                self.left_right_scroll = self.left_right_scroll.saturating_add(lines);
-            }
-            FocusedPane::Result => {
-                self.result_scroll = self.result_scroll.saturating_add(lines);
-            }
-        }
+        navigation::scroll_down(self, lines);
     }
 
     /// Returns the scroll offset for left/right panes.
@@ -560,14 +396,12 @@ impl App {
 
     /// Shows the help dialog.
     pub fn show_help(&mut self) {
-        self.active_dialog = Some(Dialog::Help);
-        self.input_mode = InputMode::Dialog;
+        dialog::show_help(self);
     }
 
     /// Closes any open dialog and returns to normal mode.
     pub fn close_dialog(&mut self) {
-        self.active_dialog = None;
-        self.input_mode = InputMode::Normal;
+        dialog::close_dialog(self);
     }
 
     /// Returns the currently active dialog, if any.
@@ -578,49 +412,22 @@ impl App {
 
     /// Shows the `AcceptBoth` options dialog.
     pub fn show_accept_both_dialog(&mut self) {
-        self.active_dialog = Some(Dialog::AcceptBothOptions(
-            input::AcceptBothOptionsState::default(),
-        ));
-        self.input_mode = InputMode::Dialog;
+        dialog::show_accept_both_dialog(self);
     }
 
     /// Toggles the order in the `AcceptBoth` options dialog.
     pub fn toggle_accept_both_order(&mut self) {
-        if let Some(Dialog::AcceptBothOptions(ref mut state)) = self.active_dialog {
-            state.order = match state.order {
-                BothOrder::LeftThenRight => BothOrder::RightThenLeft,
-                BothOrder::RightThenLeft => BothOrder::LeftThenRight,
-            };
-        }
+        dialog::toggle_accept_both_order(self);
     }
 
     /// Toggles the deduplicate option in the `AcceptBoth` options dialog.
     pub fn toggle_accept_both_dedupe(&mut self) {
-        if let Some(Dialog::AcceptBothOptions(ref mut state)) = self.active_dialog {
-            state.deduplicate = !state.deduplicate;
-        }
+        dialog::toggle_accept_both_dedupe(self);
     }
 
     /// Confirms the `AcceptBoth` options and applies the resolution.
     pub fn confirm_accept_both(&mut self) {
-        // Extract options from dialog
-        let options = if let Some(Dialog::AcceptBothOptions(ref state)) = self.active_dialog {
-            AcceptBothOptions {
-                order: state.order,
-                deduplicate: state.deduplicate,
-                trim_whitespace: false,
-            }
-        } else {
-            return;
-        };
-
-        // Close dialog first
-        self.close_dialog();
-
-        // Apply resolution with extracted options
-        self.apply_resolution("Accept both", |hunk| {
-            Resolution::accept_both(hunk, &options)
-        });
+        dialog::confirm_accept_both(self);
     }
 
     // --- Phase 7: Editor Integration ---
@@ -628,47 +435,17 @@ impl App {
     /// Prepares content for external editor and sets pending state.
     /// Returns true if editor should be launched.
     pub fn prepare_editor(&mut self) -> bool {
-        if let Some(content) = self.get_current_hunk_content() {
-            self.editor_pending = Some(content);
-            true
-        } else {
-            self.set_status_message("No hunk to edit");
-            false
-        }
+        editor::prepare_editor(self)
     }
 
     /// Takes the pending editor content, clearing the pending state.
     pub fn take_editor_pending(&mut self) -> Option<String> {
-        self.editor_pending.take()
+        editor::take_editor_pending(self)
     }
 
     /// Applies content returned from the external editor as a manual resolution.
     pub fn apply_editor_result(&mut self, content: &str) {
-        let owned = content.to_string();
-        self.apply_resolution("Manual edit", |_hunk| Resolution::manual(owned.clone()));
-    }
-
-    /// Gets the content of the current hunk for editing.
-    fn get_current_hunk_content(&self) -> Option<String> {
-        self.session.as_ref().and_then(|session| {
-            session.hunks().get(self.current_hunk_index).map(|hunk| {
-                // If already resolved, use that; otherwise combine left/right
-                if let Some(resolution) = session.resolutions().get(&hunk.id) {
-                    resolution.content.clone()
-                } else {
-                    format!(
-                        "<<<<<<< OURS\n{}\n=======\n{}\n>>>>>>> THEIRS",
-                        hunk.left.text, hunk.right.text
-                    )
-                }
-            })
-        })
-    }
-
-    /// Resets scroll positions when changing hunks.
-    fn reset_scroll(&mut self) {
-        self.left_right_scroll = 0;
-        self.result_scroll = 0;
+        editor::apply_editor_result(self, content);
     }
 }
 
@@ -693,6 +470,7 @@ impl FocusedPane {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use weavr_core::BothOrder;
 
     #[test]
     fn app_creation() {
@@ -836,29 +614,6 @@ mod tests {
 
         app.focus_result();
         assert_eq!(app.focused_pane(), FocusedPane::Result);
-    }
-
-    #[test]
-    fn pending_key_sequence() {
-        use crossterm::event::KeyCode;
-
-        let mut app = App::new();
-
-        // Initially no pending key
-        assert!(!app.check_pending_key(KeyCode::Char('g')));
-
-        // Set a pending key
-        app.set_pending_key(KeyCode::Char('g'));
-
-        // Check matching key returns true
-        assert!(app.check_pending_key(KeyCode::Char('g')));
-
-        // Check non-matching key returns false
-        assert!(!app.check_pending_key(KeyCode::Char('x')));
-
-        // Clear pending key
-        app.clear_pending_key();
-        assert!(!app.check_pending_key(KeyCode::Char('g')));
     }
 
     #[test]

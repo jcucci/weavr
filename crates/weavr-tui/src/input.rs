@@ -1,7 +1,11 @@
 //! Input handling and command parsing.
 //!
-//! This module provides types and utilities for managing input modes
-//! and parsing vim-style commands.
+//! This module provides types and utilities for managing input modes,
+//! parsing vim-style commands, and tracking multi-key sequences.
+
+use std::time::{Duration, Instant};
+
+use crossterm::event::KeyCode;
 
 /// The current input mode of the application.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -90,6 +94,44 @@ impl Command {
     }
 }
 
+/// Tracks pending keys for multi-key sequence detection (e.g., 'gg').
+#[derive(Debug, Clone, Default)]
+pub struct KeySequence {
+    pending: Option<(KeyCode, Instant)>,
+}
+
+impl KeySequence {
+    /// Creates a new empty key sequence tracker.
+    #[must_use]
+    pub fn new() -> Self {
+        Self { pending: None }
+    }
+
+    /// Sets a pending key for sequence detection.
+    pub fn set(&mut self, key: KeyCode) {
+        self.pending = Some((key, Instant::now()));
+    }
+
+    /// Checks if a pending key matches and is within the timeout.
+    /// Returns true if there's a matching pending key that hasn't expired.
+    /// Clears the pending key if it has expired.
+    pub fn check(&mut self, expected: KeyCode, timeout: Duration) -> bool {
+        if let Some((key, timestamp)) = self.pending {
+            if timestamp.elapsed() > timeout {
+                self.pending = None;
+                return false;
+            }
+            return key == expected;
+        }
+        false
+    }
+
+    /// Clears any pending key sequence.
+    pub fn clear(&mut self) {
+        self.pending = None;
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -125,5 +167,47 @@ mod tests {
     #[test]
     fn input_mode_default_is_normal() {
         assert_eq!(InputMode::default(), InputMode::Normal);
+    }
+
+    #[test]
+    fn key_sequence_new_is_empty() {
+        let seq = KeySequence::new();
+        assert!(seq.pending.is_none());
+    }
+
+    #[test]
+    fn key_sequence_set_and_check() {
+        let mut seq = KeySequence::new();
+        let timeout = Duration::from_millis(500);
+
+        // Initially no pending key
+        assert!(!seq.check(KeyCode::Char('g'), timeout));
+
+        // Set a pending key
+        seq.set(KeyCode::Char('g'));
+
+        // Check matching key returns true
+        assert!(seq.check(KeyCode::Char('g'), timeout));
+
+        // Check non-matching key returns false
+        assert!(!seq.check(KeyCode::Char('x'), timeout));
+    }
+
+    #[test]
+    fn key_sequence_clear() {
+        let mut seq = KeySequence::new();
+        let timeout = Duration::from_millis(500);
+
+        seq.set(KeyCode::Char('g'));
+        assert!(seq.check(KeyCode::Char('g'), timeout));
+
+        seq.clear();
+        assert!(!seq.check(KeyCode::Char('g'), timeout));
+    }
+
+    #[test]
+    fn key_sequence_default() {
+        let seq = KeySequence::default();
+        assert!(seq.pending.is_none());
     }
 }
