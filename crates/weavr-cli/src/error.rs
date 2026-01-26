@@ -29,11 +29,8 @@ pub enum CliError {
     #[error("File not found: {0}")]
     FileNotFound(PathBuf),
 
-    #[error("Not in a git repository")]
-    NotGitRepo,
-
-    #[error("Git command failed: {0}")]
-    GitCommandFailed(std::io::Error),
+    #[error("Git error: {0}")]
+    Git(#[from] weavr_git::GitError),
 
     #[error("Resolution error: {0}")]
     Resolution(#[from] weavr_core::ResolutionError),

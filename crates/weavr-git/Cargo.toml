@@ -1,0 +1,20 @@
+[package]
+name = "weavr-git"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Git integration for weavr - repository discovery and conflict detection"
+keywords = ["git", "merge", "conflict"]
+categories = ["development-tools"]
+
+[lints]
+workspace = true
+
+[dependencies]
+thiserror.workspace = true
+
+[dev-dependencies]
+tempfile = "3.10"

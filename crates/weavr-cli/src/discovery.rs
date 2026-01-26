@@ -1,27 +1,15 @@
 //! Git conflict file discovery.
 
 use std::path::{Path, PathBuf};
-use std::process::Command;
+
+use weavr_git::GitRepo;
 
 use crate::error::CliError;
 
 /// Discovers files with Git merge conflicts in the current repository.
 pub fn discover_conflicted_files() -> Result<Vec<PathBuf>, CliError> {
-    let output = Command::new("git")
-        .args(["diff", "--name-only", "--diff-filter=U"])
-        .output()
-        .map_err(CliError::GitCommandFailed)?;
-
-    if !output.status.success() {
-        return Err(CliError::NotGitRepo);
-    }
-
-    let files: Vec<PathBuf> = String::from_utf8_lossy(&output.stdout)
-        .lines()
-        .filter(|line| !line.is_empty())
-        .map(PathBuf::from)
-        .collect();
-
+    let repo = GitRepo::discover()?;
+    let files = repo.conflicted_files()?;
     Ok(files)
 }
 

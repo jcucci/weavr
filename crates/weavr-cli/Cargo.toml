@@ -19,5 +19,6 @@ workspace = true
 
 [dependencies]
 weavr-core.workspace = true
+weavr-git.workspace = true
 clap.workspace = true
 thiserror.workspace = true

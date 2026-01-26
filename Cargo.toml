@@ -4,6 +4,7 @@ members = [
     "crates/weavr-core",
     "crates/weavr-cli",
     "crates/weavr-tui",
+    "crates/weavr-git",
 ]
 
 [workspace.package]
@@ -27,6 +28,7 @@ pedantic = "warn"
 [workspace.dependencies]
 # Internal crates
 weavr-core = { path = "crates/weavr-core" }
+weavr-git = { path = "crates/weavr-git" }
 
 # CLI dependencies
 clap = { version = "4.4", features = ["derive"] }

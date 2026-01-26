@@ -777,6 +777,7 @@ dependencies = [
  "clap",
  "thiserror",
  "weavr-core",
+ "weavr-git",
 ]
 
 [[package]]
@@ -784,6 +785,14 @@ name = "weavr-core"
 version = "0.1.0"
 dependencies = [
  "serde",
+ "thiserror",
+]
+
+[[package]]
+name = "weavr-git"
+version = "0.1.0"
+dependencies = [
+ "tempfile",
  "thiserror",
 ]
 
