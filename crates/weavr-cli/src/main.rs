@@ -7,61 +7,59 @@
 
 #![forbid(unsafe_code)]
 
-use std::path::PathBuf;
+mod cli;
+mod discovery;
+mod error;
+mod headless;
 
 use clap::Parser;
 
-/// A terminal-first merge conflict resolver
-#[derive(Parser, Debug)]
-#[command(name = "weavr")]
-#[command(author, version, about, long_about = None)]
-struct Cli {
-    /// Files to resolve (defaults to all conflicted files)
-    #[arg(value_name = "FILE")]
-    files: Vec<PathBuf>,
+use cli::{Cli, Strategy};
+use error::{exit_codes, CliError};
 
-    /// Run in headless mode (no TUI, apply rules automatically)
-    #[arg(long)]
-    headless: bool,
+fn run(cli: &Cli) -> Result<i32, CliError> {
+    // Mode: List conflicted files
+    if cli.list {
+        discovery::list_conflicted_files()?;
+        return Ok(exit_codes::SUCCESS);
+    }
 
-    /// Configuration file path
-    #[arg(long, value_name = "PATH")]
-    config: Option<PathBuf>,
+    // Resolve which files to process
+    let files = discovery::resolve_files(cli.files.clone())?;
+
+    // Mode: Headless
+    if cli.headless {
+        let strategy = cli.strategy.unwrap_or(Strategy::Left);
+
+        for path in &files {
+            let result = headless::process_file(path, strategy, cli.dedupe)?;
+            headless::write_or_print(&result, cli.dry_run)?;
+        }
+
+        return Ok(exit_codes::SUCCESS);
+    }
+
+    // Mode: Interactive (TUI)
+    println!("weavr: interactive mode");
+    println!("Files to resolve:");
+    for file in &files {
+        println!("  {}", file.display());
+    }
+    println!("\nTUI integration pending (see weavr-tui crate)");
+
+    Ok(exit_codes::SUCCESS)
 }
 
 fn main() {
     let cli = Cli::parse();
 
-    if cli.headless {
-        println!("weavr: headless mode (not yet implemented)");
-    } else {
-        println!("weavr: interactive mode (not yet implemented)");
-    }
-
-    if !cli.files.is_empty() {
-        println!("Files: {:?}", cli.files);
-    }
-
-    // Demonstrate that weavr-core is linked correctly
-    let input = weavr_core::MergeInput {
-        left: weavr_core::FileVersion {
-            path: PathBuf::from("example.rs"),
-            content: String::from("left"),
-        },
-        right: weavr_core::FileVersion {
-            path: PathBuf::from("example.rs"),
-            content: String::from("right"),
-        },
-        base: None,
+    let exit_code = match run(&cli) {
+        Ok(code) => code,
+        Err(e) => {
+            eprintln!("weavr: {e}");
+            e.exit_code()
+        }
     };
 
-    match weavr_core::MergeSession::new(input) {
-        Ok(session) => {
-            println!("Session state: {:?}", session.state());
-        }
-        Err(e) => {
-            eprintln!("Error: {e}");
-            std::process::exit(1);
-        }
-    }
+    std::process::exit(exit_code);
 }
