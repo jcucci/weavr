@@ -7,7 +7,7 @@ use clap::{Parser, ValueEnum};
 /// Resolution strategy for headless mode.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
 pub enum Strategy {
-    /// Accept left (ours/HEAD) content
+    /// Accept left (`ours/HEAD`) content
     Left,
     /// Accept right (`theirs/MERGE_HEAD`) content
     Right,
@@ -30,19 +30,19 @@ pub struct Cli {
     pub headless: bool,
 
     /// Default resolution strategy for headless mode
-    #[arg(long, value_enum)]
+    #[arg(long, value_enum, requires = "headless")]
     pub strategy: Option<Strategy>,
 
     /// Enable deduplication for accept-both strategy
-    #[arg(long)]
+    #[arg(long, requires = "headless")]
     pub dedupe: bool,
 
     /// Print result without writing to file
-    #[arg(long)]
+    #[arg(long, requires = "headless")]
     pub dry_run: bool,
 
     /// Exit with code 1 if any hunk cannot be auto-resolved
-    #[arg(long)]
+    #[arg(long, requires = "headless")]
     pub fail_on_ambiguous: bool,
 
     /// List conflicted files and exit
@@ -106,13 +106,27 @@ mod tests {
 
     #[test]
     fn cli_parse_strategy_left() {
-        let cli = Cli::parse_from(["weavr", "--strategy=left"]);
+        let cli = Cli::parse_from(["weavr", "--headless", "--strategy=left"]);
+        assert!(cli.headless);
         assert_eq!(cli.strategy, Some(Strategy::Left));
     }
 
     #[test]
     fn cli_parse_strategy_right() {
-        let cli = Cli::parse_from(["weavr", "--strategy=right"]);
+        let cli = Cli::parse_from(["weavr", "--headless", "--strategy=right"]);
+        assert!(cli.headless);
         assert_eq!(cli.strategy, Some(Strategy::Right));
+    }
+
+    #[test]
+    fn cli_strategy_requires_headless() {
+        let result = Cli::try_parse_from(["weavr", "--strategy=left"]);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn cli_dedupe_requires_headless() {
+        let result = Cli::try_parse_from(["weavr", "--dedupe"]);
+        assert!(result.is_err());
     }
 }

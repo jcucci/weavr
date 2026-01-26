@@ -10,7 +10,7 @@ pub fn discover_conflicted_files() -> Result<Vec<PathBuf>, CliError> {
     let output = Command::new("git")
         .args(["diff", "--name-only", "--diff-filter=U"])
         .output()
-        .map_err(|_| CliError::NotGitRepo)?;
+        .map_err(CliError::GitCommandFailed)?;
 
     if !output.status.success() {
         return Err(CliError::NotGitRepo);
@@ -28,7 +28,7 @@ pub fn discover_conflicted_files() -> Result<Vec<PathBuf>, CliError> {
 /// Checks if a file contains conflict markers.
 pub fn has_conflict_markers(path: &Path) -> Result<bool, CliError> {
     let content = std::fs::read_to_string(path)?;
-    Ok(content.contains("<<<<<<<") && content.contains(">>>>>>>"))
+    Ok(content.contains("<<<<<<<") && content.contains("=======") && content.contains(">>>>>>>"))
 }
 
 /// Filters provided paths to only those with conflicts, or discovers all.

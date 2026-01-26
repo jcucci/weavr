@@ -32,6 +32,9 @@ pub enum CliError {
     #[error("Not in a git repository")]
     NotGitRepo,
 
+    #[error("Git command failed: {0}")]
+    GitCommandFailed(std::io::Error),
+
     #[error("Resolution error: {0}")]
     Resolution(#[from] weavr_core::ResolutionError),
 

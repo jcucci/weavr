@@ -26,6 +26,15 @@ pub fn process_file(
 
     let hunks: Vec<_> = session.hunks().to_vec();
 
+    // Handle files without conflicts (already clean)
+    if hunks.is_empty() {
+        return Ok(HeadlessResult {
+            path: path.to_path_buf(),
+            hunks_resolved: 0,
+            output: content,
+        });
+    }
+
     for hunk in &hunks {
         let resolution = match strategy {
             Strategy::Left => weavr_core::Resolution::accept_left(hunk),
@@ -43,7 +52,7 @@ pub fn process_file(
         session.set_resolution(hunk.id, resolution)?;
     }
 
-    let _output = session.apply()?;
+    session.apply()?;
     session.validate()?;
     let result = session.complete()?;
 
