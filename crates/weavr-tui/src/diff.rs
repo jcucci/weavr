@@ -70,16 +70,24 @@ pub fn compute_line_diffs(left: &str, right: &str) -> LineDiffs {
         match change.tag() {
             ChangeTag::Delete => {
                 // Line exists only in left (old)
-                result.left_lines.push(DiffLine::new(text, ChangeTag::Delete));
+                result
+                    .left_lines
+                    .push(DiffLine::new(text, ChangeTag::Delete));
             }
             ChangeTag::Insert => {
                 // Line exists only in right (new)
-                result.right_lines.push(DiffLine::new(text, ChangeTag::Insert));
+                result
+                    .right_lines
+                    .push(DiffLine::new(text, ChangeTag::Insert));
             }
             ChangeTag::Equal => {
                 // Line exists in both
-                result.left_lines.push(DiffLine::new(text.clone(), ChangeTag::Equal));
-                result.right_lines.push(DiffLine::new(text, ChangeTag::Equal));
+                result
+                    .left_lines
+                    .push(DiffLine::new(text.clone(), ChangeTag::Equal));
+                result
+                    .right_lines
+                    .push(DiffLine::new(text, ChangeTag::Equal));
             }
         }
     }
