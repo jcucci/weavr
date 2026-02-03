@@ -22,6 +22,7 @@ use weavr_core::{ConflictHunk, MergeSession};
 const KEY_SEQUENCE_TIMEOUT: Duration = Duration::from_millis(500);
 
 pub mod dialog;
+pub mod diff;
 pub mod editor;
 pub mod event;
 pub mod input;
@@ -95,6 +96,8 @@ pub struct App {
     pub(crate) active_dialog: Option<Dialog>,
     /// Content pending for external editor (Phase 7).
     pub(crate) editor_pending: Option<String>,
+    /// Configuration for diff highlighting.
+    pub(crate) diff_config: diff::DiffConfig,
 }
 
 impl App {
@@ -117,6 +120,7 @@ impl App {
             command_buffer: String::new(),
             active_dialog: None,
             editor_pending: None,
+            diff_config: diff::DiffConfig::default(),
         }
     }
 
@@ -139,6 +143,7 @@ impl App {
             command_buffer: String::new(),
             active_dialog: None,
             editor_pending: None,
+            diff_config: diff::DiffConfig::default(),
         }
     }
 
@@ -292,6 +297,23 @@ impl App {
     #[must_use]
     pub fn layout_config(&self) -> &LayoutConfig {
         &self.layout_config
+    }
+
+    /// Returns a reference to the diff configuration.
+    #[must_use]
+    pub fn diff_config(&self) -> &diff::DiffConfig {
+        &self.diff_config
+    }
+
+    /// Toggles word-level diff highlighting on/off.
+    pub fn toggle_word_diff(&mut self) {
+        self.diff_config.word_diff = !self.diff_config.word_diff;
+        let status = if self.diff_config.word_diff {
+            "Word diff enabled"
+        } else {
+            "Word diff disabled"
+        };
+        self.set_status_message(status);
     }
 
     /// Sets a status message to display in the status bar.

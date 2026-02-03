@@ -12,8 +12,10 @@ use ratatui::{
     widgets::{Block, BorderType, Borders, Paragraph},
     Frame,
 };
+use similar::ChangeTag;
 use weavr_core::{HunkState, Segment};
 
+use crate::diff::{compute_line_diffs, DiffConfig};
 use crate::input::InputMode;
 use crate::{App, FocusedPane};
 
@@ -72,6 +74,7 @@ fn render_side_pane(frame: &mut Frame, area: Rect, app: &App, side: PaneSide) {
             side,
             app.current_hunk_index(),
             theme,
+            *app.diff_config(),
         ),
         None => vec![Line::from(Span::styled(
             "No file loaded",
@@ -232,6 +235,7 @@ fn build_side_document<'a>(
     side: PaneSide,
     current_hunk_idx: usize,
     theme: &'a crate::theme::Theme,
+    _diff_config: DiffConfig,
 ) -> Vec<Line<'a>> {
     let mut lines = Vec::new();
     let mut line_number = 1;
@@ -253,12 +257,17 @@ fn build_side_document<'a>(
                 let hunk = &hunks[*hunk_idx];
                 let is_current = *hunk_idx == current_hunk_idx;
 
-                let conflict_text = match side {
-                    PaneSide::Left => &hunk.left.text,
-                    PaneSide::Right => &hunk.right.text,
+                // Compute diff between left and right sides
+                let diffs = compute_line_diffs(&hunk.left.text, &hunk.right.text);
+
+                // Select the appropriate diff lines for this side
+                let diff_lines = match side {
+                    PaneSide::Left => &diffs.left_lines,
+                    PaneSide::Right => &diffs.right_lines,
                 };
 
-                let style = match side {
+                // Base style for the side (used for conflict markers)
+                let side_style = match side {
                     PaneSide::Left => theme.conflict.left,
                     PaneSide::Right => theme.conflict.right,
                 };
@@ -267,19 +276,26 @@ fn build_side_document<'a>(
                 if is_current {
                     lines.push(Line::from(Span::styled(
                         format!("──── Conflict {} ────", hunk_idx + 1),
-                        style.add_modifier(Modifier::BOLD),
+                        side_style.add_modifier(Modifier::BOLD),
                     )));
                 }
 
-                for line_text in conflict_text.lines() {
-                    lines.push(build_line(line_number, line_text, style, is_current));
+                for diff_line in diff_lines {
+                    // Apply style based on diff tag
+                    let style = match diff_line.tag {
+                        ChangeTag::Equal => theme.diff.context,
+                        ChangeTag::Delete => theme.diff.removed,
+                        ChangeTag::Insert => theme.diff.added,
+                    };
+
+                    lines.push(build_line(line_number, &diff_line.text, style, is_current));
                     line_number += 1;
                 }
 
                 if is_current {
                     lines.push(Line::from(Span::styled(
                         "────────────────────",
-                        style.add_modifier(Modifier::BOLD),
+                        side_style.add_modifier(Modifier::BOLD),
                     )));
                 }
             }
