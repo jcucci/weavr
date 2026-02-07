@@ -19,7 +19,7 @@ pub enum Segment {
 }
 
 /// Result of parsing a conflicted file.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ParsedConflict {
     /// All conflict hunks in file order.
     pub hunks: Vec<ConflictHunk>,

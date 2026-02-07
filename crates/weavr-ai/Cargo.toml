@@ -1,0 +1,38 @@
+[package]
+name = "weavr-ai"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "AI provider integrations for weavr merge conflict resolver"
+keywords = ["ai", "merge", "conflict", "claude", "openai"]
+categories = ["development-tools"]
+
+[lints]
+workspace = true
+
+[features]
+default = []
+# Individual provider features
+ai-claude = ["dep:reqwest"]
+ai-openai = ["dep:reqwest"]
+ai-local = ["dep:reqwest"]
+# Convenience feature for all providers
+all-providers = ["ai-claude", "ai-openai", "ai-local"]
+
+[dependencies]
+weavr-core.workspace = true
+thiserror.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+async-trait.workspace = true
+humantime-serde.workspace = true
+
+# Optional: only included when provider features are enabled
+reqwest = { workspace = true, optional = true }
+
+[dev-dependencies]
+tokio.workspace = true
+toml.workspace = true

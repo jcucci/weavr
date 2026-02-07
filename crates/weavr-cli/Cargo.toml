@@ -17,9 +17,22 @@ path = "src/main.rs"
 [lints]
 workspace = true
 
+[features]
+default = []
+ai = ["dep:weavr-ai", "dep:tokio", "dep:toml"]
+ai-claude = ["ai", "weavr-ai/ai-claude"]
+ai-openai = ["ai", "weavr-ai/ai-openai"]
+ai-local = ["ai", "weavr-ai/ai-local"]
+ai-all = ["ai-claude", "ai-openai", "ai-local"]
+
 [dependencies]
 weavr-core.workspace = true
 weavr-git.workspace = true
 weavr-tui.workspace = true
 clap.workspace = true
 thiserror.workspace = true
+
+# Optional AI support
+weavr-ai = { workspace = true, optional = true }
+tokio = { workspace = true, optional = true }
+toml = { workspace = true, optional = true }
