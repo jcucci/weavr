@@ -34,13 +34,15 @@ impl LocalProvider {
     ///
     /// Returns an error if the endpoint or model is not configured.
     pub fn new(config: &LocalConfig) -> Result<Self, AiError> {
-        let endpoint = config.endpoint.clone().ok_or_else(|| {
-            AiError::ApiKeyError("local LLM endpoint not configured".into())
-        })?;
+        let endpoint = config
+            .endpoint
+            .clone()
+            .ok_or_else(|| AiError::ApiKeyError("local LLM endpoint not configured".into()))?;
 
-        let model = config.model.clone().ok_or_else(|| {
-            AiError::ApiKeyError("local LLM model not configured".into())
-        })?;
+        let model = config
+            .model
+            .clone()
+            .ok_or_else(|| AiError::ApiKeyError("local LLM model not configured".into()))?;
 
         Ok(Self {
             endpoint,

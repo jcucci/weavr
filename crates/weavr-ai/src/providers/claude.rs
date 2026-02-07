@@ -2,7 +2,9 @@
 
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
-use weavr_core::{ConflictHunk, Resolution, ResolutionMetadata, ResolutionSource, ResolutionStrategyKind};
+use weavr_core::{
+    ConflictHunk, Resolution, ResolutionMetadata, ResolutionSource, ResolutionStrategyKind,
+};
 
 use crate::error::AiError;
 use crate::request::{AiRequest, AiResponse};
@@ -170,10 +172,8 @@ Keep the explanation brief and technical.",
 
     /// Parses the Claude API response into an `AiResponse`.
     fn parse_response(response_body: &str) -> Result<AiResponse, AiError> {
-        let claude_response: ClaudeApiResponse =
-            serde_json::from_str(response_body).map_err(|e| {
-                AiError::ParseError(format!("failed to parse Claude response: {e}"))
-            })?;
+        let claude_response: ClaudeApiResponse = serde_json::from_str(response_body)
+            .map_err(|e| AiError::ParseError(format!("failed to parse Claude response: {e}")))?;
 
         let text = claude_response
             .content
@@ -320,7 +320,8 @@ mod tests {
 
     #[test]
     fn parse_ai_response() {
-        let json = r#"{"suggestion": "merged code", "confidence": 0.9, "explanation": "Combined both"}"#;
+        let json =
+            r#"{"suggestion": "merged code", "confidence": 0.9, "explanation": "Combined both"}"#;
         let response: AiResponse = serde_json::from_str(json).unwrap();
         assert_eq!(response.suggestion, "merged code");
         assert!((response.confidence - 0.9).abs() < f32::EPSILON);
