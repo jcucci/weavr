@@ -28,6 +28,8 @@ pub enum Dialog {
     Help,
     /// `AcceptBoth` options configuration dialog.
     AcceptBothOptions(AcceptBothOptionsState),
+    /// AI explanation overlay.
+    AiExplanation(String),
 }
 
 /// State for the `AcceptBoth` options dialog.

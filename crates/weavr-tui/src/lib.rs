@@ -21,6 +21,7 @@ use weavr_core::{ConflictHunk, MergeSession};
 /// Timeout for multi-key sequences like 'gg'.
 const KEY_SEQUENCE_TIMEOUT: Duration = Duration::from_millis(500);
 
+pub mod ai;
 pub mod dialog;
 pub mod diff;
 pub mod editor;
@@ -98,6 +99,10 @@ pub struct App {
     pub(crate) editor_pending: Option<String>,
     /// Configuration for diff highlighting.
     pub(crate) diff_config: diff::DiffConfig,
+    /// AI integration handle (optional, set by CLI when AI is configured).
+    pub(crate) ai_handle: Option<ai::AiHandle>,
+    /// AI suggestion state for UI rendering.
+    pub(crate) ai_state: ai::AiState,
 }
 
 impl App {
@@ -121,6 +126,8 @@ impl App {
             active_dialog: None,
             editor_pending: None,
             diff_config: diff::DiffConfig::default(),
+            ai_handle: None,
+            ai_state: ai::AiState::default(),
         }
     }
 
@@ -144,6 +151,8 @@ impl App {
             active_dialog: None,
             editor_pending: None,
             diff_config: diff::DiffConfig::default(),
+            ai_handle: None,
+            ai_state: ai::AiState::default(),
         }
     }
 
@@ -477,6 +486,25 @@ impl App {
     pub fn apply_editor_result(&mut self, content: &str) {
         editor::apply_editor_result(self, content);
     }
+
+    // --- AI Integration ---
+
+    /// Sets the AI handle for background suggestion requests.
+    pub fn set_ai_handle(&mut self, handle: ai::AiHandle) {
+        self.ai_handle = Some(handle);
+    }
+
+    /// Returns whether AI features are available.
+    #[must_use]
+    pub fn ai_available(&self) -> bool {
+        self.ai_handle.is_some()
+    }
+
+    /// Returns a reference to the AI state.
+    #[must_use]
+    pub fn ai_state(&self) -> &ai::AiState {
+        &self.ai_state
+    }
 }
 
 impl Default for App {
@@ -535,11 +563,19 @@ fn run_event_loop(terminal: &mut ratatui::DefaultTerminal, app: &mut App) -> std
             continue;
         }
 
+        // Poll AI background events (non-blocking)
+        ai::poll_ai_events(app);
+
         terminal.draw(|frame| ui::draw(frame, app))?;
 
         if let Some(evt) = event::poll_event(Duration::from_millis(100))? {
             event::handle_event(app, &evt);
         }
+    }
+
+    // Shutdown AI worker on quit
+    if let Some(ref ai_handle) = app.ai_handle {
+        let _ = ai_handle.send(ai::AiCommand::Shutdown);
     }
 
     Ok(())

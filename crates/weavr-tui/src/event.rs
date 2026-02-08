@@ -6,6 +6,7 @@ use std::time::Duration;
 
 use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 
+use crate::ai;
 use crate::input::{Dialog, InputMode};
 use crate::{App, KEY_SEQUENCE_TIMEOUT};
 
@@ -83,8 +84,21 @@ fn handle_normal_mode(app: &mut App, key: KeyEvent) {
         }
         KeyCode::BackTab => app.cycle_focus_back(),
 
-        // Direct result pane focus
-        KeyCode::Enter => app.focus_result(),
+        // Accept AI suggestion or focus result pane
+        KeyCode::Enter => {
+            if app.ai_state().suggestion.is_some() {
+                ai::accept_suggestion(app);
+            } else {
+                app.focus_result();
+            }
+        }
+
+        // Dismiss AI suggestion
+        KeyCode::Esc => {
+            if app.ai_state().suggestion.is_some() {
+                ai::dismiss_suggestion(app);
+            }
+        }
 
         // Hunk navigation
         KeyCode::Char('j') | KeyCode::Down => app.next_hunk(),
@@ -117,8 +131,18 @@ fn handle_normal_mode(app: &mut App, key: KeyEvent) {
             app.prepare_editor();
         }
 
-        // Help
-        KeyCode::Char('?') => app.show_help(),
+        // AI suggestions
+        KeyCode::Char('s') => ai::request_suggestion(app),
+        KeyCode::Char('S') => ai::request_all_suggestions(app),
+
+        // Help / AI explanation (context-sensitive)
+        KeyCode::Char('?') => {
+            if app.ai_state().suggestion.is_some() || app.ai_state().is_loading() {
+                ai::request_explanation(app);
+            } else {
+                app.show_help();
+            }
+        }
 
         _ => {}
     }
@@ -159,6 +183,13 @@ fn handle_dialog_mode(app: &mut App, key: KeyEvent) {
                 KeyCode::Char('l' | 'L' | 'r' | 'R') => app.toggle_accept_both_order(),
                 KeyCode::Char(' ') => app.toggle_accept_both_dedupe(),
                 KeyCode::Enter => app.confirm_accept_both(),
+                _ => {}
+            }
+        }
+        Some(Dialog::AiExplanation(_)) => {
+            // AI explanation dialog
+            match key.code {
+                KeyCode::Esc | KeyCode::Char('q' | '?') => app.close_dialog(),
                 _ => {}
             }
         }

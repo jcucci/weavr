@@ -39,6 +39,12 @@ pub fn process_file(path: &Path) -> Result<TuiResult, CliError> {
     let mut app = App::new();
     app.set_session(session);
 
+    // Wire up AI if configured
+    #[cfg(feature = "ai")]
+    if let Some(handle) = spawn_ai_worker() {
+        app.set_ai_handle(handle);
+    }
+
     // Run TUI event loop
     weavr_tui::run(&mut app)?;
 
@@ -71,5 +77,198 @@ pub fn process_file(path: &Path) -> Result<TuiResult, CliError> {
             hunks_resolved: resolved_count,
             total_hunks,
         })
+    }
+}
+
+// ---------------------------------------------------------------------------
+// AI background worker (feature-gated)
+// ---------------------------------------------------------------------------
+
+/// Spawns the AI background worker and returns an `AiHandle`.
+///
+/// Returns `None` if the provider cannot be initialized (e.g., missing API key).
+#[cfg(feature = "ai")]
+fn spawn_ai_worker() -> Option<weavr_tui::ai::AiHandle> {
+    use std::sync::mpsc;
+    use weavr_tui::ai::{AiCommand, AiEvent, AiHandle};
+
+    let config = build_ai_config();
+    if !config.enabled {
+        return None;
+    }
+
+    let strategy = build_ai_strategy(&config)?;
+
+    let (cmd_tx, cmd_rx) = mpsc::channel::<AiCommand>();
+    let (evt_tx, evt_rx) = mpsc::channel::<AiEvent>();
+
+    std::thread::spawn(move || {
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .expect("failed to create tokio runtime for AI worker");
+
+        rt.block_on(async move {
+            ai_worker_loop(strategy, cmd_rx, evt_tx).await;
+        });
+    });
+
+    Some(AiHandle::new(cmd_tx, evt_rx))
+}
+
+/// Builds `AiConfig` from env vars with sensible defaults.
+#[cfg(feature = "ai")]
+fn build_ai_config() -> weavr_ai::AiConfig {
+    let mut config = weavr_ai::AiConfig::default();
+
+    // Auto-detect provider based on available API keys
+    #[cfg(feature = "ai-claude")]
+    if std::env::var("ANTHROPIC_API_KEY").is_ok() {
+        config.enabled = true;
+        config.provider = Some("claude".into());
+    }
+
+    #[cfg(feature = "ai-openai")]
+    if !config.enabled && std::env::var("OPENAI_API_KEY").is_ok() {
+        config.enabled = true;
+        config.provider = Some("openai".into());
+    }
+
+    config
+}
+
+/// Builds an `AiStrategy` from the given configuration.
+#[cfg(feature = "ai")]
+fn build_ai_strategy(config: &weavr_ai::AiConfig) -> Option<weavr_ai::AiStrategy> {
+    let provider_name = config.provider.as_deref().unwrap_or("claude");
+    let provider: Box<dyn weavr_ai::AiProvider> = match provider_name {
+        #[cfg(feature = "ai-claude")]
+        "claude" => {
+            match weavr_ai::providers::ClaudeProvider::with_timeout(&config.claude, config.timeout)
+            {
+                Ok(p) => Box::new(p),
+                Err(e) => {
+                    eprintln!("weavr: AI provider error: {e}");
+                    return None;
+                }
+            }
+        }
+        #[cfg(feature = "ai-openai")]
+        "openai" => match weavr_ai::providers::OpenAiProvider::new(&config.openai) {
+            Ok(p) => Box::new(p),
+            Err(e) => {
+                eprintln!("weavr: AI provider error: {e}");
+                return None;
+            }
+        },
+        other => {
+            eprintln!("weavr: unknown AI provider '{other}'");
+            return None;
+        }
+    };
+
+    Some(weavr_ai::AiStrategy::new(provider, config.clone()))
+}
+
+/// Main loop for the AI background worker.
+#[cfg(feature = "ai")]
+async fn ai_worker_loop(
+    strategy: weavr_ai::AiStrategy,
+    cmd_rx: std::sync::mpsc::Receiver<weavr_tui::ai::AiCommand>,
+    evt_tx: std::sync::mpsc::Sender<weavr_tui::ai::AiEvent>,
+) {
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::Arc;
+    use weavr_tui::ai::{AiCommand, AiEvent};
+
+    let cancelled = Arc::new(AtomicBool::new(false));
+
+    while let Ok(cmd) = cmd_rx.recv() {
+        match cmd {
+            AiCommand::Shutdown => break,
+
+            AiCommand::Cancel { .. } => {
+                cancelled.store(true, Ordering::Relaxed);
+            }
+
+            AiCommand::Suggest { hunk_id, hunk } => {
+                cancelled.store(false, Ordering::Relaxed);
+                match strategy.suggest(&hunk).await {
+                    Ok(Some(resolution)) => {
+                        if !cancelled.load(Ordering::Relaxed) {
+                            let confidence = resolution.metadata.confidence;
+                            let _ = evt_tx.send(AiEvent::Suggestion {
+                                hunk_id,
+                                resolution,
+                                confidence,
+                            });
+                        }
+                    }
+                    Ok(None) => {
+                        if !cancelled.load(Ordering::Relaxed) {
+                            let _ = evt_tx.send(AiEvent::NoSuggestion {
+                                hunk_id,
+                                reason: "Provider declined to suggest".into(),
+                            });
+                        }
+                    }
+                    Err(e) => {
+                        let _ = evt_tx.send(AiEvent::Error {
+                            hunk_id,
+                            message: e.to_string(),
+                        });
+                    }
+                }
+            }
+
+            AiCommand::SuggestAll { hunks } => {
+                cancelled.store(false, Ordering::Relaxed);
+                for (hunk_id, hunk) in hunks {
+                    if cancelled.load(Ordering::Relaxed) {
+                        break;
+                    }
+                    match strategy.suggest(&hunk).await {
+                        Ok(Some(resolution)) => {
+                            let confidence = resolution.metadata.confidence;
+                            let _ = evt_tx.send(AiEvent::Suggestion {
+                                hunk_id,
+                                resolution,
+                                confidence,
+                            });
+                        }
+                        Ok(None) => {
+                            let _ = evt_tx.send(AiEvent::NoSuggestion {
+                                hunk_id,
+                                reason: "Provider declined".into(),
+                            });
+                        }
+                        Err(e) => {
+                            let _ = evt_tx.send(AiEvent::Error {
+                                hunk_id,
+                                message: e.to_string(),
+                            });
+                        }
+                    }
+                }
+            }
+
+            AiCommand::Explain { hunk_id, hunk } => match strategy.explain(&hunk).await {
+                Ok(Some(text)) => {
+                    let _ = evt_tx.send(AiEvent::Explanation { hunk_id, text });
+                }
+                Ok(None) => {
+                    let _ = evt_tx.send(AiEvent::NoSuggestion {
+                        hunk_id,
+                        reason: "No explanation available".into(),
+                    });
+                }
+                Err(e) => {
+                    let _ = evt_tx.send(AiEvent::Error {
+                        hunk_id,
+                        message: e.to_string(),
+                    });
+                }
+            },
+        }
     }
 }
