@@ -35,6 +35,9 @@ pub fn draw(frame: &mut Frame, app: &App) {
             Dialog::AcceptBothOptions(state) => {
                 overlay::render_accept_both_dialog(frame, frame.area(), app.theme(), state);
             }
+            Dialog::AiExplanation(ref text) => {
+                overlay::render_ai_explanation_overlay(frame, frame.area(), app.theme(), text);
+            }
         }
     }
 }
