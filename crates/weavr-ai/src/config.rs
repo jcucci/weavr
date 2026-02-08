@@ -24,9 +24,9 @@ pub struct AiConfig {
     #[serde(default = "default_timeout", with = "humantime_serde")]
     pub timeout: Duration,
 
-    /// Minimum confidence threshold to show suggestions (0.0 to 1.0).
+    /// Minimum confidence threshold to show suggestions (0-100 percentage).
     #[serde(default = "default_min_confidence")]
-    pub min_confidence: f32,
+    pub min_confidence: u8,
 
     /// Whether to automatically suggest resolutions (still requires user acceptance).
     #[serde(default)]
@@ -54,7 +54,7 @@ impl Default for AiConfig {
             enabled: false,
             provider: None,
             timeout: default_timeout(),
-            min_confidence: default_min_confidence(),
+            min_confidence: 70,
             auto_suggest: false,
             #[cfg(feature = "ai-claude")]
             claude: ClaudeConfig::default(),
@@ -70,8 +70,8 @@ fn default_timeout() -> Duration {
     Duration::from_secs(30)
 }
 
-fn default_min_confidence() -> f32 {
-    0.7
+fn default_min_confidence() -> u8 {
+    70
 }
 
 #[cfg(test)]
@@ -84,6 +84,6 @@ mod tests {
         assert!(!config.enabled);
         assert!(config.provider.is_none());
         assert_eq!(config.timeout, Duration::from_secs(30));
-        assert!((config.min_confidence - 0.7).abs() < f32::EPSILON);
+        assert_eq!(config.min_confidence, 70);
     }
 }

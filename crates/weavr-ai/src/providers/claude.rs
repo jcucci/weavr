@@ -22,6 +22,14 @@ struct ContentBlock {
     text: Option<String>,
 }
 
+/// Raw AI response with f32 confidence (as returned by the model).
+#[derive(Deserialize)]
+struct RawAiResponse {
+    suggestion: String,
+    confidence: f32,
+    explanation: Option<String>,
+}
+
 /// Claude provider configuration.
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct ClaudeConfig {
@@ -75,6 +83,18 @@ impl ClaudeProvider {
     ///
     /// Returns an error if the API key environment variable is not set.
     pub fn new(config: &ClaudeConfig) -> Result<Self, AiError> {
+        Self::with_timeout(config, std::time::Duration::from_secs(30))
+    }
+
+    /// Creates a new Claude provider with a custom timeout.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the API key environment variable is not set.
+    pub fn with_timeout(
+        config: &ClaudeConfig,
+        timeout: std::time::Duration,
+    ) -> Result<Self, AiError> {
         let api_key = std::env::var(&config.api_key_env).map_err(|_| {
             AiError::ApiKeyError(format!(
                 "environment variable {} not set",
@@ -82,11 +102,18 @@ impl ClaudeProvider {
             ))
         })?;
 
+        let client = reqwest::Client::builder()
+            .timeout(timeout)
+            .build()
+            .map_err(|e| {
+                AiError::ProviderNotAvailable(format!("failed to build HTTP client: {e}"))
+            })?;
+
         Ok(Self {
             api_key,
             model: config.model.clone(),
             max_tokens: config.max_tokens,
-            client: reqwest::Client::new(),
+            client,
         })
     }
 
@@ -181,9 +208,42 @@ Keep the explanation brief and technical.",
             .find_map(|c| c.text)
             .ok_or_else(|| AiError::ParseError("no text in Claude response".into()))?;
 
-        // Parse the JSON from the text content
-        serde_json::from_str(&text)
-            .map_err(|e| AiError::ParseError(format!("failed to parse AI response JSON: {e}")))
+        // Clean up the response text - models sometimes wrap JSON in code fences
+        let cleaned = Self::extract_json(&text);
+
+        // Parse the raw JSON (with f32 confidence)
+        let raw: RawAiResponse = serde_json::from_str(cleaned).map_err(|e| {
+            AiError::ParseError(format!(
+                "failed to parse AI response JSON: {e}\nRaw text: {text}"
+            ))
+        })?;
+
+        // Convert f32 confidence (0.0-1.0) to u8 percentage (0-100)
+        // The clamp ensures value is in [0.0, 100.0], so truncation and sign loss are safe.
+        #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+        let confidence = (raw.confidence * 100.0).round().clamp(0.0, 100.0) as u8;
+
+        Ok(AiResponse {
+            suggestion: raw.suggestion,
+            confidence,
+            explanation: raw.explanation,
+        })
+    }
+
+    /// Extracts JSON from text that may be wrapped in code fences.
+    fn extract_json(text: &str) -> &str {
+        let trimmed = text.trim();
+
+        // Strip ```json or ``` prefix
+        let without_prefix = trimmed
+            .strip_prefix("```json")
+            .or_else(|| trimmed.strip_prefix("```"))
+            .map_or(trimmed, str::trim_start);
+
+        // Strip trailing ```
+        without_prefix
+            .strip_suffix("```")
+            .map_or(without_prefix, str::trim_end)
     }
 }
 
@@ -319,12 +379,40 @@ mod tests {
     }
 
     #[test]
-    fn parse_ai_response() {
+    fn parse_raw_ai_response() {
         let json =
             r#"{"suggestion": "merged code", "confidence": 0.9, "explanation": "Combined both"}"#;
-        let response: AiResponse = serde_json::from_str(json).unwrap();
-        assert_eq!(response.suggestion, "merged code");
-        assert!((response.confidence - 0.9).abs() < f32::EPSILON);
-        assert_eq!(response.explanation, Some("Combined both".into()));
+        let raw: RawAiResponse = serde_json::from_str(json).unwrap();
+        assert_eq!(raw.suggestion, "merged code");
+        assert!((raw.confidence - 0.9).abs() < f32::EPSILON);
+        assert_eq!(raw.explanation, Some("Combined both".into()));
+
+        // Test conversion to u8 percentage
+        let confidence = (raw.confidence * 100.0).round() as u8;
+        assert_eq!(confidence, 90);
+    }
+
+    #[test]
+    fn extract_json_plain() {
+        let text = r#"{"suggestion": "code", "confidence": 0.8}"#;
+        assert_eq!(ClaudeProvider::extract_json(text), text);
+    }
+
+    #[test]
+    fn extract_json_with_fences() {
+        let text = "```json\n{\"suggestion\": \"code\"}\n```";
+        assert_eq!(
+            ClaudeProvider::extract_json(text),
+            "{\"suggestion\": \"code\"}"
+        );
+    }
+
+    #[test]
+    fn extract_json_with_plain_fences() {
+        let text = "```\n{\"suggestion\": \"code\"}\n```";
+        assert_eq!(
+            ClaudeProvider::extract_json(text),
+            "{\"suggestion\": \"code\"}"
+        );
     }
 }

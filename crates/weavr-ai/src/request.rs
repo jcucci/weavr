@@ -34,8 +34,8 @@ pub struct AiRequest {
 pub struct AiResponse {
     /// The suggested merged content.
     pub suggestion: String,
-    /// Confidence score (0.0 to 1.0).
-    pub confidence: f32,
+    /// Confidence score (0-100 percentage).
+    pub confidence: u8,
     /// Explanation of the merge reasoning.
     pub explanation: Option<String>,
 }

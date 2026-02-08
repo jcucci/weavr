@@ -116,19 +116,19 @@ pub enum ResolutionSource {
 }
 
 /// Metadata about a resolution.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub struct ResolutionMetadata {
     /// Source of the resolution.
     pub source: ResolutionSource,
     /// Optional notes.
     pub notes: Option<String>,
-    /// Confidence score for AI-generated resolutions (0.0 to 1.0).
+    /// Confidence score for AI-generated resolutions (0-100 percentage).
     /// Only meaningful when `source` is `ResolutionSource::Ai`.
-    pub confidence: Option<f32>,
+    pub confidence: Option<u8>,
 }
 
 /// An explicit decision applied to a hunk.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Resolution {
     /// How the resolution was chosen.
     pub kind: ResolutionStrategyKind,

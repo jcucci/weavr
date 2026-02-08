@@ -31,7 +31,7 @@ pub struct HunkContext {
 }
 
 /// State of a single hunk.
-#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub enum HunkState {
     /// No resolution chosen.
     #[default]
@@ -45,7 +45,7 @@ pub enum HunkState {
 }
 
 /// A contiguous region of conflicting content.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ConflictHunk {
     /// Unique identifier.
     pub id: HunkId,

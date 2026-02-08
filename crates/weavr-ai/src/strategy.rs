@@ -55,9 +55,17 @@ impl AiStrategy {
         // Filter by confidence threshold
         match response {
             Some(resolution) => {
-                if let Some(conf) = resolution.metadata.confidence {
-                    if conf < self.config.min_confidence {
-                        return Ok(None);
+                if self.config.min_confidence > 0 {
+                    match resolution.metadata.confidence {
+                        Some(conf) if conf < self.config.min_confidence => {
+                            return Ok(None);
+                        }
+                        None => {
+                            // When min_confidence is configured, treat missing confidence
+                            // as below threshold for predictable behavior.
+                            return Ok(None);
+                        }
+                        _ => {}
                     }
                 }
                 Ok(Some(resolution))
