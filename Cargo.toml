@@ -5,6 +5,7 @@ members = [
     "crates/weavr-cli",
     "crates/weavr-tui",
     "crates/weavr-git",
+    "crates/weavr-ai",
 ]
 
 [workspace.package]
@@ -30,6 +31,7 @@ pedantic = "warn"
 weavr-core = { path = "crates/weavr-core" }
 weavr-git = { path = "crates/weavr-git" }
 weavr-tui = { path = "crates/weavr-tui" }
+weavr-ai = { path = "crates/weavr-ai" }
 
 # CLI dependencies
 clap = { version = "4.4", features = ["derive"] }
@@ -41,6 +43,14 @@ crossterm = "0.28"
 # Common dependencies
 thiserror = "2.0"
 serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
 
 # Theme dependencies
 catppuccin = { version = "2", features = ["ratatui"] }
+
+# AI dependencies
+async-trait = "0.1"
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
+humantime-serde = "1"
+toml = "0.8"

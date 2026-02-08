@@ -122,6 +122,9 @@ pub struct ResolutionMetadata {
     pub source: ResolutionSource,
     /// Optional notes.
     pub notes: Option<String>,
+    /// Confidence score for AI-generated resolutions (0-100 percentage).
+    /// Only meaningful when `source` is `ResolutionSource::Ai`.
+    pub confidence: Option<u8>,
 }
 
 /// An explicit decision applied to a hunk.
