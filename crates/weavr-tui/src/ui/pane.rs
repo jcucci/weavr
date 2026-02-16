@@ -230,7 +230,10 @@ pub fn render_status_bar(frame: &mut Frame, area: Rect, app: &App) {
     let ai_indicator = if app.ai_available() {
         if app.ai_state().is_loading() {
             format!(" | AI {}", app.ai_state().spinner_char())
-        } else if app.ai_state().suggestion.is_some() {
+        } else if app
+            .current_hunk()
+            .is_some_and(|h| app.ai_state().has_suggestion_for(h.id))
+        {
             " | AI [ready]".to_string()
         } else {
             " | AI".to_string()
@@ -379,7 +382,7 @@ fn build_result_document<'a>(
                     }
                 } else if is_current && ai_state.has_suggestion_for(hunk.id) {
                     // AI suggestion ghost text
-                    let suggestion = ai_state.suggestion.as_ref().unwrap();
+                    let suggestion = ai_state.suggestion_for(hunk.id).unwrap();
                     let ghost_style = Style::default()
                         .fg(theme.base.muted)
                         .add_modifier(Modifier::ITALIC);
@@ -394,8 +397,15 @@ fn build_result_document<'a>(
                         header_style,
                     )));
                     for line_text in suggestion.resolution.content.lines() {
-                        lines.push(build_line(line_number, line_text, ghost_style, true));
-                        line_number += 1;
+                        // Render ghost lines without consuming line numbers
+                        // so subsequent real content retains correct numbering.
+                        lines.push(Line::from(vec![
+                            Span::styled(
+                                "   ~ ".to_string(),
+                                Style::default().add_modifier(Modifier::DIM),
+                            ),
+                            Span::styled(line_text.to_string(), ghost_style),
+                        ]));
                     }
                     lines.push(Line::from(Span::styled(
                         "  [Enter] Accept  [Esc] Dismiss  [?] Explain",

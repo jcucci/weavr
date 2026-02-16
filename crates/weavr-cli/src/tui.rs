@@ -250,25 +250,33 @@ async fn ai_worker_loop(
                         }
                     }
                 }
+                let _ = evt_tx.send(AiEvent::BatchComplete);
             }
 
-            AiCommand::Explain { hunk_id, hunk } => match strategy.explain(&hunk).await {
-                Ok(Some(text)) => {
-                    let _ = evt_tx.send(AiEvent::Explanation { hunk_id, text });
+            AiCommand::Explain { hunk_id, hunk } => {
+                cancelled.store(false, Ordering::Relaxed);
+                match strategy.explain(&hunk).await {
+                    Ok(Some(text)) => {
+                        if !cancelled.load(Ordering::Relaxed) {
+                            let _ = evt_tx.send(AiEvent::Explanation { hunk_id, text });
+                        }
+                    }
+                    Ok(None) => {
+                        if !cancelled.load(Ordering::Relaxed) {
+                            let _ = evt_tx.send(AiEvent::NoSuggestion {
+                                hunk_id,
+                                reason: "No explanation available".into(),
+                            });
+                        }
+                    }
+                    Err(e) => {
+                        let _ = evt_tx.send(AiEvent::Error {
+                            hunk_id,
+                            message: e.to_string(),
+                        });
+                    }
                 }
-                Ok(None) => {
-                    let _ = evt_tx.send(AiEvent::NoSuggestion {
-                        hunk_id,
-                        reason: "No explanation available".into(),
-                    });
-                }
-                Err(e) => {
-                    let _ = evt_tx.send(AiEvent::Error {
-                        hunk_id,
-                        message: e.to_string(),
-                    });
-                }
-            },
+            }
         }
     }
 }

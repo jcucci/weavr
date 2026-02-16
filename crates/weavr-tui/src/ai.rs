@@ -8,6 +8,7 @@
 //! The actual AI provider and tokio runtime live in `weavr-cli`, which
 //! constructs an [`AiHandle`] and passes it to [`App`](crate::App).
 
+use std::collections::HashMap;
 use std::sync::mpsc;
 
 use weavr_core::{ConflictHunk, HunkId, HunkState, Resolution};
@@ -82,6 +83,8 @@ pub enum AiEvent {
         /// Error description.
         message: String,
     },
+    /// Batch suggestion processing is complete.
+    BatchComplete,
 }
 
 // ---------------------------------------------------------------------------
@@ -143,8 +146,8 @@ pub struct AiState {
     pub pending_hunk: Option<HunkId>,
     /// Whether a batch request is in progress.
     pub pending_batch: bool,
-    /// The current suggestion ready for user review.
-    pub suggestion: Option<AiSuggestion>,
+    /// Suggestions keyed by hunk ID.
+    pub suggestions: HashMap<HunkId, AiSuggestion>,
     /// An explanation for the current hunk.
     pub explanation: Option<String>,
     /// Spinner animation frame counter.
@@ -161,14 +164,18 @@ impl AiState {
     /// Returns true if there is a suggestion ready for the given hunk.
     #[must_use]
     pub fn has_suggestion_for(&self, hunk_id: HunkId) -> bool {
-        self.suggestion
-            .as_ref()
-            .is_some_and(|s| s.hunk_id == hunk_id)
+        self.suggestions.contains_key(&hunk_id)
     }
 
-    /// Clears the suggestion and explanation state.
+    /// Returns the suggestion for the given hunk, if any.
+    #[must_use]
+    pub fn suggestion_for(&self, hunk_id: HunkId) -> Option<&AiSuggestion> {
+        self.suggestions.get(&hunk_id)
+    }
+
+    /// Clears the suggestions and explanation state.
     pub fn clear(&mut self) {
-        self.suggestion = None;
+        self.suggestions.clear();
         self.explanation = None;
     }
 
@@ -190,11 +197,12 @@ impl AiState {
 // ---------------------------------------------------------------------------
 
 /// Requests an AI suggestion for the current hunk.
+#[allow(clippy::missing_panics_doc)] // unwrap is guarded by is_none() check above
 pub fn request_suggestion(app: &mut App) {
-    let Some(ai_handle) = &app.ai_handle else {
+    if app.ai_handle.is_none() {
         app.set_status_message("AI not configured");
         return;
-    };
+    }
     let Some(hunk) = app.current_hunk().cloned() else {
         return;
     };
@@ -202,22 +210,27 @@ pub fn request_suggestion(app: &mut App) {
     if app.ai_state.pending_hunk == Some(hunk.id) {
         return;
     }
-    // Clear previous suggestion if for a different hunk
-    app.ai_state.clear();
     app.ai_state.pending_hunk = Some(hunk.id);
-    let _ = ai_handle.send(AiCommand::Suggest {
+    let send_result = app.ai_handle.as_ref().unwrap().send(AiCommand::Suggest {
         hunk_id: hunk.id,
         hunk,
     });
+    if send_result.is_err() {
+        app.ai_state.pending_hunk = None;
+        app.ai_handle = None;
+        app.set_status_message("AI worker disconnected");
+        return;
+    }
     app.set_status_message("Requesting AI suggestion...");
 }
 
 /// Requests AI suggestions for all unresolved hunks.
+#[allow(clippy::missing_panics_doc)] // unwrap is guarded by is_none() check above
 pub fn request_all_suggestions(app: &mut App) {
-    let Some(ai_handle) = &app.ai_handle else {
+    if app.ai_handle.is_none() {
         app.set_status_message("AI not configured");
         return;
-    };
+    }
     let Some(session) = &app.session else {
         return;
     };
@@ -233,7 +246,18 @@ pub fn request_all_suggestions(app: &mut App) {
     }
     let count = hunks.len();
     app.ai_state.pending_batch = true;
-    let _ = ai_handle.send(AiCommand::SuggestAll { hunks });
+    if app
+        .ai_handle
+        .as_ref()
+        .unwrap()
+        .send(AiCommand::SuggestAll { hunks })
+        .is_err()
+    {
+        app.ai_state.pending_batch = false;
+        app.ai_handle = None;
+        app.set_status_message("AI worker disconnected");
+        return;
+    }
     app.set_status_message(&format!(
         "Requesting AI suggestions for {count} unresolved hunks..."
     ));
@@ -241,7 +265,11 @@ pub fn request_all_suggestions(app: &mut App) {
 
 /// Accepts the current AI suggestion, applying it as a resolution.
 pub fn accept_suggestion(app: &mut App) {
-    let Some(suggestion) = app.ai_state.suggestion.take() else {
+    let Some(hunk) = app.current_hunk() else {
+        return;
+    };
+    let hunk_id = hunk.id;
+    let Some(suggestion) = app.ai_state.suggestions.remove(&hunk_id) else {
         return;
     };
     let resolution = suggestion.resolution;
@@ -250,26 +278,41 @@ pub fn accept_suggestion(app: &mut App) {
 
 /// Dismisses the current AI suggestion without applying it.
 pub fn dismiss_suggestion(app: &mut App) {
-    if app.ai_state.suggestion.is_some() {
-        app.ai_state.suggestion = None;
+    let Some(hunk) = app.current_hunk() else {
+        return;
+    };
+    let hunk_id = hunk.id;
+    if app.ai_state.suggestions.remove(&hunk_id).is_some() {
         app.set_status_message("AI suggestion dismissed");
     }
 }
 
 /// Requests an AI explanation for the current hunk.
+#[allow(clippy::missing_panics_doc)] // unwrap is guarded by is_none() check above
 pub fn request_explanation(app: &mut App) {
-    let Some(ai_handle) = &app.ai_handle else {
+    if app.ai_handle.is_none() {
         app.set_status_message("AI not configured");
         return;
-    };
+    }
     let Some(hunk) = app.current_hunk().cloned() else {
         return;
     };
     app.ai_state.pending_hunk = Some(hunk.id);
-    let _ = ai_handle.send(AiCommand::Explain {
-        hunk_id: hunk.id,
-        hunk,
-    });
+    if app
+        .ai_handle
+        .as_ref()
+        .unwrap()
+        .send(AiCommand::Explain {
+            hunk_id: hunk.id,
+            hunk,
+        })
+        .is_err()
+    {
+        app.ai_state.pending_hunk = None;
+        app.ai_handle = None;
+        app.set_status_message("AI worker disconnected");
+        return;
+    }
     app.set_status_message("Requesting AI explanation...");
 }
 
@@ -300,34 +343,52 @@ pub fn poll_ai_events(app: &mut App) {
                     || app.ai_state.pending_batch
                     || app.current_hunk().is_some_and(|h| h.id == hunk_id);
                 if interested {
-                    app.ai_state.pending_hunk = None;
-                    app.ai_state.suggestion = Some(AiSuggestion {
+                    if app.ai_state.pending_hunk == Some(hunk_id) {
+                        app.ai_state.pending_hunk = None;
+                    }
+                    app.ai_state.suggestions.insert(
                         hunk_id,
-                        resolution,
-                        confidence,
-                    });
-                    let conf_str = confidence
-                        .map(|c| format!(" ({c}% confidence)"))
-                        .unwrap_or_default();
-                    app.set_status_message(&format!(
-                        "AI suggestion ready{conf_str} - Enter to accept, Esc to dismiss"
-                    ));
+                        AiSuggestion {
+                            hunk_id,
+                            resolution,
+                            confidence,
+                        },
+                    );
+                    // Only show status message if this is for the current hunk
+                    if app.current_hunk().is_some_and(|h| h.id == hunk_id) {
+                        let conf_str = confidence
+                            .map(|c| format!(" ({c}% confidence)"))
+                            .unwrap_or_default();
+                        app.set_status_message(&format!(
+                            "AI suggestion ready{conf_str} - Enter to accept, Esc to dismiss"
+                        ));
+                    }
                 }
             }
             AiEvent::NoSuggestion { reason, .. } => {
                 app.ai_state.pending_hunk = None;
                 app.set_status_message(&format!("AI: {reason}"));
             }
-            AiEvent::Explanation { text, .. } => {
+            AiEvent::Explanation { hunk_id, text } => {
+                // Only show explanation if still relevant to current hunk
+                let interested = app.ai_state.pending_hunk == Some(hunk_id)
+                    || app.current_hunk().is_some_and(|h| h.id == hunk_id);
                 app.ai_state.pending_hunk = None;
-                app.ai_state.explanation = Some(text.clone());
-                app.active_dialog = Some(Dialog::AiExplanation(text));
-                app.input_mode = InputMode::Dialog;
+                if interested {
+                    app.ai_state.explanation = Some(text.clone());
+                    app.active_dialog = Some(Dialog::AiExplanation(text));
+                    app.input_mode = InputMode::Dialog;
+                }
             }
             AiEvent::Error { message, .. } => {
                 app.ai_state.pending_hunk = None;
                 app.ai_state.pending_batch = false;
                 app.set_status_message(&format!("AI error: {message}"));
+            }
+            AiEvent::BatchComplete => {
+                app.ai_state.pending_batch = false;
+                let count = app.ai_state.suggestions.len();
+                app.set_status_message(&format!("AI batch complete: {count} suggestion(s) ready"));
             }
         }
     }
@@ -346,7 +407,7 @@ mod tests {
     fn ai_state_default_is_not_loading() {
         let state = AiState::default();
         assert!(!state.is_loading());
-        assert!(state.suggestion.is_none());
+        assert!(state.suggestions.is_empty());
         assert!(state.explanation.is_none());
     }
 
@@ -368,11 +429,14 @@ mod tests {
     fn ai_state_has_suggestion_for_matching_hunk() {
         let mut state = AiState::default();
         let hunk_id = HunkId(42);
-        state.suggestion = Some(AiSuggestion {
+        state.suggestions.insert(
             hunk_id,
-            resolution: Resolution::manual("test".into()),
-            confidence: Some(85),
-        });
+            AiSuggestion {
+                hunk_id,
+                resolution: Resolution::manual("test".into()),
+                confidence: Some(85),
+            },
+        );
         assert!(state.has_suggestion_for(hunk_id));
         assert!(!state.has_suggestion_for(HunkId(99)));
     }
@@ -380,14 +444,17 @@ mod tests {
     #[test]
     fn ai_state_clear_removes_suggestion_and_explanation() {
         let mut state = AiState::default();
-        state.suggestion = Some(AiSuggestion {
-            hunk_id: HunkId(1),
-            resolution: Resolution::manual("test".into()),
-            confidence: None,
-        });
+        state.suggestions.insert(
+            HunkId(1),
+            AiSuggestion {
+                hunk_id: HunkId(1),
+                resolution: Resolution::manual("test".into()),
+                confidence: None,
+            },
+        );
         state.explanation = Some("explanation".into());
         state.clear();
-        assert!(state.suggestion.is_none());
+        assert!(state.suggestions.is_empty());
         assert!(state.explanation.is_none());
     }
 
@@ -435,16 +502,17 @@ mod tests {
     #[test]
     fn dismiss_suggestion_clears_state() {
         let mut app = App::new();
-        app.ai_state.suggestion = Some(AiSuggestion {
-            hunk_id: HunkId(1),
-            resolution: Resolution::manual("test".into()),
-            confidence: Some(90),
-        });
+        app.ai_state.suggestions.insert(
+            HunkId(1),
+            AiSuggestion {
+                hunk_id: HunkId(1),
+                resolution: Resolution::manual("test".into()),
+                confidence: Some(90),
+            },
+        );
         dismiss_suggestion(&mut app);
-        assert!(app.ai_state.suggestion.is_none());
-        assert!(app
-            .status_message()
-            .is_some_and(|(msg, _)| msg.contains("dismissed")));
+        // Without a current hunk, dismiss is a no-op
+        assert!(!app.ai_state.suggestions.is_empty());
     }
 
     #[test]

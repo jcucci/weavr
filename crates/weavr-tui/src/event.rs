@@ -86,7 +86,10 @@ fn handle_normal_mode(app: &mut App, key: KeyEvent) {
 
         // Accept AI suggestion or focus result pane
         KeyCode::Enter => {
-            if app.ai_state().suggestion.is_some() {
+            if app
+                .current_hunk()
+                .is_some_and(|h| app.ai_state().has_suggestion_for(h.id))
+            {
                 ai::accept_suggestion(app);
             } else {
                 app.focus_result();
@@ -95,7 +98,10 @@ fn handle_normal_mode(app: &mut App, key: KeyEvent) {
 
         // Dismiss AI suggestion
         KeyCode::Esc => {
-            if app.ai_state().suggestion.is_some() {
+            if app
+                .current_hunk()
+                .is_some_and(|h| app.ai_state().has_suggestion_for(h.id))
+            {
                 ai::dismiss_suggestion(app);
             }
         }
@@ -137,7 +143,10 @@ fn handle_normal_mode(app: &mut App, key: KeyEvent) {
 
         // Help / AI explanation (context-sensitive)
         KeyCode::Char('?') => {
-            if app.ai_state().suggestion.is_some() || app.ai_state().is_loading() {
+            let has_suggestion = app
+                .current_hunk()
+                .is_some_and(|h| app.ai_state().has_suggestion_for(h.id));
+            if has_suggestion || app.ai_state().is_loading() {
                 ai::request_explanation(app);
             } else {
                 app.show_help();

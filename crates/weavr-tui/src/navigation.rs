@@ -130,12 +130,14 @@ pub fn scroll_down(app: &mut App, lines: u16) {
     }
 }
 
-/// Resets scroll positions and clears AI state when changing hunks.
+/// Resets scroll positions and clears hunk-specific AI state when changing hunks.
+///
+/// Preserves batch state and cached suggestions for other hunks.
 fn reset_scroll(app: &mut App) {
     app.left_right_scroll = 0;
     app.result_scroll = 0;
 
-    // Cancel in-flight AI request when navigating to a different hunk
+    // Cancel in-flight single-hunk AI request when navigating
     if let Some(pending_id) = app.ai_state.pending_hunk {
         if let Some(ai_handle) = &app.ai_handle {
             let _ = ai_handle.send(crate::ai::AiCommand::Cancel {
@@ -143,7 +145,7 @@ fn reset_scroll(app: &mut App) {
             });
         }
     }
-    // Clear stale suggestions (they were for the previous hunk)
-    app.ai_state.clear();
     app.ai_state.pending_hunk = None;
+    // Clear hunk-specific display state; keep suggestions map and batch state
+    app.ai_state.explanation = None;
 }
