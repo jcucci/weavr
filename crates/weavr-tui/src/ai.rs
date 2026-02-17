@@ -6,7 +6,7 @@
 //! runtime dependency in this crate.
 //!
 //! The actual AI provider and tokio runtime live in `weavr-cli`, which
-//! constructs an [`AiHandle`] and passes it to [`App`](crate::App).
+//! constructs an [`AiHandle`] and passes it to [`App`].
 
 use std::collections::HashMap;
 use std::sync::mpsc;
@@ -93,7 +93,7 @@ pub enum AiEvent {
 
 /// Handle for communicating with the AI background worker.
 ///
-/// Created by `weavr-cli` and passed into [`App`](crate::App) via
+/// Created by `weavr-cli` and passed into [`App`] via
 /// [`App::set_ai_handle`](crate::App::set_ai_handle).
 pub struct AiHandle {
     sender: mpsc::Sender<AiCommand>,
@@ -413,15 +413,13 @@ mod tests {
 
     #[test]
     fn ai_state_is_loading_when_pending_hunk() {
-        let mut state = AiState::default();
-        state.pending_hunk = Some(HunkId(1));
+        let state = AiState { pending_hunk: Some(HunkId(1)), ..AiState::default() };
         assert!(state.is_loading());
     }
 
     #[test]
     fn ai_state_is_loading_when_pending_batch() {
-        let mut state = AiState::default();
-        state.pending_batch = true;
+        let state = AiState { pending_batch: true, ..AiState::default() };
         assert!(state.is_loading());
     }
 
@@ -567,9 +565,9 @@ mod tests {
 
     #[test]
     fn ai_handle_try_recv_returns_none_when_empty() {
-        let (_cmd_tx, _cmd_rx) = mpsc::channel::<AiCommand>();
+        let (cmd_tx, _cmd_rx) = mpsc::channel::<AiCommand>();
         let (_evt_tx, evt_rx) = mpsc::channel::<AiEvent>();
-        let handle = AiHandle::new(_cmd_tx, evt_rx);
+        let handle = AiHandle::new(cmd_tx, evt_rx);
         assert!(handle.try_recv().is_none());
     }
 }
