@@ -413,13 +413,19 @@ mod tests {
 
     #[test]
     fn ai_state_is_loading_when_pending_hunk() {
-        let state = AiState { pending_hunk: Some(HunkId(1)), ..AiState::default() };
+        let state = AiState {
+            pending_hunk: Some(HunkId(1)),
+            ..AiState::default()
+        };
         assert!(state.is_loading());
     }
 
     #[test]
     fn ai_state_is_loading_when_pending_batch() {
-        let state = AiState { pending_batch: true, ..AiState::default() };
+        let state = AiState {
+            pending_batch: true,
+            ..AiState::default()
+        };
         assert!(state.is_loading());
     }
 
