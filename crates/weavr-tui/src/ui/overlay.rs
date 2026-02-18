@@ -7,7 +7,7 @@ use ratatui::{
     layout::{Constraint, Layout, Rect},
     style::{Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, BorderType, Borders, Clear, Paragraph},
+    widgets::{Block, BorderType, Borders, Clear, Paragraph, Wrap},
     Frame,
 };
 
@@ -53,6 +53,16 @@ pub fn render_help_overlay(frame: &mut Frame, area: Rect, theme: &Theme) {
         Line::from("  Ctrl+u  Scroll up"),
         Line::from("  PgDn    Page down"),
         Line::from("  PgUp    Page up"),
+        Line::from(""),
+        Line::from(Span::styled(
+            "=== AI (when configured) ===",
+            Style::default().add_modifier(Modifier::BOLD),
+        )),
+        Line::from("  s       AI suggest (current hunk)"),
+        Line::from("  S       AI suggest (all unresolved)"),
+        Line::from("  ?       AI explain (when suggestion shown)"),
+        Line::from("  Enter   Accept AI suggestion"),
+        Line::from("  Esc     Dismiss AI suggestion"),
         Line::from(""),
         Line::from(Span::styled(
             "=== Commands ===",
@@ -167,6 +177,51 @@ pub fn render_accept_both_dialog(
 
     let paragraph = Paragraph::new(lines)
         .block(block)
+        .style(Style::default().fg(theme.base.foreground));
+
+    frame.render_widget(paragraph, dialog_area);
+}
+
+/// Renders an AI explanation overlay.
+pub fn render_ai_explanation_overlay(
+    frame: &mut Frame,
+    area: Rect,
+    theme: &Theme,
+    explanation: &str,
+) {
+    let dialog_area = centered_rect(70, 60, area);
+
+    // Clear the background
+    frame.render_widget(Clear, dialog_area);
+
+    let mut lines = vec![
+        Line::from(Span::styled(
+            "=== AI Conflict Explanation ===",
+            Style::default().add_modifier(Modifier::BOLD),
+        )),
+        Line::from(""),
+    ];
+
+    for paragraph in explanation.lines() {
+        lines.push(Line::from(paragraph.to_string()));
+    }
+
+    lines.push(Line::from(""));
+    lines.push(Line::from(Span::styled(
+        "Press Esc, q, or ? to close",
+        Style::default().fg(theme.base.muted),
+    )));
+
+    let block = Block::default()
+        .title(" AI Explanation ")
+        .borders(Borders::ALL)
+        .border_type(BorderType::Rounded)
+        .border_style(Style::default().fg(theme.ui.border_focused))
+        .style(Style::default().bg(theme.base.background));
+
+    let paragraph = Paragraph::new(lines)
+        .block(block)
+        .wrap(Wrap { trim: false })
         .style(Style::default().fg(theme.base.foreground));
 
     frame.render_widget(paragraph, dialog_area);

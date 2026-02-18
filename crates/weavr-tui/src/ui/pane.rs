@@ -15,6 +15,7 @@ use ratatui::{
 use similar::ChangeTag;
 use weavr_core::{HunkState, Segment};
 
+use crate::ai::AiState;
 use crate::diff::{compute_line_diffs, DiffConfig};
 use crate::input::InputMode;
 use crate::{App, FocusedPane};
@@ -112,6 +113,7 @@ pub fn render_result_pane(frame: &mut Frame, area: Rect, app: &App) {
             session.hunks(),
             app.current_hunk_index(),
             theme,
+            app.ai_state(),
         ),
         None => vec![Line::from(Span::styled(
             "No file loaded",
@@ -224,7 +226,24 @@ pub fn render_status_bar(frame: &mut Frame, area: Rect, app: &App) {
         format!(" {pane_name} pane | No conflicts")
     };
 
-    let status = Paragraph::new(status_text).style(theme.ui.status.bg(theme.base.background));
+    // Add AI indicator when AI is available
+    let ai_indicator = if app.ai_available() {
+        if app.ai_state().is_loading() {
+            format!(" | AI {}", app.ai_state().spinner_char())
+        } else if app
+            .current_hunk()
+            .is_some_and(|h| app.ai_state().has_suggestion_for(h.id))
+        {
+            " | AI [ready]".to_string()
+        } else {
+            " | AI".to_string()
+        }
+    } else {
+        String::new()
+    };
+
+    let full_status = format!("{status_text}{ai_indicator}");
+    let status = Paragraph::new(full_status).style(theme.ui.status.bg(theme.base.background));
     frame.render_widget(status, area);
 }
 
@@ -313,11 +332,13 @@ fn build_side_document<'a>(
 }
 
 /// Builds the full document content for the result pane.
+#[allow(clippy::too_many_lines)]
 fn build_result_document<'a>(
     segments: &[Segment],
     hunks: &[weavr_core::ConflictHunk],
     current_hunk_idx: usize,
     theme: &'a crate::theme::Theme,
+    ai_state: &AiState,
 ) -> Vec<Line<'a>> {
     let mut lines = Vec::new();
     let mut line_number = 1;
@@ -359,6 +380,57 @@ fn build_result_document<'a>(
                             style.add_modifier(Modifier::BOLD),
                         )));
                     }
+                } else if is_current && ai_state.has_suggestion_for(hunk.id) {
+                    // AI suggestion ghost text
+                    let suggestion = ai_state.suggestion_for(hunk.id).unwrap();
+                    let ghost_style = Style::default()
+                        .fg(theme.base.muted)
+                        .add_modifier(Modifier::ITALIC);
+                    let header_style = ghost_style.add_modifier(Modifier::BOLD);
+
+                    let conf_str = suggestion
+                        .confidence
+                        .map(|c| format!(" ({c}%)"))
+                        .unwrap_or_default();
+                    lines.push(Line::from(Span::styled(
+                        format!("──── AI Suggestion{conf_str} ────"),
+                        header_style,
+                    )));
+                    for line_text in suggestion.resolution.content.lines() {
+                        // Render ghost lines without consuming line numbers
+                        // so subsequent real content retains correct numbering.
+                        lines.push(Line::from(vec![
+                            Span::styled(
+                                "   ~ ".to_string(),
+                                Style::default().add_modifier(Modifier::DIM),
+                            ),
+                            Span::styled(line_text.to_string(), ghost_style),
+                        ]));
+                    }
+                    lines.push(Line::from(Span::styled(
+                        "  [Enter] Accept  [Esc] Dismiss  [?] Explain",
+                        Style::default().fg(theme.base.muted),
+                    )));
+                    lines.push(Line::from(Span::styled(
+                        "────────────────────",
+                        header_style,
+                    )));
+                } else if is_current && ai_state.pending_hunk == Some(hunk.id) {
+                    // Loading spinner
+                    let style = theme.conflict.unresolved;
+                    let spinner = ai_state.spinner_char();
+                    lines.push(Line::from(Span::styled(
+                        format!("──── {spinner} AI thinking... ────"),
+                        style.add_modifier(Modifier::BOLD),
+                    )));
+                    lines.push(Line::from(Span::styled(
+                        "  Select: [o]urs  [t]heirs  [b]oth",
+                        Style::default().fg(theme.base.muted),
+                    )));
+                    lines.push(Line::from(Span::styled(
+                        "────────────────────",
+                        style.add_modifier(Modifier::BOLD),
+                    )));
                 } else {
                     // Unresolved: show placeholder
                     let style = theme.conflict.unresolved;
