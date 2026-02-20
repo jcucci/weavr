@@ -176,7 +176,7 @@ mod tests {
     fn set_action(id: u32, old: Option<&str>, new: &str) -> Action {
         Action::SetResolution {
             hunk_id: HunkId(id),
-            old: old.map(|s| make_resolution(s)),
+            old: old.map(make_resolution),
             new: make_resolution(new),
         }
     }
