@@ -52,6 +52,10 @@ pub struct Cli {
     /// Configuration file path
     #[arg(long, value_name = "PATH")]
     pub config: Option<PathBuf>,
+
+    /// Theme name (overrides config file)
+    #[arg(long, value_name = "THEME")]
+    pub theme: Option<String>,
 }
 
 #[cfg(test)]
@@ -128,5 +132,17 @@ mod tests {
     fn cli_dedupe_requires_headless() {
         let result = Cli::try_parse_from(["weavr", "--dedupe"]);
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn cli_parse_theme() {
+        let cli = Cli::parse_from(["weavr", "--theme", "dracula"]);
+        assert_eq!(cli.theme.as_deref(), Some("dracula"));
+    }
+
+    #[test]
+    fn cli_parse_theme_default_is_none() {
+        let cli = Cli::parse_from(["weavr"]);
+        assert!(cli.theme.is_none());
     }
 }

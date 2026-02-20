@@ -8,6 +8,7 @@
 #![forbid(unsafe_code)]
 
 mod cli;
+mod config;
 mod discovery;
 mod error;
 mod headless;
@@ -15,7 +16,8 @@ mod tui;
 
 use clap::Parser;
 
-use cli::{Cli, Strategy};
+use cli::Cli;
+use config::WeavrConfig;
 use error::{exit_codes, CliError};
 
 fn run(cli: &Cli) -> Result<i32, CliError> {
@@ -25,15 +27,33 @@ fn run(cli: &Cli) -> Result<i32, CliError> {
         return Ok(exit_codes::SUCCESS);
     }
 
+    // Load and resolve configuration (layers 1-4)
+    let raw_config = config::load_config(cli.config.as_deref())?;
+    let mut config = WeavrConfig::from_raw(&raw_config)?;
+
+    // Layer 5: CLI flag overrides
+    if let Some(ref theme_name) = cli.theme {
+        config.theme = config::parse_theme_name(theme_name)?;
+    }
+    if let Some(strategy) = cli.strategy {
+        config.default_strategy = strategy;
+    }
+    if cli.dedupe {
+        config.deduplicate = true;
+    }
+    if cli.fail_on_ambiguous {
+        config.fail_on_ambiguous = true;
+    }
+
     // Resolve which files to process
     let files = discovery::resolve_files(cli.files.clone())?;
 
     // Mode: Headless
     if cli.headless {
-        let strategy = cli.strategy.unwrap_or(Strategy::Left);
+        let strategy = config.default_strategy;
 
         for path in &files {
-            let result = headless::process_file(path, strategy, cli.dedupe)?;
+            let result = headless::process_file(path, strategy, config.deduplicate)?;
             headless::write_or_print(&result, cli.dry_run)?;
         }
 
@@ -44,7 +64,7 @@ fn run(cli: &Cli) -> Result<i32, CliError> {
     let mut any_unresolved = false;
 
     for path in &files {
-        let result = tui::process_file(path)?;
+        let result = tui::process_file(path, &config)?;
 
         if let Some(ref content) = result.content {
             std::fs::write(path, content)?;

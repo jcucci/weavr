@@ -5,6 +5,7 @@ use std::path::Path;
 use weavr_core::MergeSession;
 use weavr_tui::App;
 
+use crate::config::WeavrConfig;
 use crate::error::CliError;
 
 /// Result of TUI processing for a single file.
@@ -20,7 +21,7 @@ pub struct TuiResult {
 /// Runs the TUI for a single file.
 ///
 /// Returns the resolution result after the user quits the TUI.
-pub fn process_file(path: &Path) -> Result<TuiResult, CliError> {
+pub fn process_file(path: &Path, config: &WeavrConfig) -> Result<TuiResult, CliError> {
     let content = std::fs::read_to_string(path)?;
     let session = MergeSession::from_conflicted(&content, path.to_path_buf())?;
 
@@ -36,12 +37,12 @@ pub fn process_file(path: &Path) -> Result<TuiResult, CliError> {
     let total_hunks = session.hunks().len();
 
     // Create and configure App
-    let mut app = App::new();
+    let mut app = App::with_theme(config.theme);
     app.set_session(session);
 
     // Wire up AI if configured
     #[cfg(feature = "ai")]
-    if let Some(handle) = spawn_ai_worker() {
+    if let Some(handle) = spawn_ai_worker(&config.ai) {
         app.set_ai_handle(handle);
     }
 
@@ -88,11 +89,11 @@ pub fn process_file(path: &Path) -> Result<TuiResult, CliError> {
 ///
 /// Returns `None` if the provider cannot be initialized (e.g., missing API key).
 #[cfg(feature = "ai")]
-fn spawn_ai_worker() -> Option<weavr_tui::ai::AiHandle> {
+fn spawn_ai_worker(ai_config: &weavr_ai::AiConfig) -> Option<weavr_tui::ai::AiHandle> {
     use std::sync::mpsc;
     use weavr_tui::ai::{AiCommand, AiEvent, AiHandle};
 
-    let config = build_ai_config();
+    let config = build_ai_config(ai_config);
     if !config.enabled {
         return None;
     }
@@ -116,22 +117,25 @@ fn spawn_ai_worker() -> Option<weavr_tui::ai::AiHandle> {
     Some(AiHandle::new(cmd_tx, evt_rx))
 }
 
-/// Builds `AiConfig` from env vars with sensible defaults.
+/// Builds `AiConfig` starting from the config file values, then layering
+/// env-var auto-detection for fields that weren't explicitly set.
 #[cfg(feature = "ai")]
-fn build_ai_config() -> weavr_ai::AiConfig {
-    let mut config = weavr_ai::AiConfig::default();
+fn build_ai_config(base: &weavr_ai::AiConfig) -> weavr_ai::AiConfig {
+    let mut config = base.clone();
 
-    // Auto-detect provider based on available API keys
-    #[cfg(feature = "ai-claude")]
-    if std::env::var("ANTHROPIC_API_KEY").is_ok() {
-        config.enabled = true;
-        config.provider = Some("claude".into());
-    }
+    // Auto-detect provider from env vars if not set in config
+    if config.provider.is_none() {
+        #[cfg(feature = "ai-claude")]
+        if std::env::var("ANTHROPIC_API_KEY").is_ok() {
+            config.enabled = true;
+            config.provider = Some("claude".into());
+        }
 
-    #[cfg(feature = "ai-openai")]
-    if !config.enabled && std::env::var("OPENAI_API_KEY").is_ok() {
-        config.enabled = true;
-        config.provider = Some("openai".into());
+        #[cfg(feature = "ai-openai")]
+        if !config.enabled && std::env::var("OPENAI_API_KEY").is_ok() {
+            config.enabled = true;
+            config.provider = Some("openai".into());
+        }
     }
 
     config
