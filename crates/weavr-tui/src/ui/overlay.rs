@@ -34,6 +34,7 @@ pub fn render_help_overlay(frame: &mut Frame, area: Rect, theme: &Theme) {
         Line::from("  e       Edit in $EDITOR"),
         Line::from("  x       Clear resolution"),
         Line::from("  u       Undo last action"),
+        Line::from("  Ctrl+r  Redo last action"),
         Line::from(""),
         Line::from(Span::styled(
             "=== Navigation ===",

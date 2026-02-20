@@ -242,7 +242,23 @@ pub fn render_status_bar(frame: &mut Frame, area: Rect, app: &App) {
         String::new()
     };
 
-    let full_status = format!("{status_text}{ai_indicator}");
+    // Build undo/redo indicator
+    let undo_redo_indicator = {
+        let can_undo = app.can_undo();
+        let can_redo = app.can_redo();
+        match (can_undo, can_redo) {
+            (false, false) => String::new(),
+            (true, false) => format!(" | undo({})", app.action_history.undo_count()),
+            (false, true) => format!(" | redo({})", app.action_history.redo_count()),
+            (true, true) => format!(
+                " | undo({}) redo({})",
+                app.action_history.undo_count(),
+                app.action_history.redo_count()
+            ),
+        }
+    };
+
+    let full_status = format!("{status_text}{undo_redo_indicator}{ai_indicator}");
     let status = Paragraph::new(full_status).style(theme.ui.status.bg(theme.base.background));
     frame.render_widget(status, area);
 }

@@ -133,6 +133,7 @@ fn handle_normal_mode(app: &mut App, key: KeyEvent) {
         KeyCode::Char('B') => app.show_accept_both_dialog(), // Shift-B for options
         KeyCode::Char('x') => app.clear_current_resolution(),
         KeyCode::Char('u') if !key.modifiers.contains(KeyModifiers::CONTROL) => app.undo(),
+        KeyCode::Char('r') if key.modifiers.contains(KeyModifiers::CONTROL) => app.redo(),
         KeyCode::Char('e') => {
             app.prepare_editor();
         }
