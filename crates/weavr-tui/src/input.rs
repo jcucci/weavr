@@ -24,12 +24,19 @@ use weavr_core::BothOrder;
 /// The type of dialog currently open.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Dialog {
-    /// Help overlay showing keybindings.
-    Help,
+    /// Help overlay showing keybindings (with scroll state).
+    Help(HelpState),
     /// `AcceptBoth` options configuration dialog.
     AcceptBothOptions(AcceptBothOptionsState),
     /// AI explanation overlay.
     AiExplanation(String),
+}
+
+/// State for the scrollable help dialog.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct HelpState {
+    /// Vertical scroll offset (in lines).
+    pub scroll: usize,
 }
 
 /// State for the `AcceptBoth` options dialog.
@@ -64,6 +71,8 @@ pub enum Command {
     WriteQuit,
     /// Force quit without saving (`:q!`).
     ForceQuit,
+    /// Show help (`:help`).
+    Help,
     /// Unknown or invalid command.
     Unknown(String),
 }
@@ -79,6 +88,7 @@ impl Command {
             "q" => Self::Quit,
             "wq" | "x" => Self::WriteQuit,
             "q!" => Self::ForceQuit,
+            "help" => Self::Help,
             other => Self::Unknown(other.to_string()),
         }
     }
@@ -91,6 +101,7 @@ impl Command {
             Self::Quit => "quit",
             Self::WriteQuit => "write and quit",
             Self::ForceQuit => "force quit",
+            Self::Help => "help",
             Self::Unknown(_) => "unknown command",
         }
     }

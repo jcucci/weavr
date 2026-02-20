@@ -26,6 +26,7 @@ pub mod dialog;
 pub mod diff;
 pub mod editor;
 pub mod event;
+pub mod help;
 pub mod input;
 pub mod navigation;
 pub mod resolution;
@@ -406,6 +407,7 @@ impl App {
                 self.set_status_message(":wq not yet implemented - use :q! to force quit");
             }
             Command::ForceQuit => self.quit(),
+            Command::Help => self.show_help(),
             Command::Unknown(s) => {
                 if !s.is_empty() {
                     self.set_status_message(&format!("Unknown command: {s}"));

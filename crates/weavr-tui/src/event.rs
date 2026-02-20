@@ -154,6 +154,9 @@ fn handle_normal_mode(app: &mut App, key: KeyEvent) {
             }
         }
 
+        // Help (F1)
+        KeyCode::F(1) => app.show_help(),
+
         _ => {}
     }
 }
@@ -179,10 +182,29 @@ fn handle_command_mode(app: &mut App, key: KeyEvent) {
 fn handle_dialog_mode(app: &mut App, key: KeyEvent) {
     // Check which dialog is active
     match app.active_dialog() {
-        Some(Dialog::Help) => {
-            // Help dialog: any key closes it
+        Some(Dialog::Help(_)) => {
             match key.code {
-                KeyCode::Esc | KeyCode::Char('q' | '?') => app.close_dialog(),
+                KeyCode::Esc | KeyCode::Char('q' | '?') | KeyCode::F(1) => app.close_dialog(),
+                // Scroll: j/Down = 1 line, k/Up = 1 line
+                KeyCode::Char('j') | KeyCode::Down => {
+                    crate::dialog::help_scroll_down(app, 1);
+                }
+                KeyCode::Char('k') | KeyCode::Up => {
+                    crate::dialog::help_scroll_up(app, 1);
+                }
+                // Scroll: Ctrl+d/PageDown = half page, Ctrl+u/PageUp = half page
+                KeyCode::Char('d') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                    crate::dialog::help_scroll_down(app, 10);
+                }
+                KeyCode::Char('u') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                    crate::dialog::help_scroll_up(app, 10);
+                }
+                KeyCode::PageDown => {
+                    crate::dialog::help_scroll_down(app, 10);
+                }
+                KeyCode::PageUp => {
+                    crate::dialog::help_scroll_up(app, 10);
+                }
                 _ => {}
             }
         }
