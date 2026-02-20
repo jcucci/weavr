@@ -3,9 +3,9 @@
 //! This module handles:
 //! - Applying resolutions (left, right, both, manual)
 //! - Clearing resolutions
-//! - Undo support
+//! - Undo/redo support
 
-use weavr_core::{AcceptBothOptions, ConflictHunk, Resolution};
+use weavr_core::{AcceptBothOptions, Action, ConflictHunk, Resolution};
 
 use crate::App;
 
@@ -38,13 +38,19 @@ pub fn clear_current_resolution(app: &mut App) {
         return;
     };
 
+    // Only proceed if there was a resolution to clear
+    let Some(old_resolution) = prev else {
+        app.set_status_message("No resolution to clear");
+        return;
+    };
+
     if let Some(session) = app.session.as_mut() {
         match session.clear_resolution(hunk_id) {
             Ok(()) => {
-                // Only push undo if there was a resolution to clear
-                if prev.is_some() {
-                    app.undo_stack.push(hunk_id, prev, "Clear resolution");
-                }
+                app.action_history.record(Action::ClearResolution {
+                    hunk_id,
+                    old: old_resolution,
+                });
                 app.set_status_message("Cleared resolution");
             }
             Err(_) => {
@@ -56,23 +62,48 @@ pub fn clear_current_resolution(app: &mut App) {
 
 /// Undoes the last resolution action.
 pub fn undo(app: &mut App) {
-    let Some(entry) = app.undo_stack.pop() else {
+    let Some(action) = app.action_history.undo() else {
         app.set_status_message("Nothing to undo");
         return;
     };
 
     if let Some(session) = &mut app.session {
-        let result = if let Some(resolution) = entry.previous_resolution {
-            // Restore previous resolution
-            session.set_resolution(entry.hunk_id, resolution)
-        } else {
-            // Was unresolved before
-            session.clear_resolution(entry.hunk_id)
+        let description = action.description();
+        let result = match action {
+            Action::SetResolution { hunk_id, old, .. } => {
+                if let Some(old_resolution) = old {
+                    session.set_resolution(hunk_id, old_resolution)
+                } else {
+                    session.clear_resolution(hunk_id)
+                }
+            }
+            Action::ClearResolution { hunk_id, old } => session.set_resolution(hunk_id, old),
         };
 
         match result {
-            Ok(()) => app.set_status_message(&format!("Undid: {}", entry.action)),
+            Ok(()) => app.set_status_message(&format!("Undid: {description}")),
             Err(_) => app.set_status_message("Failed to undo"),
+        }
+    }
+}
+
+/// Redoes the last undone resolution action.
+pub fn redo(app: &mut App) {
+    let Some(action) = app.action_history.redo() else {
+        app.set_status_message("Nothing to redo");
+        return;
+    };
+
+    if let Some(session) = &mut app.session {
+        let description = action.description();
+        let result = match action {
+            Action::SetResolution { hunk_id, new, .. } => session.set_resolution(hunk_id, new),
+            Action::ClearResolution { hunk_id, .. } => session.clear_resolution(hunk_id),
+        };
+
+        match result {
+            Ok(()) => app.set_status_message(&format!("Redid: {description}")),
+            Err(_) => app.set_status_message("Failed to redo"),
         }
     }
 }
@@ -81,7 +112,7 @@ pub fn undo(app: &mut App) {
 ///
 /// This is a helper that handles the common pattern of:
 /// 1. Getting the current hunk and its previous resolution
-/// 2. Pushing an undo entry
+/// 2. Recording an undo action
 /// 3. Applying the new resolution
 /// 4. Setting a status message
 ///
@@ -100,11 +131,15 @@ where
         return;
     };
 
-    // Apply resolution and only push undo / set status on success
+    // Apply resolution and only record action / set status on success
     if let Some(session) = app.session.as_mut() {
-        match session.set_resolution(hunk_id, resolution) {
+        match session.set_resolution(hunk_id, resolution.clone()) {
             Ok(()) => {
-                app.undo_stack.push(hunk_id, prev, action);
+                app.action_history.record(Action::SetResolution {
+                    hunk_id,
+                    old: prev,
+                    new: resolution,
+                });
                 app.set_status_message(action);
             }
             Err(_) => {

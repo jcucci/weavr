@@ -31,10 +31,8 @@ pub mod navigation;
 pub mod resolution;
 pub mod theme;
 pub mod ui;
-pub mod undo;
-
 use input::{Command, Dialog, InputMode, KeySequence};
-use undo::UndoStack;
+use weavr_core::ActionHistory;
 
 /// Configuration for the three-pane layout.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -87,8 +85,8 @@ pub struct App {
     pub(crate) key_sequence: KeySequence,
     /// Status message to display (with timestamp for auto-clear).
     pub(crate) status_message: Option<(String, Instant)>,
-    /// Undo stack for resolution changes.
-    pub(crate) undo_stack: UndoStack,
+    /// Action history for undo/redo support.
+    pub(crate) action_history: ActionHistory,
     /// Current input mode.
     pub(crate) input_mode: InputMode,
     /// Command buffer for command mode.
@@ -120,7 +118,7 @@ impl App {
             layout_config: LayoutConfig::default(),
             key_sequence: KeySequence::new(),
             status_message: None,
-            undo_stack: UndoStack::new(),
+            action_history: ActionHistory::new(),
             input_mode: InputMode::default(),
             command_buffer: String::new(),
             active_dialog: None,
@@ -145,7 +143,7 @@ impl App {
             layout_config: LayoutConfig::default(),
             key_sequence: KeySequence::new(),
             status_message: None,
-            undo_stack: UndoStack::new(),
+            action_history: ActionHistory::new(),
             input_mode: InputMode::default(),
             command_buffer: String::new(),
             active_dialog: None,
@@ -286,6 +284,23 @@ impl App {
     /// Undoes the last resolution action.
     pub fn undo(&mut self) {
         resolution::undo(self);
+    }
+
+    /// Redoes the last undone resolution action.
+    pub fn redo(&mut self) {
+        resolution::redo(self);
+    }
+
+    /// Returns whether undo is available.
+    #[must_use]
+    pub fn can_undo(&self) -> bool {
+        self.action_history.can_undo()
+    }
+
+    /// Returns whether redo is available.
+    #[must_use]
+    pub fn can_redo(&self) -> bool {
+        self.action_history.can_redo()
     }
 
     /// Scrolls up by the specified number of lines.

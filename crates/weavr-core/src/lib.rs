@@ -21,6 +21,7 @@
 #![warn(missing_docs)]
 
 mod error;
+mod history;
 mod hunk;
 mod input;
 mod parser;
@@ -29,6 +30,7 @@ mod result;
 mod session;
 
 pub use error::*;
+pub use history::*;
 pub use hunk::*;
 pub use input::*;
 pub use parser::*;
