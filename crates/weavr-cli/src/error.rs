@@ -44,6 +44,9 @@ pub enum CliError {
     #[error("Completion error: {0}")]
     Completion(#[from] weavr_core::CompletionError),
 
+    #[error("Configuration error: {0}")]
+    Config(#[from] crate::config::ConfigError),
+
     #[error("Ambiguous hunks remain: {0} hunks could not be auto-resolved")]
     #[allow(dead_code)] // Reserved for --fail-on-ambiguous implementation
     AmbiguousHunks(usize),
