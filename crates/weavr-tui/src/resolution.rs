@@ -62,27 +62,26 @@ pub fn clear_current_resolution(app: &mut App) {
 
 /// Undoes the last resolution action.
 pub fn undo(app: &mut App) {
-    let Some(action) = app.action_history.undo().cloned() else {
+    let Some(action) = app.action_history.undo() else {
         app.set_status_message("Nothing to undo");
         return;
     };
 
     if let Some(session) = &mut app.session {
-        let result = match &action {
+        let description = action.description();
+        let result = match action {
             Action::SetResolution { hunk_id, old, .. } => {
                 if let Some(old_resolution) = old {
-                    session.set_resolution(*hunk_id, old_resolution.clone())
+                    session.set_resolution(hunk_id, old_resolution)
                 } else {
-                    session.clear_resolution(*hunk_id)
+                    session.clear_resolution(hunk_id)
                 }
             }
-            Action::ClearResolution { hunk_id, old } => {
-                session.set_resolution(*hunk_id, old.clone())
-            }
+            Action::ClearResolution { hunk_id, old } => session.set_resolution(hunk_id, old),
         };
 
         match result {
-            Ok(()) => app.set_status_message(&format!("Undid: {}", action.description())),
+            Ok(()) => app.set_status_message(&format!("Undid: {description}")),
             Err(_) => app.set_status_message("Failed to undo"),
         }
     }
@@ -90,21 +89,20 @@ pub fn undo(app: &mut App) {
 
 /// Redoes the last undone resolution action.
 pub fn redo(app: &mut App) {
-    let Some(action) = app.action_history.redo().cloned() else {
+    let Some(action) = app.action_history.redo() else {
         app.set_status_message("Nothing to redo");
         return;
     };
 
     if let Some(session) = &mut app.session {
-        let result = match &action {
-            Action::SetResolution { hunk_id, new, .. } => {
-                session.set_resolution(*hunk_id, new.clone())
-            }
-            Action::ClearResolution { hunk_id, .. } => session.clear_resolution(*hunk_id),
+        let description = action.description();
+        let result = match action {
+            Action::SetResolution { hunk_id, new, .. } => session.set_resolution(hunk_id, new),
+            Action::ClearResolution { hunk_id, .. } => session.clear_resolution(hunk_id),
         };
 
         match result {
-            Ok(()) => app.set_status_message(&format!("Redid: {}", action.description())),
+            Ok(()) => app.set_status_message(&format!("Redid: {description}")),
             Err(_) => app.set_status_message("Failed to redo"),
         }
     }

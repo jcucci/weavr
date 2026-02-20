@@ -6,6 +6,8 @@
 //!
 //! All types in this module are **stable** and covered by semantic versioning.
 
+use std::collections::VecDeque;
+
 use crate::{HunkId, Resolution};
 
 /// Default maximum history depth.
@@ -61,7 +63,7 @@ impl Action {
 /// recorded, the redo stack is cleared.
 #[derive(Debug, Clone)]
 pub struct ActionHistory {
-    undo_stack: Vec<Action>,
+    undo_stack: VecDeque<Action>,
     redo_stack: Vec<Action>,
     max_depth: usize,
 }
@@ -77,7 +79,7 @@ impl ActionHistory {
     #[must_use]
     pub fn new() -> Self {
         Self {
-            undo_stack: Vec::new(),
+            undo_stack: VecDeque::new(),
             redo_stack: Vec::new(),
             max_depth: DEFAULT_MAX_DEPTH,
         }
@@ -87,7 +89,7 @@ impl ActionHistory {
     #[must_use]
     pub fn with_max_depth(max_depth: usize) -> Self {
         Self {
-            undo_stack: Vec::new(),
+            undo_stack: VecDeque::new(),
             redo_stack: Vec::new(),
             max_depth,
         }
@@ -98,34 +100,32 @@ impl ActionHistory {
     /// If the undo stack exceeds `max_depth`, the oldest entry is removed.
     pub fn record(&mut self, action: Action) {
         self.redo_stack.clear();
-        self.undo_stack.push(action);
+        self.undo_stack.push_back(action);
         if self.undo_stack.len() > self.max_depth {
-            self.undo_stack.remove(0);
+            self.undo_stack.pop_front();
         }
     }
 
     /// Pops the most recent action from the undo stack and pushes it
     /// onto the redo stack.
     ///
-    /// Returns a reference to the action (now on the redo stack) so the
-    /// caller can replay the inverse. Returns `None` if the undo stack
-    /// is empty.
-    pub fn undo(&mut self) -> Option<&Action> {
-        let action = self.undo_stack.pop()?;
-        self.redo_stack.push(action);
-        self.redo_stack.last()
+    /// Returns the action so the caller can replay the inverse.
+    /// Returns `None` if the undo stack is empty.
+    pub fn undo(&mut self) -> Option<Action> {
+        let action = self.undo_stack.pop_back()?;
+        self.redo_stack.push(action.clone());
+        Some(action)
     }
 
     /// Pops the most recent action from the redo stack and pushes it
     /// back onto the undo stack.
     ///
-    /// Returns a reference to the action (now on the undo stack) so the
-    /// caller can replay it forward. Returns `None` if the redo stack
-    /// is empty.
-    pub fn redo(&mut self) -> Option<&Action> {
+    /// Returns the action so the caller can replay it forward.
+    /// Returns `None` if the redo stack is empty.
+    pub fn redo(&mut self) -> Option<Action> {
         let action = self.redo_stack.pop()?;
-        self.undo_stack.push(action);
-        self.undo_stack.last()
+        self.undo_stack.push_back(action.clone());
+        Some(action)
     }
 
     /// Returns true if there are actions that can be undone.
