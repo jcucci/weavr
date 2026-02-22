@@ -172,6 +172,12 @@ mod tests {
     }
 
     #[test]
+    fn parse_help() {
+        assert_eq!(Command::parse("help"), Command::Help);
+        assert_eq!(Command::parse("  help  "), Command::Help);
+    }
+
+    #[test]
     fn parse_unknown() {
         assert_eq!(Command::parse("foo"), Command::Unknown("foo".to_string()));
         assert_eq!(Command::parse(""), Command::Unknown(String::new()));

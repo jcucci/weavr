@@ -184,7 +184,7 @@ fn handle_dialog_mode(app: &mut App, key: KeyEvent) {
     match app.active_dialog() {
         Some(Dialog::Help(_)) => {
             match key.code {
-                KeyCode::Esc | KeyCode::Char('q' | '?') | KeyCode::F(1) => app.close_dialog(),
+                KeyCode::Esc | KeyCode::Char('q' | '?') => app.close_dialog(),
                 // Scroll: j/Down = 1 line, k/Up = 1 line
                 KeyCode::Char('j') | KeyCode::Down => {
                     crate::dialog::help_scroll_down(app, 1);

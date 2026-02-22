@@ -11,7 +11,7 @@ use ratatui::{
     Frame,
 };
 
-use crate::help::default_help_sections;
+use crate::help::{default_help_sections, help_line_count};
 use crate::input::{AcceptBothOptionsState, HelpState};
 use crate::theme::Theme;
 use weavr_core::BothOrder;
@@ -35,7 +35,7 @@ pub fn render_help_overlay(frame: &mut Frame, area: Rect, theme: &Theme, state: 
             format!("=== {} ===", section.title),
             Style::default().add_modifier(Modifier::BOLD),
         )));
-        for binding in &section.bindings {
+        for binding in section.bindings {
             help_lines.push(Line::from(format!(
                 "  {:<10}{}",
                 binding.key, binding.description
@@ -56,9 +56,16 @@ pub fn render_help_overlay(frame: &mut Frame, area: Rect, theme: &Theme, state: 
         .border_style(Style::default().fg(theme.ui.border_focused))
         .style(Style::default().bg(theme.base.background));
 
+    // Clamp scroll so the user can't scroll past the content.
+    // Inner height = dialog height minus 2 for top/bottom borders.
+    let visible_height = dialog_area.height.saturating_sub(2) as usize;
+    let total_lines = help_line_count();
+    let max_scroll = total_lines.saturating_sub(visible_height);
+    let clamped_scroll = state.scroll.min(max_scroll);
+
     let paragraph = Paragraph::new(help_lines)
         .block(block)
-        .scroll((u16::try_from(state.scroll).unwrap_or(u16::MAX), 0))
+        .scroll((u16::try_from(clamped_scroll).unwrap_or(u16::MAX), 0))
         .style(Style::default().fg(theme.base.foreground));
 
     frame.render_widget(paragraph, dialog_area);

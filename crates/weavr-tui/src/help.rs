@@ -3,6 +3,8 @@
 //! Provides data-driven help sections and keybinding descriptions
 //! used by the help dialog renderer.
 
+use std::sync::OnceLock;
+
 /// A single keybinding entry.
 pub struct HelpBinding {
     /// The key or key combination (e.g., "o", "Ctrl+d").
@@ -16,17 +18,17 @@ pub struct HelpSection {
     /// Section header (e.g., "Resolution").
     pub title: &'static str,
     /// The bindings in this section.
-    pub bindings: Vec<HelpBinding>,
+    pub bindings: &'static [HelpBinding],
 }
 
-/// Returns the default help sections with all built-in keybindings.
-#[must_use]
+static HELP_SECTIONS: OnceLock<Vec<HelpSection>> = OnceLock::new();
+
 #[allow(clippy::too_many_lines)]
-pub fn default_help_sections() -> Vec<HelpSection> {
+fn build_help_sections() -> Vec<HelpSection> {
     vec![
         HelpSection {
             title: "Resolution",
-            bindings: vec![
+            bindings: &[
                 HelpBinding {
                     key: "o",
                     description: "Accept ours (left)",
@@ -63,7 +65,7 @@ pub fn default_help_sections() -> Vec<HelpSection> {
         },
         HelpSection {
             title: "Navigation",
-            bindings: vec![
+            bindings: &[
                 HelpBinding {
                     key: "j/k",
                     description: "Next/prev hunk",
@@ -88,7 +90,7 @@ pub fn default_help_sections() -> Vec<HelpSection> {
         },
         HelpSection {
             title: "Scrolling",
-            bindings: vec![
+            bindings: &[
                 HelpBinding {
                     key: "Ctrl+d",
                     description: "Scroll down",
@@ -109,7 +111,7 @@ pub fn default_help_sections() -> Vec<HelpSection> {
         },
         HelpSection {
             title: "AI (when configured)",
-            bindings: vec![
+            bindings: &[
                 HelpBinding {
                     key: "s",
                     description: "AI suggest (current hunk)",
@@ -120,7 +122,7 @@ pub fn default_help_sections() -> Vec<HelpSection> {
                 },
                 HelpBinding {
                     key: "?",
-                    description: "AI explain (when suggestion shown)",
+                    description: "Help / AI explain (when suggestion shown)",
                 },
                 HelpBinding {
                     key: "Enter",
@@ -134,7 +136,7 @@ pub fn default_help_sections() -> Vec<HelpSection> {
         },
         HelpSection {
             title: "Commands",
-            bindings: vec![
+            bindings: &[
                 HelpBinding {
                     key: ":w",
                     description: "Save file",
@@ -164,6 +166,34 @@ pub fn default_help_sections() -> Vec<HelpSection> {
     ]
 }
 
+/// Returns the default help sections with all built-in keybindings.
+///
+/// This is backed by a `OnceLock` so repeated calls (e.g., per-frame
+/// rendering) do not allocate.
+#[must_use]
+pub fn default_help_sections() -> &'static [HelpSection] {
+    HELP_SECTIONS.get_or_init(build_help_sections)
+}
+
+/// Returns the total number of display lines the help sections produce.
+///
+/// Includes section headers, bindings, blank separators, and the
+/// closing hint line.
+#[must_use]
+pub fn help_line_count() -> usize {
+    let sections = default_help_sections();
+    let mut count = 0;
+    for (i, section) in sections.iter().enumerate() {
+        if i > 0 {
+            count += 1; // blank separator
+        }
+        count += 1; // section header
+        count += section.bindings.len();
+    }
+    count += 2; // trailing blank + hint line
+    count
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -172,7 +202,7 @@ mod tests {
     fn default_sections_not_empty() {
         let sections = default_help_sections();
         assert!(!sections.is_empty());
-        for section in &sections {
+        for section in sections {
             assert!(!section.title.is_empty());
             assert!(!section.bindings.is_empty());
         }
@@ -181,11 +211,26 @@ mod tests {
     #[test]
     fn all_bindings_have_content() {
         let sections = default_help_sections();
-        for section in &sections {
-            for binding in &section.bindings {
+        for section in sections {
+            for binding in section.bindings {
                 assert!(!binding.key.is_empty());
                 assert!(!binding.description.is_empty());
             }
         }
+    }
+
+    #[test]
+    fn help_line_count_matches_sections() {
+        let count = help_line_count();
+        // Should be positive and consistent
+        assert!(count > 0);
+        assert_eq!(count, help_line_count());
+    }
+
+    #[test]
+    fn repeated_calls_return_same_reference() {
+        let a = default_help_sections();
+        let b = default_help_sections();
+        assert!(std::ptr::eq(a, b));
     }
 }
