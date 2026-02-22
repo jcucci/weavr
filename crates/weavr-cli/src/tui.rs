@@ -5,7 +5,7 @@ use std::path::Path;
 use weavr_core::MergeSession;
 use weavr_tui::App;
 
-use crate::config::WeavrConfig;
+use crate::config::{RawKeybindingsConfig, WeavrConfig};
 use crate::error::CliError;
 
 /// Result of TUI processing for a single file.
@@ -21,7 +21,11 @@ pub struct TuiResult {
 /// Runs the TUI for a single file.
 ///
 /// Returns the resolution result after the user quits the TUI.
-pub fn process_file(path: &Path, config: &WeavrConfig) -> Result<TuiResult, CliError> {
+pub fn process_file(
+    path: &Path,
+    config: &WeavrConfig,
+    keybindings_config: Option<&RawKeybindingsConfig>,
+) -> Result<TuiResult, CliError> {
     let content = std::fs::read_to_string(path)?;
     let session = MergeSession::from_conflicted(&content, path.to_path_buf())?;
 
@@ -39,6 +43,22 @@ pub fn process_file(path: &Path, config: &WeavrConfig) -> Result<TuiResult, CliE
     // Create and configure App
     let mut app = App::with_theme(config.theme);
     app.set_session(session);
+
+    // Wire up custom keybindings if configured
+    if let Some(kb_config) = keybindings_config {
+        let overrides = kb_config.clone().into_key_lists();
+        match weavr_tui::keybindings::build_from_config(&overrides) {
+            Ok((map, warnings)) => {
+                for w in &warnings {
+                    eprintln!("weavr: {w}");
+                }
+                app.set_keybindings(map);
+            }
+            Err(e) => {
+                eprintln!("weavr: keybinding config error: {e}");
+            }
+        }
+    }
 
     // Wire up AI if configured
     #[cfg(feature = "ai")]

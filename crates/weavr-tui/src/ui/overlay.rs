@@ -11,20 +11,25 @@ use ratatui::{
     Frame,
 };
 
-use crate::help::{default_help_sections, help_line_count};
+use crate::help::{self, HelpSection};
 use crate::input::{AcceptBothOptionsState, HelpState};
 use crate::theme::Theme;
 use weavr_core::BothOrder;
 
 /// Renders a centered, scrollable help overlay showing keybindings.
-pub fn render_help_overlay(frame: &mut Frame, area: Rect, theme: &Theme, state: &HelpState) {
+pub fn render_help_overlay(
+    frame: &mut Frame,
+    area: Rect,
+    theme: &Theme,
+    state: &HelpState,
+    sections: &[HelpSection],
+) {
     let dialog_area = centered_rect(60, 70, area);
 
     // Clear the background
     frame.render_widget(Clear, dialog_area);
 
     // Build lines from structured help data
-    let sections = default_help_sections();
     let mut help_lines: Vec<Line<'_>> = Vec::new();
 
     for (i, section) in sections.iter().enumerate() {
@@ -35,7 +40,7 @@ pub fn render_help_overlay(frame: &mut Frame, area: Rect, theme: &Theme, state: 
             format!("=== {} ===", section.title),
             Style::default().add_modifier(Modifier::BOLD),
         )));
-        for binding in section.bindings {
+        for binding in &section.bindings {
             help_lines.push(Line::from(format!(
                 "  {:<10}{}",
                 binding.key, binding.description
@@ -59,7 +64,7 @@ pub fn render_help_overlay(frame: &mut Frame, area: Rect, theme: &Theme, state: 
     // Clamp scroll so the user can't scroll past the content.
     // Inner height = dialog height minus 2 for top/bottom borders.
     let visible_height = dialog_area.height.saturating_sub(2) as usize;
-    let total_lines = help_line_count();
+    let total_lines = help::help_line_count(sections);
     let max_scroll = total_lines.saturating_sub(visible_height);
     let clamped_scroll = state.scroll.min(max_scroll);
 
