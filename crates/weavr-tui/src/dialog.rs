@@ -6,14 +6,28 @@
 
 use weavr_core::{AcceptBothOptions, BothOrder, Resolution};
 
-use crate::input::{AcceptBothOptionsState, Dialog, InputMode};
+use crate::input::{AcceptBothOptionsState, Dialog, HelpState, InputMode};
 use crate::resolution;
 use crate::App;
 
 /// Shows the help dialog.
 pub fn show_help(app: &mut App) {
-    app.active_dialog = Some(Dialog::Help);
+    app.active_dialog = Some(Dialog::Help(HelpState::default()));
     app.input_mode = InputMode::Dialog;
+}
+
+/// Scrolls the help dialog down by the given number of lines.
+pub fn help_scroll_down(app: &mut App, lines: usize) {
+    if let Some(Dialog::Help(ref mut state)) = app.active_dialog {
+        state.scroll = state.scroll.saturating_add(lines);
+    }
+}
+
+/// Scrolls the help dialog up by the given number of lines.
+pub fn help_scroll_up(app: &mut App, lines: usize) {
+    if let Some(Dialog::Help(ref mut state)) = app.active_dialog {
+        state.scroll = state.scroll.saturating_sub(lines);
+    }
 }
 
 /// Closes any open dialog and returns to normal mode.

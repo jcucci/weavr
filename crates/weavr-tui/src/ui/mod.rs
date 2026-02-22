@@ -31,7 +31,9 @@ pub fn draw(frame: &mut Frame, app: &App) {
     // Render overlay dialogs on top
     if let Some(dialog) = app.active_dialog() {
         match dialog {
-            Dialog::Help => overlay::render_help_overlay(frame, frame.area(), app.theme()),
+            Dialog::Help(ref state) => {
+                overlay::render_help_overlay(frame, frame.area(), app.theme(), state);
+            }
             Dialog::AcceptBothOptions(state) => {
                 overlay::render_accept_both_dialog(frame, frame.area(), app.theme(), state);
             }

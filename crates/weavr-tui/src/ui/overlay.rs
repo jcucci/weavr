@@ -11,74 +11,43 @@ use ratatui::{
     Frame,
 };
 
-use crate::input::AcceptBothOptionsState;
+use crate::help::{default_help_sections, help_line_count};
+use crate::input::{AcceptBothOptionsState, HelpState};
 use crate::theme::Theme;
 use weavr_core::BothOrder;
 
-/// Renders a centered help overlay showing keybindings.
-pub fn render_help_overlay(frame: &mut Frame, area: Rect, theme: &Theme) {
+/// Renders a centered, scrollable help overlay showing keybindings.
+pub fn render_help_overlay(frame: &mut Frame, area: Rect, theme: &Theme, state: &HelpState) {
     let dialog_area = centered_rect(60, 70, area);
 
     // Clear the background
     frame.render_widget(Clear, dialog_area);
 
-    let help_lines = vec![
-        Line::from(Span::styled(
-            "=== Resolution ===",
+    // Build lines from structured help data
+    let sections = default_help_sections();
+    let mut help_lines: Vec<Line<'_>> = Vec::new();
+
+    for (i, section) in sections.iter().enumerate() {
+        if i > 0 {
+            help_lines.push(Line::from(""));
+        }
+        help_lines.push(Line::from(Span::styled(
+            format!("=== {} ===", section.title),
             Style::default().add_modifier(Modifier::BOLD),
-        )),
-        Line::from("  o       Accept ours (left)"),
-        Line::from("  t       Accept theirs (right)"),
-        Line::from("  b       Accept both (default)"),
-        Line::from("  B       Accept both (options)"),
-        Line::from("  e       Edit in $EDITOR"),
-        Line::from("  x       Clear resolution"),
-        Line::from("  u       Undo last action"),
-        Line::from("  Ctrl+r  Redo last action"),
-        Line::from(""),
-        Line::from(Span::styled(
-            "=== Navigation ===",
-            Style::default().add_modifier(Modifier::BOLD),
-        )),
-        Line::from("  j/k     Next/prev hunk"),
-        Line::from("  n/N     Next/prev unresolved"),
-        Line::from("  gg/G    First/last hunk"),
-        Line::from("  Tab     Cycle panes"),
-        Line::from("  Enter   Focus result pane"),
-        Line::from(""),
-        Line::from(Span::styled(
-            "=== Scrolling ===",
-            Style::default().add_modifier(Modifier::BOLD),
-        )),
-        Line::from("  Ctrl+d  Scroll down"),
-        Line::from("  Ctrl+u  Scroll up"),
-        Line::from("  PgDn    Page down"),
-        Line::from("  PgUp    Page up"),
-        Line::from(""),
-        Line::from(Span::styled(
-            "=== AI (when configured) ===",
-            Style::default().add_modifier(Modifier::BOLD),
-        )),
-        Line::from("  s       AI suggest (current hunk)"),
-        Line::from("  S       AI suggest (all unresolved)"),
-        Line::from("  ?       AI explain (when suggestion shown)"),
-        Line::from("  Enter   Accept AI suggestion"),
-        Line::from("  Esc     Dismiss AI suggestion"),
-        Line::from(""),
-        Line::from(Span::styled(
-            "=== Commands ===",
-            Style::default().add_modifier(Modifier::BOLD),
-        )),
-        Line::from("  :w      Save file"),
-        Line::from("  :q      Quit"),
-        Line::from("  :wq     Save and quit"),
-        Line::from("  :q!     Force quit"),
-        Line::from(""),
-        Line::from(Span::styled(
-            "Press ?, q, or Esc to close",
-            Style::default().fg(theme.base.muted),
-        )),
-    ];
+        )));
+        for binding in section.bindings {
+            help_lines.push(Line::from(format!(
+                "  {:<10}{}",
+                binding.key, binding.description
+            )));
+        }
+    }
+
+    help_lines.push(Line::from(""));
+    help_lines.push(Line::from(Span::styled(
+        "Press ?, q, or Esc to close · j/k to scroll",
+        Style::default().fg(theme.base.muted),
+    )));
 
     let block = Block::default()
         .title(" Help ")
@@ -87,8 +56,16 @@ pub fn render_help_overlay(frame: &mut Frame, area: Rect, theme: &Theme) {
         .border_style(Style::default().fg(theme.ui.border_focused))
         .style(Style::default().bg(theme.base.background));
 
+    // Clamp scroll so the user can't scroll past the content.
+    // Inner height = dialog height minus 2 for top/bottom borders.
+    let visible_height = dialog_area.height.saturating_sub(2) as usize;
+    let total_lines = help_line_count();
+    let max_scroll = total_lines.saturating_sub(visible_height);
+    let clamped_scroll = state.scroll.min(max_scroll);
+
     let paragraph = Paragraph::new(help_lines)
         .block(block)
+        .scroll((u16::try_from(clamped_scroll).unwrap_or(u16::MAX), 0))
         .style(Style::default().fg(theme.base.foreground));
 
     frame.render_widget(paragraph, dialog_area);
