@@ -146,6 +146,6 @@ fn reset_scroll(app: &mut App) {
         }
     }
     app.ai_state.pending_hunk = None;
-    // Clear hunk-specific display state; keep suggestions map and batch state
-    app.ai_state.explanation = None;
+    // Clear in-flight explanation hash; keep cached explanations and suggestions
+    app.ai_state.pending_explanation_hash = None;
 }
