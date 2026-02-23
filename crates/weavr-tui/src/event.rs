@@ -55,7 +55,12 @@ fn handle_key_event(app: &mut App, key: KeyEvent) {
 /// bindings registered as `(BackTab, NONE)` always match.
 fn normalize_key(code: KeyCode, mods: KeyModifiers) -> (KeyCode, KeyModifiers) {
     match code {
-        KeyCode::BackTab => (code, mods.difference(KeyModifiers::SHIFT)),
+        // BackTab inherently means Shift+Tab; strip the redundant SHIFT modifier.
+        KeyCode::BackTab => (KeyCode::BackTab, mods.difference(KeyModifiers::SHIFT)),
+        // Some terminals send Tab+SHIFT instead of BackTab; normalize to BackTab.
+        KeyCode::Tab if mods.contains(KeyModifiers::SHIFT) => {
+            (KeyCode::BackTab, mods.difference(KeyModifiers::SHIFT))
+        }
         _ => (code, mods),
     }
 }

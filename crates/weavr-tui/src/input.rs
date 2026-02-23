@@ -150,11 +150,11 @@ impl KeySequence {
 
     /// Returns the pending keys as `(KeyCode, KeyModifiers)` pairs,
     /// checking that no key has timed out. If any key has expired,
-    /// returns an empty vec and clears the buffer.
-    #[must_use]
-    pub fn pending_keys(&self, timeout: Duration) -> Vec<(KeyCode, KeyModifiers)> {
+    /// clears the buffer and returns an empty vec.
+    pub fn pending_keys(&mut self, timeout: Duration) -> Vec<(KeyCode, KeyModifiers)> {
         if let Some((_, _, timestamp)) = self.pending.first() {
             if timestamp.elapsed() > timeout {
+                self.pending.clear();
                 return Vec::new();
             }
         }

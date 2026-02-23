@@ -104,7 +104,7 @@ pub fn build_help_sections(map: &KeybindingMap) -> Vec<HelpSection> {
                     key: ":help".to_string(),
                     description: "Show this help",
                 },
-                binding(map, Action::ShowHelp, "Show this help"),
+                binding(map, Action::ShowHelp, "Toggle help overlay"),
             ],
         },
     ]

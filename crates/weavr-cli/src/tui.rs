@@ -56,6 +56,7 @@ pub fn process_file(
             }
             Err(e) => {
                 eprintln!("weavr: keybinding config error: {e}");
+                eprintln!("       Falling back to default keybindings.");
             }
         }
     }

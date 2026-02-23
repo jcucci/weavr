@@ -295,6 +295,11 @@ fn parse_angle_bracket(inner: &str) -> Result<KeyInput, KeyNotationError> {
     }
     if let Some(rest) = inner.strip_prefix("S-") {
         let (code, extra_mods) = parse_key_name(rest)?;
+        // Normalize: Shift+Tab is BackTab with no extra SHIFT, since BackTab
+        // inherently represents Shift+Tab.
+        if code == KeyCode::Tab {
+            return Ok(KeyInput::Single(KeyCode::BackTab, extra_mods));
+        }
         return Ok(KeyInput::Single(code, KeyModifiers::SHIFT | extra_mods));
     }
 
@@ -364,14 +369,20 @@ pub fn display_key_notation(input: &KeyInput) -> String {
 
 /// Formats a single key press as a human-readable string.
 fn display_single_key(code: KeyCode, mods: KeyModifiers) -> String {
+    // BackTab already implies Shift; strip redundant SHIFT to avoid "Shift+S-Tab".
+    let effective_mods = match code {
+        KeyCode::BackTab => mods.difference(KeyModifiers::SHIFT),
+        _ => mods,
+    };
+
     let mut prefix = String::new();
-    if mods.contains(KeyModifiers::CONTROL) {
+    if effective_mods.contains(KeyModifiers::CONTROL) {
         prefix.push_str("Ctrl+");
     }
-    if mods.contains(KeyModifiers::ALT) {
+    if effective_mods.contains(KeyModifiers::ALT) {
         prefix.push_str("Alt+");
     }
-    if mods.contains(KeyModifiers::SHIFT) {
+    if effective_mods.contains(KeyModifiers::SHIFT) {
         prefix.push_str("Shift+");
     }
 
@@ -539,10 +550,6 @@ impl KeybindingMap {
         map.bind(Action::LastHunk, single_char('G'));
         map.bind(Action::CycleFocus, single_key(KeyCode::Tab));
         map.bind(Action::CycleFocusBack, single_key(KeyCode::BackTab));
-        map.bind(
-            Action::CycleFocusBack,
-            KeyInput::Single(KeyCode::Tab, KeyModifiers::SHIFT),
-        );
         map.bind(Action::FocusResult, single_key(KeyCode::Enter));
 
         // Scrolling
@@ -651,6 +658,30 @@ fn detect_conflicts(map: &KeybindingMap, warnings: &mut Vec<String>) {
             ));
         }
     }
+
+    // Check for the same key bound to multiple actions via the reverse map.
+    // Build key → Vec<Action> and warn when a key maps to more than one action.
+    let mut key_to_actions: HashMap<(KeyCode, KeyModifiers), Vec<Action>> = HashMap::new();
+    for (&action, inputs) in &map.reverse {
+        for input in inputs {
+            if let KeyInput::Single(code, mods) = input {
+                key_to_actions
+                    .entry((*code, *mods))
+                    .or_default()
+                    .push(action);
+            }
+        }
+    }
+    for ((code, mods), actions) in &key_to_actions {
+        if actions.len() > 1 {
+            let key_display = display_single_key(*code, *mods);
+            let action_names: Vec<_> = actions.iter().map(ToString::to_string).collect();
+            warnings.push(format!(
+                "key '{key_display}' is bound to multiple actions: {}; last binding wins",
+                action_names.join(", "),
+            ));
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -745,9 +776,10 @@ mod tests {
             parse_key_notation("<Tab>").unwrap(),
             KeyInput::Single(KeyCode::Tab, KeyModifiers::NONE)
         );
+        // <S-Tab> normalizes to BackTab (BackTab inherently means Shift+Tab)
         assert_eq!(
             parse_key_notation("<S-Tab>").unwrap(),
-            KeyInput::Single(KeyCode::Tab, KeyModifiers::SHIFT)
+            KeyInput::Single(KeyCode::BackTab, KeyModifiers::NONE)
         );
     }
 
