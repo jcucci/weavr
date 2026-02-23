@@ -608,7 +608,11 @@ impl App {
     }
 
     /// Takes ownership of the workspace, leaving `None` in its place.
+    ///
+    /// Saves the current file's state back into the workspace first,
+    /// so the caller receives fully up-to-date per-file data.
     pub fn take_workspace(&mut self) -> Option<workspace::Workspace> {
+        self.save_current_file_state();
         self.workspace.take()
     }
 

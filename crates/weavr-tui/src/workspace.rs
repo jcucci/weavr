@@ -63,20 +63,11 @@ impl FileState {
     /// Returns the resolution status of this file.
     #[must_use]
     pub fn status(&self) -> FileStatus {
-        let total = self.session.hunks().len();
-        if total == 0 {
-            return FileStatus::FullyResolved;
-        }
-        let resolved = self
-            .session
-            .hunks()
-            .iter()
-            .filter(|h| matches!(h.state, HunkState::Resolved(_)))
-            .count();
-        if resolved == 0 {
-            FileStatus::NotStarted
-        } else if resolved == total {
+        let (resolved, total) = self.resolution_counts();
+        if total == 0 || resolved == total {
             FileStatus::FullyResolved
+        } else if resolved == 0 {
+            FileStatus::NotStarted
         } else {
             FileStatus::InProgress
         }

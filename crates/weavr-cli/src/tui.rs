@@ -208,8 +208,6 @@ pub fn process_files(
 
     // Phase 5: Extract workspace and build results
     if let Some(mut workspace) = app.take_workspace() {
-        // Save current file state back before extracting
-        // (App::take_workspace already returns after save in quit)
         for file_state in workspace.files_mut().drain(..) {
             let total_hunks = file_state.session.hunks().len();
             let resolved_count = file_state
