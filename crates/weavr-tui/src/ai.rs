@@ -313,6 +313,10 @@ pub fn request_explanation(app: &mut App) {
     }
 
     // Cache miss — send request to AI worker
+    // Don't request if already loading for this hunk
+    if app.ai_state.pending_hunk == Some(hunk.id) {
+        return;
+    }
     app.ai_state.pending_hunk = Some(hunk.id);
     app.ai_state.pending_explanation_hash = Some(hash);
     if app
