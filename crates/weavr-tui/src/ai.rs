@@ -148,8 +148,10 @@ pub struct AiState {
     pub pending_batch: bool,
     /// Suggestions keyed by hunk ID.
     pub suggestions: HashMap<HunkId, AiSuggestion>,
-    /// An explanation for the current hunk.
-    pub explanation: Option<String>,
+    /// Cached explanations keyed by hunk content hash.
+    pub explanations: HashMap<u64, String>,
+    /// Content hash of the in-flight explanation request.
+    pub pending_explanation_hash: Option<u64>,
     /// Spinner animation frame counter.
     pub spinner_tick: u8,
 }
@@ -173,10 +175,10 @@ impl AiState {
         self.suggestions.get(&hunk_id)
     }
 
-    /// Clears the suggestions and explanation state.
+    /// Clears the suggestions and explanation cache.
     pub fn clear(&mut self) {
         self.suggestions.clear();
-        self.explanation = None;
+        self.explanations.clear();
     }
 
     /// Advances the spinner animation tick.
@@ -288,6 +290,9 @@ pub fn dismiss_suggestion(app: &mut App) {
 }
 
 /// Requests an AI explanation for the current hunk.
+///
+/// Returns a cached explanation immediately if one exists for the same
+/// hunk content. Otherwise sends an async request to the AI worker.
 #[allow(clippy::missing_panics_doc)] // unwrap is guarded by is_none() check above
 pub fn request_explanation(app: &mut App) {
     if app.ai_handle.is_none() {
@@ -297,7 +302,23 @@ pub fn request_explanation(app: &mut App) {
     let Some(hunk) = app.current_hunk().cloned() else {
         return;
     };
+
+    let hash = hunk.content_hash();
+
+    // Cache hit — show the cached explanation immediately
+    if let Some(text) = app.ai_state.explanations.get(&hash) {
+        app.active_dialog = Some(Dialog::AiExplanation(text.clone()));
+        app.input_mode = InputMode::Dialog;
+        return;
+    }
+
+    // Cache miss — send request to AI worker
+    // Don't request if already loading for this hunk
+    if app.ai_state.pending_hunk == Some(hunk.id) {
+        return;
+    }
     app.ai_state.pending_hunk = Some(hunk.id);
+    app.ai_state.pending_explanation_hash = Some(hash);
     if app
         .ai_handle
         .as_ref()
@@ -309,6 +330,7 @@ pub fn request_explanation(app: &mut App) {
         .is_err()
     {
         app.ai_state.pending_hunk = None;
+        app.ai_state.pending_explanation_hash = None;
         app.ai_handle = None;
         app.set_status_message("AI worker disconnected");
         return;
@@ -373,9 +395,12 @@ pub fn poll_ai_events(app: &mut App) {
                 // Only show explanation if still relevant to current hunk
                 let interested = app.ai_state.pending_hunk == Some(hunk_id)
                     || app.current_hunk().is_some_and(|h| h.id == hunk_id);
+                // Cache the explanation under the content hash
+                if let Some(hash) = app.ai_state.pending_explanation_hash.take() {
+                    app.ai_state.explanations.insert(hash, text.clone());
+                }
                 app.ai_state.pending_hunk = None;
                 if interested {
-                    app.ai_state.explanation = Some(text.clone());
                     app.active_dialog = Some(Dialog::AiExplanation(text));
                     app.input_mode = InputMode::Dialog;
                 }
@@ -408,7 +433,7 @@ mod tests {
         let state = AiState::default();
         assert!(!state.is_loading());
         assert!(state.suggestions.is_empty());
-        assert!(state.explanation.is_none());
+        assert!(state.explanations.is_empty());
     }
 
     #[test]
@@ -446,7 +471,7 @@ mod tests {
     }
 
     #[test]
-    fn ai_state_clear_removes_suggestion_and_explanation() {
+    fn ai_state_clear_removes_suggestions_and_explanations() {
         let mut state = AiState::default();
         state.suggestions.insert(
             HunkId(1),
@@ -456,10 +481,10 @@ mod tests {
                 confidence: None,
             },
         );
-        state.explanation = Some("explanation".into());
+        state.explanations.insert(12345, "explanation".into());
         state.clear();
         assert!(state.suggestions.is_empty());
-        assert!(state.explanation.is_none());
+        assert!(state.explanations.is_empty());
     }
 
     #[test]

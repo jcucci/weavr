@@ -61,6 +61,24 @@ pub struct ConflictHunk {
     pub state: HunkState,
 }
 
+impl ConflictHunk {
+    /// Returns a hash of the hunk's content (left, right, base text).
+    ///
+    /// Used for caching AI explanations — identical content produces the same
+    /// hash, and any change in content automatically invalidates the cache.
+    #[must_use]
+    pub fn content_hash(&self) -> u64 {
+        use std::hash::{Hash, Hasher};
+        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        self.left.text.hash(&mut hasher);
+        self.right.text.hash(&mut hasher);
+        if let Some(base) = &self.base {
+            base.text.hash(&mut hasher);
+        }
+        hasher.finish()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -93,5 +111,53 @@ mod tests {
         assert!(ctx.after.is_empty());
         assert_eq!(ctx.start_line_left, 0);
         assert_eq!(ctx.start_line_right, 0);
+    }
+
+    fn make_hunk(left: &str, right: &str, base: Option<&str>) -> ConflictHunk {
+        ConflictHunk {
+            id: HunkId(1),
+            left: HunkContent {
+                text: left.to_string(),
+            },
+            right: HunkContent {
+                text: right.to_string(),
+            },
+            base: base.map(|b| HunkContent {
+                text: b.to_string(),
+            }),
+            context: HunkContext::default(),
+            state: HunkState::default(),
+        }
+    }
+
+    #[test]
+    fn content_hash_stable_for_same_content() {
+        let a = make_hunk("left", "right", Some("base"));
+        let b = make_hunk("left", "right", Some("base"));
+        assert_eq!(a.content_hash(), b.content_hash());
+    }
+
+    #[test]
+    fn content_hash_differs_for_different_content() {
+        let a = make_hunk("left", "right", Some("base"));
+        let b = make_hunk("LEFT", "right", Some("base"));
+        assert_ne!(a.content_hash(), b.content_hash());
+    }
+
+    #[test]
+    fn content_hash_differs_with_and_without_base() {
+        let a = make_hunk("left", "right", Some("base"));
+        let b = make_hunk("left", "right", None);
+        assert_ne!(a.content_hash(), b.content_hash());
+    }
+
+    #[test]
+    fn content_hash_ignores_id_and_state() {
+        let mut a = make_hunk("left", "right", None);
+        let mut b = make_hunk("left", "right", None);
+        a.id = HunkId(1);
+        b.id = HunkId(99);
+        b.state = HunkState::Invalid;
+        assert_eq!(a.content_hash(), b.content_hash());
     }
 }
