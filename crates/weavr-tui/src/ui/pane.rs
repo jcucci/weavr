@@ -156,12 +156,30 @@ pub fn render_title_bar(frame: &mut Frame, area: Rect, app: &App) {
         "No conflicts".to_string()
     };
 
-    let title = Line::from(vec![
-        Span::styled(" weavr ", theme.ui.title),
-        Span::raw("| "),
-        Span::styled(hunk_info, Style::default().fg(theme.base.accent)),
-    ]);
+    let mut spans = vec![Span::styled(" weavr ", theme.ui.title), Span::raw("| ")];
 
+    // Add file position indicator in multi-file mode
+    if app.is_multi_file() {
+        if let Some(ref ws) = app.workspace {
+            let file_path = ws.current().path.to_string_lossy();
+            spans.push(Span::styled(
+                format!(
+                    "[{}/{}] {file_path} ",
+                    app.current_file_index() + 1,
+                    app.file_count()
+                ),
+                Style::default().fg(theme.base.foreground),
+            ));
+            spans.push(Span::raw("| "));
+        }
+    }
+
+    spans.push(Span::styled(
+        hunk_info,
+        Style::default().fg(theme.base.accent),
+    ));
+
+    let title = Line::from(spans);
     let paragraph = Paragraph::new(title).style(theme.ui.title.bg(theme.base.background));
     frame.render_widget(paragraph, area);
 }
@@ -213,17 +231,33 @@ pub fn render_status_bar(frame: &mut Frame, area: Rect, app: &App) {
         FocusedPane::Result => "Result",
     };
 
-    // Format: "Hunk 2/5 | Left pane | 3 unresolved"
+    // Build file prefix for multi-file mode
+    let file_prefix = if app.is_multi_file() {
+        if let Some(ref ws) = app.workspace {
+            let name = ws.current().display_name();
+            format!(
+                "[{}/{}] {name} | ",
+                app.current_file_index() + 1,
+                app.file_count()
+            )
+        } else {
+            String::new()
+        }
+    } else {
+        String::new()
+    };
+
+    // Format: "[2/3] src/lib.rs | Hunk 1/4 | Left pane | 3 unresolved"
     let status_text = if app.total_hunks() > 0 {
         format!(
-            " Hunk {}/{} | {} pane | {} unresolved",
+            " {file_prefix}Hunk {}/{} | {} pane | {} unresolved",
             app.current_hunk_index() + 1,
             app.total_hunks(),
             pane_name,
             unresolved_count
         )
     } else {
-        format!(" {pane_name} pane | No conflicts")
+        format!(" {file_prefix}{pane_name} pane | No conflicts")
     };
 
     // Add AI indicator when AI is available

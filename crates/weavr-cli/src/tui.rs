@@ -1,6 +1,6 @@
 //! TUI mode implementation.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use weavr_core::MergeSession;
 use weavr_tui::App;
@@ -10,6 +10,8 @@ use crate::error::CliError;
 
 /// Result of TUI processing for a single file.
 pub struct TuiResult {
+    /// Path to the file.
+    pub path: PathBuf,
     /// The resolved content (if fully resolved and saved).
     pub content: Option<String>,
     /// Number of hunks that were resolved.
@@ -34,6 +36,7 @@ pub fn process_file(
     // Handle files without conflicts (already clean)
     if session.hunks().is_empty() {
         return Ok(TuiResult {
+            path: path.to_path_buf(),
             content: Some(content),
             hunks_resolved: 0,
             total_hunks: 0,
@@ -97,6 +100,7 @@ pub fn process_file(
         let result = session.complete()?;
 
         Ok(TuiResult {
+            path: path.to_path_buf(),
             content: Some(result.content),
             hunks_resolved: result.summary.resolved_hunks,
             total_hunks,
@@ -105,12 +109,144 @@ pub fn process_file(
     } else {
         // User quit without resolving all hunks
         Ok(TuiResult {
+            path: path.to_path_buf(),
             content: None,
             hunks_resolved: resolved_count,
             total_hunks,
             stage_requested: false,
         })
     }
+}
+
+/// Runs the TUI for multiple files in a single session.
+///
+/// Files without conflicts are returned immediately as resolved `TuiResult`s.
+/// If only one file has conflicts, delegates to `process_file`.
+/// Otherwise, creates a multi-file workspace for the TUI.
+pub fn process_files(
+    paths: &[PathBuf],
+    config: &WeavrConfig,
+    keybindings_config: Option<&RawKeybindingsConfig>,
+) -> Result<Vec<TuiResult>, CliError> {
+    use weavr_tui::workspace::{FileState, Workspace};
+
+    let mut results: Vec<TuiResult> = Vec::new();
+    let mut conflicted: Vec<(PathBuf, MergeSession)> = Vec::new();
+
+    // Phase 1: Read all files, separate clean from conflicted
+    for path in paths {
+        let content = std::fs::read_to_string(path)?;
+        let session = MergeSession::from_conflicted(&content, path.clone())?;
+
+        if session.hunks().is_empty() {
+            // Clean file — no TUI needed
+            results.push(TuiResult {
+                path: path.clone(),
+                content: Some(content),
+                hunks_resolved: 0,
+                total_hunks: 0,
+                stage_requested: false,
+            });
+        } else {
+            conflicted.push((path.clone(), session));
+        }
+    }
+
+    // Phase 2: If 0 conflicted files, return clean results only
+    if conflicted.is_empty() {
+        return Ok(results);
+    }
+
+    // Phase 3: If only 1 conflicted file, delegate to existing single-file path
+    if conflicted.len() == 1 {
+        let (path, _session) = conflicted.into_iter().next().unwrap();
+        let result = process_file(&path, config, keybindings_config)?;
+        results.push(result);
+        return Ok(results);
+    }
+
+    // Phase 4: Build workspace for multi-file TUI
+    let file_states: Vec<FileState> = conflicted
+        .into_iter()
+        .map(|(path, session)| FileState::new(path, session))
+        .collect();
+
+    let workspace = Workspace::new(file_states);
+
+    // Create and configure App
+    let mut app = App::with_theme(config.theme);
+
+    // Wire up custom keybindings if configured
+    if let Some(kb_config) = keybindings_config {
+        let overrides = kb_config.clone().into_key_lists();
+        match weavr_tui::keybindings::build_from_config(&overrides) {
+            Ok((map, warnings)) => {
+                for w in &warnings {
+                    eprintln!("weavr: {w}");
+                }
+                app.set_keybindings(map);
+            }
+            Err(e) => {
+                eprintln!("weavr: keybinding config error: {e}");
+                eprintln!("       Falling back to default keybindings.");
+            }
+        }
+    }
+
+    // Wire up staging prompt from config
+    app.set_stage_prompt(config.stage_prompt);
+
+    // Wire up AI if configured
+    #[cfg(feature = "ai")]
+    if let Some(handle) = spawn_ai_worker(&config.ai) {
+        app.set_ai_handle(handle);
+    }
+
+    // Set workspace and run TUI
+    app.set_workspace(workspace);
+    weavr_tui::run(&mut app)?;
+
+    // Phase 5: Extract workspace and build results
+    if let Some(mut workspace) = app.take_workspace() {
+        // Save current file state back before extracting
+        // (App::take_workspace already returns after save in quit)
+        for file_state in workspace.files_mut().drain(..) {
+            let total_hunks = file_state.session.hunks().len();
+            let resolved_count = file_state
+                .session
+                .hunks()
+                .iter()
+                .filter(|h| matches!(h.state, weavr_core::HunkState::Resolved(_)))
+                .count();
+
+            if file_state.written && file_state.session.is_fully_resolved() {
+                // Complete the lifecycle
+                let mut session = file_state.session;
+                session.apply()?;
+                session.validate()?;
+                let merge_result = session.complete()?;
+
+                results.push(TuiResult {
+                    path: file_state.path,
+                    content: Some(merge_result.content),
+                    hunks_resolved: merge_result.summary.resolved_hunks,
+                    total_hunks,
+                    stage_requested: file_state.stage_requested,
+                });
+            } else {
+                // User didn't complete this file
+                results.push(TuiResult {
+                    path: file_state.path,
+                    content: None,
+                    hunks_resolved: resolved_count,
+                    total_hunks,
+                    stage_requested: false,
+                });
+            }
+        }
+    }
+
+    Ok(results)
 }
 
 // ---------------------------------------------------------------------------

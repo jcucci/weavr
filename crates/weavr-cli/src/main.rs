@@ -88,30 +88,29 @@ fn run(cli: &Cli) -> Result<i32, CliError> {
     }
 
     // Mode: Interactive (TUI)
+    let results = tui::process_files(&files, &config, raw_config.keybindings.as_ref())?;
     let mut any_unresolved = false;
 
-    for path in &files {
-        let result = tui::process_file(path, &config, raw_config.keybindings.as_ref())?;
-
+    for result in &results {
         if let Some(ref content) = result.content {
-            std::fs::write(path, content)?;
+            std::fs::write(&result.path, content)?;
             println!(
                 "{}: {} hunks resolved",
-                path.display(),
+                result.path.display(),
                 result.hunks_resolved
             );
 
             let should_stage = config.auto_stage || result.stage_requested;
             if should_stage {
                 if let Some(ref repo) = repo {
-                    match repo.stage_file(path) {
-                        Ok(()) => println!("{}: staged", path.display()),
-                        Err(e) => eprintln!("{}: staging failed: {e}", path.display()),
+                    match repo.stage_file(&result.path) {
+                        Ok(()) => println!("{}: staged", result.path.display()),
+                        Err(e) => eprintln!("{}: staging failed: {e}", result.path.display()),
                     }
                 } else if result.stage_requested {
                     eprintln!(
                         "{}: staging requested but git repo not available",
-                        path.display()
+                        result.path.display()
                     );
                 }
             }
@@ -119,7 +118,7 @@ fn run(cli: &Cli) -> Result<i32, CliError> {
             any_unresolved = true;
             eprintln!(
                 "{}: exited with {}/{} hunks unresolved",
-                path.display(),
+                result.path.display(),
                 result.total_hunks - result.hunks_resolved,
                 result.total_hunks
             );

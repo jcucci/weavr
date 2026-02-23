@@ -32,6 +32,15 @@ pub enum Dialog {
     AiExplanation(String),
     /// Staging prompt shown on `:wq` when `stage_prompt` is enabled.
     StagingPrompt,
+    /// File list dialog for multi-file navigation.
+    FileList(FileListState),
+}
+
+/// State for the file list dialog.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FileListState {
+    /// Currently selected index in the file list.
+    pub selected_index: usize,
 }
 
 /// State for the scrollable help dialog.
@@ -77,6 +86,14 @@ pub enum Command {
     ForceQuit,
     /// Show help (`:help`).
     Help,
+    /// Go to next file (`:n`, `:next`).
+    NextFile,
+    /// Go to previous file (`:prev`).
+    PrevFile,
+    /// Show file list (`:files`).
+    ShowFileList,
+    /// Jump to a specific file by 1-indexed number (`:file N`), stored 0-indexed.
+    GoToFile(usize),
     /// Unknown or invalid command.
     Unknown(String),
 }
@@ -87,14 +104,32 @@ impl Command {
     /// The input should not include the leading `:`.
     #[must_use]
     pub fn parse(input: &str) -> Self {
-        match input.trim() {
+        let trimmed = input.trim();
+        match trimmed {
             "w" => Self::Write,
             "wa" => Self::WriteAndStage,
             "q" => Self::Quit,
             "wq" | "x" => Self::WriteQuit,
             "q!" => Self::ForceQuit,
             "help" => Self::Help,
-            other => Self::Unknown(other.to_string()),
+            "n" | "next" => Self::NextFile,
+            "prev" => Self::PrevFile,
+            "files" => Self::ShowFileList,
+            other => {
+                // Check for `:file N` pattern
+                if let Some(num_str) = other
+                    .strip_prefix("file ")
+                    .or_else(|| other.strip_prefix("file\t"))
+                {
+                    if let Ok(n) = num_str.trim().parse::<usize>() {
+                        if n >= 1 {
+                            return Self::GoToFile(n - 1); // Convert 1-indexed to 0-indexed
+                        }
+                    }
+                    return Self::Unknown(other.to_string());
+                }
+                Self::Unknown(other.to_string())
+            }
         }
     }
 
@@ -108,6 +143,10 @@ impl Command {
             Self::WriteQuit => "write and quit",
             Self::ForceQuit => "force quit",
             Self::Help => "help",
+            Self::NextFile => "next file",
+            Self::PrevFile => "previous file",
+            Self::ShowFileList => "file list",
+            Self::GoToFile(_) => "go to file",
             Self::Unknown(_) => "unknown command",
         }
     }
@@ -226,6 +265,49 @@ mod tests {
     fn parse_help() {
         assert_eq!(Command::parse("help"), Command::Help);
         assert_eq!(Command::parse("  help  "), Command::Help);
+    }
+
+    #[test]
+    fn parse_next_file() {
+        assert_eq!(Command::parse("n"), Command::NextFile);
+        assert_eq!(Command::parse("next"), Command::NextFile);
+        assert_eq!(Command::parse("  n  "), Command::NextFile);
+    }
+
+    #[test]
+    fn parse_prev_file() {
+        assert_eq!(Command::parse("prev"), Command::PrevFile);
+        assert_eq!(Command::parse("  prev  "), Command::PrevFile);
+    }
+
+    #[test]
+    fn parse_show_file_list() {
+        assert_eq!(Command::parse("files"), Command::ShowFileList);
+        assert_eq!(Command::parse("  files  "), Command::ShowFileList);
+    }
+
+    #[test]
+    fn parse_go_to_file() {
+        // 1-indexed input -> 0-indexed storage
+        assert_eq!(Command::parse("file 1"), Command::GoToFile(0));
+        assert_eq!(Command::parse("file 3"), Command::GoToFile(2));
+        assert_eq!(Command::parse("  file 2  "), Command::GoToFile(1));
+    }
+
+    #[test]
+    fn parse_go_to_file_zero_is_invalid() {
+        assert_eq!(
+            Command::parse("file 0"),
+            Command::Unknown("file 0".to_string())
+        );
+    }
+
+    #[test]
+    fn parse_go_to_file_non_numeric_is_unknown() {
+        assert_eq!(
+            Command::parse("file abc"),
+            Command::Unknown("file abc".to_string())
+        );
     }
 
     #[test]

@@ -259,6 +259,13 @@ fn handle_dialog_mode(app: &mut App, key: KeyEvent) {
             KeyCode::Char('n' | 'N') | KeyCode::Esc => crate::dialog::deny_staging(app),
             _ => {}
         },
+        Some(Dialog::FileList(_)) => match key.code {
+            KeyCode::Char('j') | KeyCode::Down => crate::dialog::file_list_move_down(app),
+            KeyCode::Char('k') | KeyCode::Up => crate::dialog::file_list_move_up(app),
+            KeyCode::Enter => crate::dialog::file_list_select(app),
+            KeyCode::Esc | KeyCode::Char('q') => app.close_dialog(),
+            _ => {}
+        },
         None => {}
     }
 }
