@@ -210,6 +210,50 @@ pub fn render_ai_explanation_overlay(
     frame.render_widget(paragraph, dialog_area);
 }
 
+/// Renders the staging prompt dialog.
+pub fn render_staging_prompt_dialog(frame: &mut Frame, area: Rect, theme: &Theme) {
+    let dialog_area = centered_rect(35, 25, area);
+
+    // Clear the background
+    frame.render_widget(Clear, dialog_area);
+
+    let lines = vec![
+        Line::from(""),
+        Line::from("  Stage resolved file?"),
+        Line::from(""),
+        Line::from(vec![
+            Span::raw("  "),
+            Span::styled(
+                "[y]",
+                Style::default()
+                    .fg(theme.ui.border_focused)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::raw(" Yes   "),
+            Span::styled(
+                "[n]",
+                Style::default()
+                    .fg(theme.ui.border_focused)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::raw(" No"),
+        ]),
+    ];
+
+    let block = Block::default()
+        .title(" Stage ")
+        .borders(Borders::ALL)
+        .border_type(BorderType::Rounded)
+        .border_style(Style::default().fg(theme.ui.border_focused))
+        .style(Style::default().bg(theme.base.background));
+
+    let paragraph = Paragraph::new(lines)
+        .block(block)
+        .style(Style::default().fg(theme.base.foreground));
+
+    frame.render_widget(paragraph, dialog_area);
+}
+
 /// Creates a centered rectangle with the given percentage of the parent area.
 fn centered_rect(percent_x: u16, percent_y: u16, area: Rect) -> Rect {
     let vertical = Layout::vertical([

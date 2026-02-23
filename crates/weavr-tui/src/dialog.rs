@@ -59,6 +59,25 @@ pub fn toggle_accept_both_dedupe(app: &mut App) {
     }
 }
 
+/// Shows the staging prompt dialog.
+pub fn show_staging_prompt(app: &mut App) {
+    app.active_dialog = Some(Dialog::StagingPrompt);
+    app.input_mode = InputMode::Dialog;
+}
+
+/// Confirms staging in the staging prompt dialog.
+pub fn confirm_staging(app: &mut App) {
+    app.stage_requested = true;
+    close_dialog(app);
+    app.quit();
+}
+
+/// Denies staging in the staging prompt dialog.
+pub fn deny_staging(app: &mut App) {
+    close_dialog(app);
+    app.quit();
+}
+
 /// Confirms the `AcceptBoth` options and applies the resolution.
 pub fn confirm_accept_both(app: &mut App) {
     // Extract options from dialog

@@ -46,6 +46,9 @@ pub fn draw(frame: &mut Frame, app: &App) {
             Dialog::AiExplanation(ref text) => {
                 overlay::render_ai_explanation_overlay(frame, frame.area(), app.theme(), text);
             }
+            Dialog::StagingPrompt => {
+                overlay::render_staging_prompt_dialog(frame, frame.area(), app.theme());
+            }
         }
     }
 }
