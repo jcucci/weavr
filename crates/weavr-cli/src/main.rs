@@ -55,17 +55,15 @@ fn run(cli: &Cli) -> Result<i32, CliError> {
     // Resolve which files to process
     let files = discovery::resolve_files(cli.files.clone())?;
 
-    // Lazy repo discovery (only if staging might be needed)
-    let repo = if config.auto_stage || config.stage_prompt {
-        match weavr_git::GitRepo::discover() {
-            Ok(r) => Some(r),
-            Err(e) => {
+    // Git repo discovery (needed for auto-staging, prompts, and explicit :wa)
+    let repo = match weavr_git::GitRepo::discover() {
+        Ok(r) => Some(r),
+        Err(e) => {
+            if config.auto_stage || config.stage_prompt {
                 eprintln!("weavr: git repo not found, staging disabled: {e}");
-                None
             }
+            None
         }
-    } else {
-        None
     };
 
     // Mode: Headless
@@ -110,6 +108,11 @@ fn run(cli: &Cli) -> Result<i32, CliError> {
                         Ok(()) => println!("{}: staged", path.display()),
                         Err(e) => eprintln!("{}: staging failed: {e}", path.display()),
                     }
+                } else if result.stage_requested {
+                    eprintln!(
+                        "{}: staging requested but git repo not available",
+                        path.display()
+                    );
                 }
             }
         } else {
