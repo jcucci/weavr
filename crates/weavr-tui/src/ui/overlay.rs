@@ -12,8 +12,9 @@ use ratatui::{
 };
 
 use crate::help::{self, HelpSection};
-use crate::input::{AcceptBothOptionsState, HelpState};
+use crate::input::{AcceptBothOptionsState, FileListState, HelpState};
 use crate::theme::Theme;
+use crate::workspace::{FileStatus, Workspace};
 use weavr_core::BothOrder;
 
 /// Renders a centered, scrollable help overlay showing keybindings.
@@ -242,6 +243,88 @@ pub fn render_staging_prompt_dialog(frame: &mut Frame, area: Rect, theme: &Theme
 
     let block = Block::default()
         .title(" Stage ")
+        .borders(Borders::ALL)
+        .border_type(BorderType::Rounded)
+        .border_style(Style::default().fg(theme.ui.border_focused))
+        .style(Style::default().bg(theme.base.background));
+
+    let paragraph = Paragraph::new(lines)
+        .block(block)
+        .style(Style::default().fg(theme.base.foreground));
+
+    frame.render_widget(paragraph, dialog_area);
+}
+
+/// Renders the file list overlay for multi-file navigation.
+pub fn render_file_list_overlay(
+    frame: &mut Frame,
+    area: Rect,
+    theme: &Theme,
+    state: &FileListState,
+    workspace: &Workspace,
+) {
+    let dialog_area = centered_rect(50, 60, area);
+
+    // Clear the background
+    frame.render_widget(Clear, dialog_area);
+
+    let mut lines: Vec<Line<'_>> = Vec::new();
+    lines.push(Line::from(""));
+
+    let current_idx = workspace.current_index();
+    for (i, file) in workspace.files().iter().enumerate() {
+        let is_selected = i == state.selected_index;
+        let is_current = i == current_idx;
+
+        let icon = if is_current {
+            ">"
+        } else {
+            match file.status() {
+                FileStatus::NotStarted => " ",
+                FileStatus::InProgress => "~",
+                FileStatus::FullyResolved => {
+                    if file.written {
+                        "+"
+                    } else {
+                        "*"
+                    }
+                }
+            }
+        };
+
+        let (resolved, total) = file.resolution_counts();
+        let display_path = file.path.to_string_lossy();
+        let text = format!(
+            "  {icon} {:2}. {display_path}  ({resolved}/{total} resolved)",
+            i + 1
+        );
+
+        let style = if is_selected {
+            Style::default()
+                .fg(theme.base.background)
+                .bg(theme.base.accent)
+                .add_modifier(Modifier::BOLD)
+        } else if file.written {
+            Style::default().fg(theme.base.muted)
+        } else if is_current {
+            Style::default()
+                .fg(theme.base.accent)
+                .add_modifier(Modifier::BOLD)
+        } else {
+            Style::default().fg(theme.base.foreground)
+        };
+
+        lines.push(Line::from(Span::styled(text, style)));
+    }
+
+    lines.push(Line::from(""));
+    lines.push(Line::from(Span::styled(
+        "  [j/k] Navigate  [Enter] Open  [q] Back",
+        Style::default().fg(theme.base.muted),
+    )));
+
+    let block = Block::default()
+        .title(" Files ")
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
         .border_style(Style::default().fg(theme.ui.border_focused))

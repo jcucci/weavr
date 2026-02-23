@@ -107,6 +107,27 @@ pub fn build_help_sections(map: &KeybindingMap) -> Vec<HelpSection> {
                 binding(map, Action::ShowHelp, "Toggle help overlay"),
             ],
         },
+        HelpSection {
+            title: "File Navigation (multi-file)",
+            bindings: vec![
+                HelpBinding {
+                    key: ":n".to_string(),
+                    description: "Next file",
+                },
+                HelpBinding {
+                    key: ":prev".to_string(),
+                    description: "Previous file",
+                },
+                HelpBinding {
+                    key: ":files".to_string(),
+                    description: "Show file list",
+                },
+                HelpBinding {
+                    key: ":file N".to_string(),
+                    description: "Jump to file N",
+                },
+            ],
+        },
     ]
 }
 

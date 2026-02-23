@@ -33,6 +33,7 @@ pub mod navigation;
 pub mod resolution;
 pub mod theme;
 pub mod ui;
+pub mod workspace;
 use input::{Command, Dialog, InputMode, KeySequence};
 use keybindings::KeybindingMap;
 use weavr_core::ActionHistory;
@@ -112,6 +113,8 @@ pub struct App {
     pub(crate) stage_requested: bool,
     /// Whether to show a staging prompt on `:wq`.
     pub(crate) stage_prompt: bool,
+    /// Multi-file workspace (None for single-file mode).
+    pub(crate) workspace: Option<workspace::Workspace>,
 }
 
 impl App {
@@ -143,6 +146,7 @@ impl App {
             ai_state: ai::AiState::default(),
             stage_requested: false,
             stage_prompt: false,
+            workspace: None,
         }
     }
 
@@ -174,6 +178,7 @@ impl App {
             ai_state: ai::AiState::default(),
             stage_requested: false,
             stage_prompt: false,
+            workspace: None,
         }
     }
 
@@ -428,6 +433,10 @@ impl App {
             Command::WriteQuit => self.write_and_quit(),
             Command::ForceQuit => self.quit(),
             Command::Help => self.show_help(),
+            Command::NextFile => self.next_file(),
+            Command::PrevFile => self.prev_file(),
+            Command::ShowFileList => self.show_file_list(),
+            Command::GoToFile(idx) => self.go_to_file(idx),
             Command::Unknown(s) => {
                 if !s.is_empty() {
                     self.set_status_message(&format!("Unknown command: {s}"));
@@ -437,32 +446,44 @@ impl App {
         self.exit_command_mode();
     }
 
-    /// Writes the resolved file and quits (`:w`).
+    /// Writes the resolved file (`:w`).
     fn write_file(&mut self) {
         if self.has_unresolved_hunks() {
             let count = self.unresolved_count();
             self.set_status_message(&format!("Cannot save: {count} unresolved hunks"));
+        } else if self.is_multi_file() {
+            self.mark_current_written();
+            self.set_status_message("Saved. Use :n to continue.");
         } else {
             self.quit();
         }
     }
 
-    /// Writes the resolved file, requests staging, and quits (`:wa`).
+    /// Writes the resolved file, requests staging, and quits/advances (`:wa`).
     fn write_and_stage(&mut self) {
         if self.has_unresolved_hunks() {
             let count = self.unresolved_count();
             self.set_status_message(&format!("Cannot save: {count} unresolved hunks"));
+        } else if self.is_multi_file() {
+            self.stage_current_file();
+            self.complete_current_and_advance();
         } else {
             self.stage_requested = true;
             self.quit();
         }
     }
 
-    /// Writes and quits, with optional staging prompt (`:wq`).
+    /// Writes and quits/advances, with optional staging prompt (`:wq`).
     fn write_and_quit(&mut self) {
         if self.has_unresolved_hunks() {
             let count = self.unresolved_count();
             self.set_status_message(&format!("Cannot save: {count} unresolved hunks"));
+        } else if self.is_multi_file() {
+            if self.stage_prompt {
+                dialog::show_staging_prompt(self);
+            } else {
+                self.complete_current_and_advance();
+            }
         } else if self.stage_prompt {
             dialog::show_staging_prompt(self);
         } else {
@@ -472,7 +493,18 @@ impl App {
 
     /// Attempts to quit, showing a warning if there are unresolved hunks.
     fn try_quit(&mut self) {
-        if self.has_unresolved_hunks() {
+        if self.is_multi_file() {
+            if let Some(ref ws) = self.workspace {
+                if ws.all_written() {
+                    self.quit();
+                    return;
+                }
+                let unwritten = ws.files().iter().filter(|f| !f.written).count();
+                self.set_status_message(&format!(
+                    "{unwritten} files unwritten. Use :q! to force quit all."
+                ));
+            }
+        } else if self.has_unresolved_hunks() {
             let count = self.unresolved_count();
             self.set_status_message(&format!("{count} unresolved hunks. Use :q! to force quit"));
         } else {
@@ -537,6 +569,197 @@ impl App {
     /// Confirms the `AcceptBoth` options and applies the resolution.
     pub fn confirm_accept_both(&mut self) {
         dialog::confirm_accept_both(self);
+    }
+
+    // --- Multi-file workspace ---
+
+    /// Sets the workspace for multi-file mode and loads the first file.
+    pub fn set_workspace(&mut self, ws: workspace::Workspace) {
+        self.workspace = Some(ws);
+        self.load_file_state();
+    }
+
+    /// Returns `true` if the app is in multi-file mode.
+    #[must_use]
+    pub fn is_multi_file(&self) -> bool {
+        self.workspace.is_some()
+    }
+
+    /// Returns the total number of files in the workspace, or 1 for single-file.
+    #[must_use]
+    pub fn file_count(&self) -> usize {
+        self.workspace
+            .as_ref()
+            .map_or(1, workspace::Workspace::file_count)
+    }
+
+    /// Returns the current file index (0-based), or 0 for single-file.
+    #[must_use]
+    pub fn current_file_index(&self) -> usize {
+        self.workspace
+            .as_ref()
+            .map_or(0, workspace::Workspace::current_index)
+    }
+
+    /// Returns a reference to the workspace, if in multi-file mode.
+    #[must_use]
+    pub fn workspace(&self) -> Option<&workspace::Workspace> {
+        self.workspace.as_ref()
+    }
+
+    /// Takes ownership of the workspace, leaving `None` in its place.
+    ///
+    /// Saves the current file's state back into the workspace first,
+    /// so the caller receives fully up-to-date per-file data.
+    pub fn take_workspace(&mut self) -> Option<workspace::Workspace> {
+        self.save_current_file_state();
+        self.workspace.take()
+    }
+
+    /// Saves current App fields back into the workspace's current file state.
+    fn save_current_file_state(&mut self) {
+        if let Some(ref mut ws) = self.workspace {
+            let file_state = ws.current_mut();
+            file_state.session = self.session.take().unwrap_or_else(|| {
+                // Should not happen, but provide a fallback
+                weavr_core::MergeSession::from_conflicted("", std::path::PathBuf::new())
+                    .unwrap_or_else(|_| {
+                        panic!("failed to create fallback session");
+                    })
+            });
+            file_state.current_hunk_index = self.current_hunk_index;
+            file_state.left_right_scroll = self.left_right_scroll;
+            file_state.result_scroll = self.result_scroll;
+            file_state.action_history =
+                std::mem::replace(&mut self.action_history, ActionHistory::new());
+            file_state.stage_requested = self.stage_requested;
+            file_state.focused_pane = self.focused_pane;
+        }
+    }
+
+    /// Loads the workspace's current file state into App fields.
+    fn load_file_state(&mut self) {
+        if let Some(ref mut ws) = self.workspace {
+            let file_state = ws.current_mut();
+            self.session = Some(std::mem::replace(
+                &mut file_state.session,
+                // Temporary placeholder; will be swapped back on save
+                weavr_core::MergeSession::from_conflicted("", std::path::PathBuf::new())
+                    .unwrap_or_else(|_| {
+                        panic!("failed to create placeholder session");
+                    }),
+            ));
+            self.current_hunk_index = file_state.current_hunk_index;
+            self.left_right_scroll = file_state.left_right_scroll;
+            self.result_scroll = file_state.result_scroll;
+            self.action_history =
+                std::mem::replace(&mut file_state.action_history, ActionHistory::new());
+            self.stage_requested = file_state.stage_requested;
+            self.focused_pane = file_state.focused_pane;
+        }
+    }
+
+    /// Switches to a specific file by index. Returns `true` if switched.
+    fn switch_to_file(&mut self, index: usize) -> bool {
+        self.save_current_file_state();
+        let changed = self.workspace.as_mut().is_some_and(|ws| ws.go_to(index));
+        if changed {
+            self.load_file_state();
+            // Clear AI state for the new file
+            self.ai_state = ai::AiState::default();
+            let file_num = index + 1;
+            let file_count = self.file_count();
+            if let Some(ref ws) = self.workspace {
+                let name = ws.current().display_name().to_string();
+                self.set_status_message(&format!("[{file_num}/{file_count}] {name}"));
+            }
+        }
+        changed
+    }
+
+    /// Moves to the next file.
+    fn next_file(&mut self) {
+        if !self.is_multi_file() {
+            self.set_status_message("No other files");
+            return;
+        }
+        let next_idx = self.current_file_index() + 1;
+        if !self.switch_to_file(next_idx) {
+            self.set_status_message("Already at last file");
+        }
+    }
+
+    /// Moves to the previous file.
+    fn prev_file(&mut self) {
+        if !self.is_multi_file() {
+            self.set_status_message("No other files");
+            return;
+        }
+        let current = self.current_file_index();
+        if current == 0 {
+            self.set_status_message("Already at first file");
+            return;
+        }
+        self.switch_to_file(current - 1);
+    }
+
+    /// Jumps to a specific file (0-indexed).
+    fn go_to_file(&mut self, index: usize) {
+        if !self.is_multi_file() {
+            self.set_status_message("No other files");
+            return;
+        }
+        let count = self.file_count();
+        if index >= count {
+            self.set_status_message(&format!("Invalid file number (1-{count})"));
+            return;
+        }
+        if !self.switch_to_file(index) {
+            self.set_status_message("Already on that file");
+        }
+    }
+
+    /// Shows the file list dialog.
+    fn show_file_list(&mut self) {
+        if !self.is_multi_file() {
+            self.set_status_message("No other files");
+            return;
+        }
+        dialog::show_file_list(self);
+    }
+
+    /// Marks the current file as written in the workspace.
+    fn mark_current_written(&mut self) {
+        if let Some(ref mut ws) = self.workspace {
+            ws.current_mut().written = true;
+        }
+    }
+
+    /// Sets `stage_requested` on the current file in the workspace.
+    fn stage_current_file(&mut self) {
+        self.stage_requested = true;
+        if let Some(ref mut ws) = self.workspace {
+            ws.current_mut().stage_requested = true;
+        }
+    }
+
+    /// Marks the current file as written, then advances to the next unwritten
+    /// file or quits if all are done.
+    pub(crate) fn complete_current_and_advance(&mut self) {
+        self.mark_current_written();
+        if let Some(ref ws) = self.workspace {
+            if ws.all_written() {
+                self.save_current_file_state();
+                self.quit();
+                return;
+            }
+            if let Some(next_idx) = ws.next_unwritten_index() {
+                self.switch_to_file(next_idx);
+            } else {
+                self.save_current_file_state();
+                self.quit();
+            }
+        }
     }
 
     // --- Phase 7: Editor Integration ---
@@ -971,5 +1194,100 @@ mod tests {
 
         // Second call returns None
         assert!(app.take_editor_pending().is_none());
+    }
+
+    #[test]
+    fn single_file_mode_by_default() {
+        let app = App::new();
+        assert!(!app.is_multi_file());
+        assert_eq!(app.file_count(), 1);
+        assert_eq!(app.current_file_index(), 0);
+        assert!(app.workspace().is_none());
+    }
+
+    #[test]
+    fn set_workspace_enables_multi_file() {
+        use std::path::PathBuf;
+        use workspace::{FileState, Workspace};
+
+        let content = "<<<<<<< HEAD\nleft\n=======\nright\n>>>>>>> branch\n";
+        let session1 =
+            weavr_core::MergeSession::from_conflicted(content, PathBuf::from("a.rs")).unwrap();
+        let session2 =
+            weavr_core::MergeSession::from_conflicted(content, PathBuf::from("b.rs")).unwrap();
+
+        let mut app = App::new();
+        let ws = Workspace::new(vec![
+            FileState::new(PathBuf::from("a.rs"), session1),
+            FileState::new(PathBuf::from("b.rs"), session2),
+        ]);
+        app.set_workspace(ws);
+
+        assert!(app.is_multi_file());
+        assert_eq!(app.file_count(), 2);
+        assert_eq!(app.current_file_index(), 0);
+        assert!(app.session().is_some());
+    }
+
+    #[test]
+    fn file_switching_preserves_state() {
+        use std::path::PathBuf;
+        use workspace::{FileState, Workspace};
+
+        let content = "<<<<<<< HEAD\nleft\n=======\nright\n>>>>>>> branch\n";
+        let session1 =
+            weavr_core::MergeSession::from_conflicted(content, PathBuf::from("a.rs")).unwrap();
+        let session2 =
+            weavr_core::MergeSession::from_conflicted(content, PathBuf::from("b.rs")).unwrap();
+
+        let mut app = App::new();
+        let ws = Workspace::new(vec![
+            FileState::new(PathBuf::from("a.rs"), session1),
+            FileState::new(PathBuf::from("b.rs"), session2),
+        ]);
+        app.set_workspace(ws);
+
+        // Modify state for first file
+        app.scroll_down(5);
+        assert_eq!(app.left_right_scroll(), 5);
+
+        // Switch to second file
+        assert!(app.switch_to_file(1));
+        assert_eq!(app.current_file_index(), 1);
+        // Second file starts at scroll 0
+        assert_eq!(app.left_right_scroll(), 0);
+
+        // Switch back to first file
+        assert!(app.switch_to_file(0));
+        assert_eq!(app.current_file_index(), 0);
+        // State should be restored
+        assert_eq!(app.left_right_scroll(), 5);
+    }
+
+    #[test]
+    fn next_file_in_single_file_mode_shows_message() {
+        let mut app = App::new();
+        app.next_file();
+        assert!(app.status_message().is_some());
+        let msg = &app.status_message().unwrap().0;
+        assert!(msg.contains("No other files"));
+    }
+
+    #[test]
+    fn prev_file_in_single_file_mode_shows_message() {
+        let mut app = App::new();
+        app.prev_file();
+        assert!(app.status_message().is_some());
+        let msg = &app.status_message().unwrap().0;
+        assert!(msg.contains("No other files"));
+    }
+
+    #[test]
+    fn show_file_list_in_single_file_shows_message() {
+        let mut app = App::new();
+        app.show_file_list();
+        assert!(app.status_message().is_some());
+        let msg = &app.status_message().unwrap().0;
+        assert!(msg.contains("No other files"));
     }
 }

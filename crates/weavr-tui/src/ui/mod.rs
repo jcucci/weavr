@@ -49,6 +49,11 @@ pub fn draw(frame: &mut Frame, app: &App) {
             Dialog::StagingPrompt => {
                 overlay::render_staging_prompt_dialog(frame, frame.area(), app.theme());
             }
+            Dialog::FileList(ref state) => {
+                if let Some(ref ws) = app.workspace {
+                    overlay::render_file_list_overlay(frame, frame.area(), app.theme(), state, ws);
+                }
+            }
         }
     }
 }
@@ -95,6 +100,35 @@ mod tests {
             .collect();
         // Status bar shows pane info
         assert!(last_line.contains("pane"));
+    }
+
+    #[test]
+    fn draw_with_workspace_does_not_panic() {
+        use crate::workspace::{FileState, Workspace};
+        use std::path::PathBuf;
+
+        let mut terminal = create_test_terminal();
+        let content = "<<<<<<< HEAD\nleft\n=======\nright\n>>>>>>> branch\n";
+        let session1 =
+            weavr_core::MergeSession::from_conflicted(content, PathBuf::from("a.rs")).unwrap();
+        let session2 =
+            weavr_core::MergeSession::from_conflicted(content, PathBuf::from("b.rs")).unwrap();
+
+        let mut app = App::new();
+        let ws = Workspace::new(vec![
+            FileState::new(PathBuf::from("a.rs"), session1),
+            FileState::new(PathBuf::from("b.rs"), session2),
+        ]);
+        app.set_workspace(ws);
+
+        terminal.draw(|frame| draw(frame, &app)).unwrap();
+
+        // Title bar should show file position
+        let buffer = terminal.backend().buffer();
+        let title_line: String = (0..buffer.area.width)
+            .map(|x| buffer.cell((x, 0)).unwrap().symbol().to_string())
+            .collect();
+        assert!(title_line.contains("[1/2]"));
     }
 
     #[test]

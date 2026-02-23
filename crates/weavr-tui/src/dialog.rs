@@ -6,7 +6,7 @@
 
 use weavr_core::{AcceptBothOptions, BothOrder, Resolution};
 
-use crate::input::{AcceptBothOptionsState, Dialog, HelpState, InputMode};
+use crate::input::{AcceptBothOptionsState, Dialog, FileListState, HelpState, InputMode};
 use crate::resolution;
 use crate::App;
 
@@ -67,15 +67,65 @@ pub fn show_staging_prompt(app: &mut App) {
 
 /// Confirms staging in the staging prompt dialog.
 pub fn confirm_staging(app: &mut App) {
+    let multi = app.is_multi_file();
     app.stage_requested = true;
+    if let Some(ref mut ws) = app.workspace {
+        ws.current_mut().stage_requested = true;
+    }
     close_dialog(app);
-    app.quit();
+    if multi {
+        app.complete_current_and_advance();
+    } else {
+        app.quit();
+    }
 }
 
 /// Denies staging in the staging prompt dialog.
 pub fn deny_staging(app: &mut App) {
+    let multi = app.is_multi_file();
     close_dialog(app);
-    app.quit();
+    if multi {
+        app.complete_current_and_advance();
+    } else {
+        app.quit();
+    }
+}
+
+/// Shows the file list dialog.
+pub fn show_file_list(app: &mut App) {
+    let selected = app.current_file_index();
+    app.active_dialog = Some(Dialog::FileList(FileListState {
+        selected_index: selected,
+    }));
+    app.input_mode = InputMode::Dialog;
+}
+
+/// Moves the file list selection down.
+pub fn file_list_move_down(app: &mut App) {
+    let count = app.file_count();
+    if let Some(Dialog::FileList(ref mut state)) = app.active_dialog {
+        if state.selected_index + 1 < count {
+            state.selected_index += 1;
+        }
+    }
+}
+
+/// Moves the file list selection up.
+pub fn file_list_move_up(app: &mut App) {
+    if let Some(Dialog::FileList(ref mut state)) = app.active_dialog {
+        state.selected_index = state.selected_index.saturating_sub(1);
+    }
+}
+
+/// Selects the current item in the file list dialog and switches to that file.
+pub fn file_list_select(app: &mut App) {
+    let selected = if let Some(Dialog::FileList(ref state)) = app.active_dialog {
+        state.selected_index
+    } else {
+        return;
+    };
+    close_dialog(app);
+    app.go_to_file(selected);
 }
 
 /// Confirms the `AcceptBoth` options and applies the resolution.
