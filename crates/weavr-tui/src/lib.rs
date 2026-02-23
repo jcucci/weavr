@@ -28,11 +28,13 @@ pub mod editor;
 pub mod event;
 pub mod help;
 pub mod input;
+pub mod keybindings;
 pub mod navigation;
 pub mod resolution;
 pub mod theme;
 pub mod ui;
 use input::{Command, Dialog, InputMode, KeySequence};
+use keybindings::KeybindingMap;
 use weavr_core::ActionHistory;
 
 /// Configuration for the three-pane layout.
@@ -98,6 +100,10 @@ pub struct App {
     pub(crate) editor_pending: Option<String>,
     /// Configuration for diff highlighting.
     pub(crate) diff_config: diff::DiffConfig,
+    /// Keybinding map for normal mode.
+    pub(crate) keybindings: KeybindingMap,
+    /// Cached help sections (built from keybindings).
+    pub(crate) help_sections: Vec<help::HelpSection>,
     /// AI integration handle (optional, set by CLI when AI is configured).
     pub(crate) ai_handle: Option<ai::AiHandle>,
     /// AI suggestion state for UI rendering.
@@ -108,6 +114,8 @@ impl App {
     /// Creates a new application instance with the default theme.
     #[must_use]
     pub fn new() -> Self {
+        let keybindings = KeybindingMap::defaults();
+        let help_sections = help::build_help_sections(&keybindings);
         Self {
             session: None,
             should_quit: false,
@@ -125,6 +133,8 @@ impl App {
             active_dialog: None,
             editor_pending: None,
             diff_config: diff::DiffConfig::default(),
+            keybindings,
+            help_sections,
             ai_handle: None,
             ai_state: ai::AiState::default(),
         }
@@ -133,6 +143,8 @@ impl App {
     /// Creates a new application instance with the specified theme.
     #[must_use]
     pub fn with_theme(theme_name: ThemeName) -> Self {
+        let keybindings = KeybindingMap::defaults();
+        let help_sections = help::build_help_sections(&keybindings);
         Self {
             session: None,
             should_quit: false,
@@ -150,6 +162,8 @@ impl App {
             active_dialog: None,
             editor_pending: None,
             diff_config: diff::DiffConfig::default(),
+            keybindings,
+            help_sections,
             ai_handle: None,
             ai_state: ai::AiState::default(),
         }
@@ -505,6 +519,24 @@ impl App {
     }
 
     // --- AI Integration ---
+
+    /// Sets the keybinding map for normal mode and rebuilds help sections.
+    pub fn set_keybindings(&mut self, map: KeybindingMap) {
+        self.help_sections = help::build_help_sections(&map);
+        self.keybindings = map;
+    }
+
+    /// Returns a reference to the current keybinding map.
+    #[must_use]
+    pub fn keybindings(&self) -> &KeybindingMap {
+        &self.keybindings
+    }
+
+    /// Returns a reference to the cached help sections.
+    #[must_use]
+    pub fn help_sections(&self) -> &[help::HelpSection] {
+        &self.help_sections
+    }
 
     /// Sets the AI handle for background suggestion requests.
     pub fn set_ai_handle(&mut self, handle: ai::AiHandle) {

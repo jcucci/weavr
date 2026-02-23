@@ -5,7 +5,7 @@
 
 use std::time::{Duration, Instant};
 
-use crossterm::event::KeyCode;
+use crossterm::event::{KeyCode, KeyModifiers};
 
 /// The current input mode of the application.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -110,28 +110,32 @@ impl Command {
 /// Tracks pending keys for multi-key sequence detection (e.g., 'gg').
 #[derive(Debug, Clone, Default)]
 pub struct KeySequence {
-    pending: Option<(KeyCode, Instant)>,
+    pending: Vec<(KeyCode, KeyModifiers, Instant)>,
 }
 
 impl KeySequence {
     /// Creates a new empty key sequence tracker.
     #[must_use]
     pub fn new() -> Self {
-        Self { pending: None }
+        Self {
+            pending: Vec::new(),
+        }
     }
 
-    /// Sets a pending key for sequence detection.
+    /// Sets a pending key for sequence detection (single key, no modifiers).
     pub fn set(&mut self, key: KeyCode) {
-        self.pending = Some((key, Instant::now()));
+        self.pending.clear();
+        self.pending.push((key, KeyModifiers::NONE, Instant::now()));
     }
 
     /// Checks if a pending key matches and is within the timeout.
     /// Returns true if there's a matching pending key that hasn't expired.
     /// Clears the pending key if it has expired.
     pub fn check(&mut self, expected: KeyCode, timeout: Duration) -> bool {
-        if let Some((key, timestamp)) = self.pending {
+        if self.pending.len() == 1 {
+            let (key, _, timestamp) = self.pending[0];
             if timestamp.elapsed() > timeout {
-                self.pending = None;
+                self.pending.clear();
                 return false;
             }
             return key == expected;
@@ -139,9 +143,44 @@ impl KeySequence {
         false
     }
 
+    /// Pushes a key onto the pending buffer.
+    pub fn push(&mut self, code: KeyCode, mods: KeyModifiers) {
+        self.pending.push((code, mods, Instant::now()));
+    }
+
+    /// Returns the pending keys as `(KeyCode, KeyModifiers)` pairs,
+    /// checking that no key has timed out. If any key has expired,
+    /// clears the buffer and returns an empty vec.
+    pub fn pending_keys(&mut self, timeout: Duration) -> Vec<(KeyCode, KeyModifiers)> {
+        if let Some((_, _, timestamp)) = self.pending.first() {
+            if timestamp.elapsed() > timeout {
+                self.pending.clear();
+                return Vec::new();
+            }
+        }
+        self.pending
+            .iter()
+            .map(|(code, mods, _)| (*code, *mods))
+            .collect()
+    }
+
+    /// Returns true if there are pending keys.
+    #[must_use]
+    pub fn has_pending(&self) -> bool {
+        !self.pending.is_empty()
+    }
+
+    /// Drains and returns all pending keys as `(KeyCode, KeyModifiers)` pairs.
+    pub fn drain(&mut self) -> Vec<(KeyCode, KeyModifiers)> {
+        self.pending
+            .drain(..)
+            .map(|(code, mods, _)| (code, mods))
+            .collect()
+    }
+
     /// Clears any pending key sequence.
     pub fn clear(&mut self) {
-        self.pending = None;
+        self.pending.clear();
     }
 }
 
@@ -191,7 +230,7 @@ mod tests {
     #[test]
     fn key_sequence_new_is_empty() {
         let seq = KeySequence::new();
-        assert!(seq.pending.is_none());
+        assert!(seq.pending.is_empty());
     }
 
     #[test]
@@ -227,6 +266,25 @@ mod tests {
     #[test]
     fn key_sequence_default() {
         let seq = KeySequence::default();
-        assert!(seq.pending.is_none());
+        assert!(seq.pending.is_empty());
+    }
+
+    #[test]
+    fn key_sequence_push_and_drain() {
+        let mut seq = KeySequence::new();
+        seq.push(KeyCode::Char('g'), KeyModifiers::NONE);
+        assert!(seq.has_pending());
+        let keys = seq.drain();
+        assert_eq!(keys.len(), 1);
+        assert!(!seq.has_pending());
+    }
+
+    #[test]
+    fn key_sequence_pending_keys_respects_timeout() {
+        let mut seq = KeySequence::new();
+        seq.push(KeyCode::Char('g'), KeyModifiers::NONE);
+        // With a long timeout, keys should be available
+        let keys = seq.pending_keys(Duration::from_secs(10));
+        assert_eq!(keys.len(), 1);
     }
 }

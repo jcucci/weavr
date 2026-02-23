@@ -7,6 +7,7 @@
 //! 4. `--config PATH` explicit file
 //! 5. CLI flags (applied after `from_raw`)
 
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use serde::Deserialize;
@@ -66,6 +67,50 @@ pub struct RawHeadlessConfig {
     pub fail_on_ambiguous: Option<bool>,
 }
 
+/// A keybinding value in config: either a single key string or multiple.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(untagged)]
+pub enum RawKeybindingValue {
+    /// A single key notation string (e.g., `"j"`).
+    Single(String),
+    /// Multiple key notation strings (e.g., `["j", "<Down>"]`).
+    Multiple(Vec<String>),
+}
+
+impl RawKeybindingValue {
+    /// Converts to a `Vec<String>` regardless of the variant.
+    #[must_use]
+    pub fn into_vec(self) -> Vec<String> {
+        match self {
+            Self::Single(s) => vec![s],
+            Self::Multiple(v) => v,
+        }
+    }
+}
+
+/// Raw keybindings configuration section.
+///
+/// Action names are `snake_case` keys mapping to key notation strings.
+/// Example: `next_hunk = "j"` or `next_hunk = ["j", "<Down>"]`.
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct RawKeybindingsConfig {
+    /// Action-to-key mappings.
+    #[serde(flatten)]
+    pub bindings: BTreeMap<String, RawKeybindingValue>,
+}
+
+impl RawKeybindingsConfig {
+    /// Converts bindings into the format expected by
+    /// [`weavr_tui::keybindings::build_from_config`].
+    #[must_use]
+    pub fn into_key_lists(self) -> BTreeMap<String, Vec<String>> {
+        self.bindings
+            .into_iter()
+            .map(|(k, v)| (k, v.into_vec()))
+            .collect()
+    }
+}
+
 /// Raw TOML configuration. All fields optional for layered merging.
 ///
 /// Top-level struct does NOT use `deny_unknown_fields` so that `[ai]`
@@ -75,6 +120,7 @@ pub struct RawConfig {
     pub theme: Option<RawThemeConfig>,
     pub strategies: Option<RawStrategiesConfig>,
     pub headless: Option<RawHeadlessConfig>,
+    pub keybindings: Option<RawKeybindingsConfig>,
 
     #[cfg(feature = "ai")]
     pub ai: Option<weavr_ai::AiConfig>,
@@ -97,6 +143,13 @@ impl RawConfig {
             }),
             headless: merge_option(self.headless, lower.headless, |hi, lo| RawHeadlessConfig {
                 fail_on_ambiguous: hi.fail_on_ambiguous.or(lo.fail_on_ambiguous),
+            }),
+            keybindings: merge_option(self.keybindings, lower.keybindings, |hi, lo| {
+                // Action-level overlay: higher priority replaces bindings
+                // for the same action, lower fills in the rest.
+                let mut merged = lo.bindings;
+                merged.extend(hi.bindings);
+                RawKeybindingsConfig { bindings: merged }
             }),
             #[cfg(feature = "ai")]
             ai: self.ai.or(lower.ai),
@@ -525,5 +578,97 @@ name = "nord"
             raw.theme.as_ref().and_then(|t| t.name.as_deref()),
             Some("nord")
         );
+    }
+
+    #[test]
+    fn parse_keybindings_single_key() {
+        let toml_str = r#"
+[keybindings]
+next_hunk = "n"
+quit = "q"
+"#;
+        let raw: RawConfig = toml::from_str(toml_str).unwrap();
+        let kb = raw.keybindings.unwrap();
+        assert!(matches!(
+            kb.bindings.get("next_hunk"),
+            Some(RawKeybindingValue::Single(s)) if s == "n"
+        ));
+    }
+
+    #[test]
+    fn parse_keybindings_multiple_keys() {
+        let toml_str = r#"
+[keybindings]
+next_hunk = ["j", "<Down>"]
+"#;
+        let raw: RawConfig = toml::from_str(toml_str).unwrap();
+        let kb = raw.keybindings.unwrap();
+        assert!(matches!(
+            kb.bindings.get("next_hunk"),
+            Some(RawKeybindingValue::Multiple(v)) if v.len() == 2
+        ));
+    }
+
+    #[test]
+    fn parse_keybindings_with_other_sections() {
+        let toml_str = r#"
+[theme]
+name = "nord"
+
+[keybindings]
+resolve_left = "a"
+"#;
+        let raw: RawConfig = toml::from_str(toml_str).unwrap();
+        assert!(raw.theme.is_some());
+        assert!(raw.keybindings.is_some());
+    }
+
+    #[test]
+    fn merge_keybindings_action_level_overlay() {
+        let higher = RawConfig {
+            keybindings: Some(RawKeybindingsConfig {
+                bindings: {
+                    let mut m = BTreeMap::new();
+                    m.insert("quit".into(), RawKeybindingValue::Single("Q".into()));
+                    m
+                },
+            }),
+            ..RawConfig::default()
+        };
+        let lower = RawConfig {
+            keybindings: Some(RawKeybindingsConfig {
+                bindings: {
+                    let mut m = BTreeMap::new();
+                    m.insert("quit".into(), RawKeybindingValue::Single("q".into()));
+                    m.insert("next_hunk".into(), RawKeybindingValue::Single("j".into()));
+                    m
+                },
+            }),
+            ..RawConfig::default()
+        };
+
+        let merged = higher.merge(lower);
+        let kb = merged.keybindings.unwrap();
+
+        // Higher priority wins for same action
+        assert!(matches!(
+            kb.bindings.get("quit"),
+            Some(RawKeybindingValue::Single(s)) if s == "Q"
+        ));
+        // Lower fills in missing actions
+        assert!(matches!(
+            kb.bindings.get("next_hunk"),
+            Some(RawKeybindingValue::Single(s)) if s == "j"
+        ));
+    }
+
+    #[test]
+    fn no_keybindings_section_is_none() {
+        let toml_str = r#"
+[theme]
+name = "dark"
+"#;
+        let raw: RawConfig = toml::from_str(toml_str).unwrap();
+        assert!(raw.keybindings.is_none());
     }
 }

@@ -32,7 +32,13 @@ pub fn draw(frame: &mut Frame, app: &App) {
     if let Some(dialog) = app.active_dialog() {
         match dialog {
             Dialog::Help(ref state) => {
-                overlay::render_help_overlay(frame, frame.area(), app.theme(), state);
+                overlay::render_help_overlay(
+                    frame,
+                    frame.area(),
+                    app.theme(),
+                    state,
+                    app.help_sections(),
+                );
             }
             Dialog::AcceptBothOptions(state) => {
                 overlay::render_accept_both_dialog(frame, frame.area(), app.theme(), state);

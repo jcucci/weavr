@@ -8,6 +8,7 @@ use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifier
 
 use crate::ai;
 use crate::input::{Dialog, InputMode};
+use crate::keybindings::Action;
 use crate::{App, KEY_SEQUENCE_TIMEOUT};
 
 /// Polls for an event with the given timeout.
@@ -47,45 +48,96 @@ fn handle_key_event(app: &mut App, key: KeyEvent) {
     }
 }
 
-/// Handles key events in normal mode.
-fn handle_normal_mode(app: &mut App, key: KeyEvent) {
-    // Check for 'gg' sequence (go to first hunk)
-    if key.code == KeyCode::Char('g') && !key.modifiers.contains(KeyModifiers::SHIFT) {
-        if app
-            .key_sequence
-            .check(KeyCode::Char('g'), KEY_SEQUENCE_TIMEOUT)
-        {
-            app.go_to_hunk(0);
-            app.key_sequence.clear();
-            return;
+/// Normalizes a key event for consistent lookup.
+///
+/// `BackTab` inherently means Shift+Tab, but crossterm may or may not include
+/// the SHIFT modifier depending on the platform. Strip the redundant SHIFT so
+/// bindings registered as `(BackTab, NONE)` always match.
+fn normalize_key(code: KeyCode, mods: KeyModifiers) -> (KeyCode, KeyModifiers) {
+    match code {
+        // BackTab inherently means Shift+Tab; strip the redundant SHIFT modifier.
+        KeyCode::BackTab => (KeyCode::BackTab, mods.difference(KeyModifiers::SHIFT)),
+        // Some terminals send Tab+SHIFT instead of BackTab; normalize to BackTab.
+        KeyCode::Tab if mods.contains(KeyModifiers::SHIFT) => {
+            (KeyCode::BackTab, mods.difference(KeyModifiers::SHIFT))
         }
-        // Set pending for potential 'gg' sequence
-        app.key_sequence.set(KeyCode::Char('g'));
+        _ => (code, mods),
+    }
+}
+
+/// Handles key events in normal mode using the keybinding map.
+fn handle_normal_mode(app: &mut App, key: KeyEvent) {
+    let (code, mods) = normalize_key(key.code, key.modifiers);
+
+    // Check if this key could be the start of a multi-key sequence
+    if app.keybindings.is_sequence_prefix(code, mods) {
+        if app.key_sequence.has_pending() {
+            // We have buffered key(s) + this new key. Check for a complete sequence.
+            let mut pending = app.key_sequence.pending_keys(KEY_SEQUENCE_TIMEOUT);
+            pending.push((code, mods));
+
+            if let Some(action) = app.keybindings.lookup_sequence(&pending) {
+                app.key_sequence.clear();
+                dispatch_action(app, action);
+                return;
+            }
+        }
+        // Buffer this key as a potential sequence start
+        app.key_sequence.push(code, mods);
         return;
     }
 
-    // Clear pending key for any other keypress
-    app.key_sequence.clear();
+    // Not a sequence prefix. If we have buffered keys, check for a complete
+    // sequence with the current key appended.
+    if app.key_sequence.has_pending() {
+        let mut pending = app.key_sequence.pending_keys(KEY_SEQUENCE_TIMEOUT);
+        pending.push((code, mods));
 
-    match key.code {
-        // Quit
-        KeyCode::Char('q') => app.quit(),
+        if let Some(action) = app.keybindings.lookup_sequence(&pending) {
+            app.key_sequence.clear();
+            dispatch_action(app, action);
+            return;
+        }
 
-        // Command mode
-        KeyCode::Char(':') => app.enter_command_mode(),
-
-        // Focus cycling
-        KeyCode::Tab => {
-            if key.modifiers.contains(KeyModifiers::SHIFT) {
-                app.cycle_focus_back();
-            } else {
-                app.cycle_focus();
+        // No sequence match. Dispatch buffered keys as singles, then this key.
+        let buffered = app.key_sequence.drain();
+        for (buf_code, buf_mods) in buffered {
+            if let Some(action) = app.keybindings.lookup_single(buf_code, buf_mods) {
+                dispatch_action(app, action);
             }
         }
-        KeyCode::BackTab => app.cycle_focus_back(),
+    }
 
-        // Accept AI suggestion or focus result pane
-        KeyCode::Enter => {
+    app.key_sequence.clear();
+
+    // Dispatch the current key
+    if let Some(action) = app.keybindings.lookup_single(code, mods) {
+        dispatch_action(app, action);
+    }
+}
+
+/// Dispatches a resolved action to the appropriate app method.
+fn dispatch_action(app: &mut App, action: Action) {
+    match action {
+        // Application
+        Action::Quit => app.quit(),
+        Action::EnterCommandMode => app.enter_command_mode(),
+        Action::ShowHelp => app.show_help(),
+
+        // Navigation
+        Action::NextHunk => app.next_hunk(),
+        Action::PrevHunk => app.prev_hunk(),
+        Action::NextUnresolved => app.next_unresolved_hunk(),
+        Action::PrevUnresolved => app.prev_unresolved_hunk(),
+        Action::FirstHunk => app.go_to_hunk(0),
+        Action::LastHunk => {
+            let last = app.total_hunks().saturating_sub(1);
+            app.go_to_hunk(last);
+        }
+        Action::CycleFocus => app.cycle_focus(),
+        Action::CycleFocusBack => app.cycle_focus_back(),
+        Action::FocusResult => {
+            // Context-sensitive: accept AI suggestion if present, else focus result
             if app
                 .current_hunk()
                 .is_some_and(|h| app.ai_state().has_suggestion_for(h.id))
@@ -96,54 +148,28 @@ fn handle_normal_mode(app: &mut App, key: KeyEvent) {
             }
         }
 
-        // Dismiss AI suggestion
-        KeyCode::Esc => {
-            if app
-                .current_hunk()
-                .is_some_and(|h| app.ai_state().has_suggestion_for(h.id))
-            {
-                ai::dismiss_suggestion(app);
-            }
-        }
-
-        // Hunk navigation
-        KeyCode::Char('j') | KeyCode::Down => app.next_hunk(),
-        KeyCode::Char('k') | KeyCode::Up => app.prev_hunk(),
-        KeyCode::Char('n') => app.next_unresolved_hunk(),
-        KeyCode::Char('N') => app.prev_unresolved_hunk(),
-        KeyCode::Char('G') => {
-            let last = app.total_hunks().saturating_sub(1);
-            app.go_to_hunk(last);
-        }
-
-        // Scrolling (half page = 10 lines)
-        KeyCode::Char('d') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-            app.scroll_down(10);
-        }
-        KeyCode::Char('u') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-            app.scroll_up(10);
-        }
-        KeyCode::PageDown => app.scroll_down(20),
-        KeyCode::PageUp => app.scroll_up(20),
+        // Scrolling
+        Action::ScrollHalfDown => app.scroll_down(10),
+        Action::ScrollHalfUp => app.scroll_up(10),
+        Action::ScrollPageDown => app.scroll_down(20),
+        Action::ScrollPageUp => app.scroll_up(20),
 
         // Resolution
-        KeyCode::Char('o') => app.resolve_left(), // 'o' for ours
-        KeyCode::Char('t') => app.resolve_right(), // 't' for theirs
-        KeyCode::Char('b') => app.resolve_both(),
-        KeyCode::Char('B') => app.show_accept_both_dialog(), // Shift-B for options
-        KeyCode::Char('x') => app.clear_current_resolution(),
-        KeyCode::Char('u') if !key.modifiers.contains(KeyModifiers::CONTROL) => app.undo(),
-        KeyCode::Char('r') if key.modifiers.contains(KeyModifiers::CONTROL) => app.redo(),
-        KeyCode::Char('e') => {
+        Action::ResolveLeft => app.resolve_left(),
+        Action::ResolveRight => app.resolve_right(),
+        Action::ResolveBoth => app.resolve_both(),
+        Action::ResolveBothOptions => app.show_accept_both_dialog(),
+        Action::ClearResolution => app.clear_current_resolution(),
+        Action::Undo => app.undo(),
+        Action::Redo => app.redo(),
+        Action::EditInEditor => {
             app.prepare_editor();
         }
 
-        // AI suggestions
-        KeyCode::Char('s') => ai::request_suggestion(app),
-        KeyCode::Char('S') => ai::request_all_suggestions(app),
-
-        // Help / AI explanation (context-sensitive)
-        KeyCode::Char('?') => {
+        // AI
+        Action::AiSuggest => ai::request_suggestion(app),
+        Action::AiSuggestAll => ai::request_all_suggestions(app),
+        Action::AiExplainOrHelp => {
             let has_suggestion = app
                 .current_hunk()
                 .is_some_and(|h| app.ai_state().has_suggestion_for(h.id));
@@ -153,11 +179,14 @@ fn handle_normal_mode(app: &mut App, key: KeyEvent) {
                 app.show_help();
             }
         }
-
-        // Help (F1)
-        KeyCode::F(1) => app.show_help(),
-
-        _ => {}
+        Action::DismissAiSuggestion => {
+            if app
+                .current_hunk()
+                .is_some_and(|h| app.ai_state().has_suggestion_for(h.id))
+            {
+                ai::dismiss_suggestion(app);
+            }
+        }
     }
 }
 
@@ -288,6 +317,20 @@ mod tests {
         assert_eq!(app.focused_pane(), FocusedPane::Left);
 
         let event = Event::Key(make_key_event(KeyCode::BackTab, KeyModifiers::NONE));
+        handle_event(&mut app, &event);
+
+        assert_eq!(app.focused_pane(), FocusedPane::Result);
+    }
+
+    #[test]
+    fn backtab_with_shift_modifier_cycles_focus_backward() {
+        use crate::FocusedPane;
+
+        let mut app = App::new();
+        assert_eq!(app.focused_pane(), FocusedPane::Left);
+
+        // crossterm on macOS sends BackTab with SHIFT set
+        let event = Event::Key(make_key_event(KeyCode::BackTab, KeyModifiers::SHIFT));
         handle_event(&mut app, &event);
 
         assert_eq!(app.focused_pane(), FocusedPane::Result);

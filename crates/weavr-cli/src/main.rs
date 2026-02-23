@@ -64,7 +64,7 @@ fn run(cli: &Cli) -> Result<i32, CliError> {
     let mut any_unresolved = false;
 
     for path in &files {
-        let result = tui::process_file(path, &config)?;
+        let result = tui::process_file(path, &config, raw_config.keybindings.as_ref())?;
 
         if let Some(ref content) = result.content {
             std::fs::write(path, content)?;
