@@ -254,6 +254,11 @@ fn handle_dialog_mode(app: &mut App, key: KeyEvent) {
                 _ => {}
             }
         }
+        Some(Dialog::StagingPrompt) => match key.code {
+            KeyCode::Char('y' | 'Y') => crate::dialog::confirm_staging(app),
+            KeyCode::Char('n' | 'N') | KeyCode::Esc => crate::dialog::deny_staging(app),
+            _ => {}
+        },
         None => {}
     }
 }

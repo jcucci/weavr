@@ -30,6 +30,8 @@ pub enum Dialog {
     AcceptBothOptions(AcceptBothOptionsState),
     /// AI explanation overlay.
     AiExplanation(String),
+    /// Staging prompt shown on `:wq` when `stage_prompt` is enabled.
+    StagingPrompt,
 }
 
 /// State for the scrollable help dialog.
@@ -65,6 +67,8 @@ impl Default for AcceptBothOptionsState {
 pub enum Command {
     /// Write/save the file (`:w`).
     Write,
+    /// Write and stage the file (`:wa`).
+    WriteAndStage,
     /// Quit the application (`:q`).
     Quit,
     /// Write and quit (`:wq` or `:x`).
@@ -85,6 +89,7 @@ impl Command {
     pub fn parse(input: &str) -> Self {
         match input.trim() {
             "w" => Self::Write,
+            "wa" => Self::WriteAndStage,
             "q" => Self::Quit,
             "wq" | "x" => Self::WriteQuit,
             "q!" => Self::ForceQuit,
@@ -98,6 +103,7 @@ impl Command {
     pub fn description(&self) -> &str {
         match self {
             Self::Write => "write",
+            Self::WriteAndStage => "write and stage",
             Self::Quit => "quit",
             Self::WriteQuit => "write and quit",
             Self::ForceQuit => "force quit",
@@ -192,6 +198,12 @@ mod tests {
     fn parse_write() {
         assert_eq!(Command::parse("w"), Command::Write);
         assert_eq!(Command::parse("  w  "), Command::Write);
+    }
+
+    #[test]
+    fn parse_write_and_stage() {
+        assert_eq!(Command::parse("wa"), Command::WriteAndStage);
+        assert_eq!(Command::parse("  wa  "), Command::WriteAndStage);
     }
 
     #[test]

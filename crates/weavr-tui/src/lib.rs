@@ -108,6 +108,10 @@ pub struct App {
     pub(crate) ai_handle: Option<ai::AiHandle>,
     /// AI suggestion state for UI rendering.
     pub(crate) ai_state: ai::AiState,
+    /// Whether the user requested staging (set by `:wa` or staging prompt).
+    pub(crate) stage_requested: bool,
+    /// Whether to show a staging prompt on `:wq`.
+    pub(crate) stage_prompt: bool,
 }
 
 impl App {
@@ -137,6 +141,8 @@ impl App {
             help_sections,
             ai_handle: None,
             ai_state: ai::AiState::default(),
+            stage_requested: false,
+            stage_prompt: false,
         }
     }
 
@@ -166,6 +172,8 @@ impl App {
             help_sections,
             ai_handle: None,
             ai_state: ai::AiState::default(),
+            stage_requested: false,
+            stage_prompt: false,
         }
     }
 
@@ -415,11 +423,9 @@ impl App {
         let cmd = Command::parse(&self.command_buffer);
         match cmd {
             Command::Write => self.write_file(),
+            Command::WriteAndStage => self.write_and_stage(),
             Command::Quit => self.try_quit(),
-            Command::WriteQuit => {
-                // TODO: Implement :wq when file writing is implemented
-                self.set_status_message(":wq not yet implemented - use :q! to force quit");
-            }
+            Command::WriteQuit => self.write_and_quit(),
             Command::ForceQuit => self.quit(),
             Command::Help => self.show_help(),
             Command::Unknown(s) => {
@@ -431,14 +437,36 @@ impl App {
         self.exit_command_mode();
     }
 
-    /// Writes the resolved file. Currently a placeholder.
+    /// Writes the resolved file and quits (`:w`).
     fn write_file(&mut self) {
         if self.has_unresolved_hunks() {
             let count = self.unresolved_count();
             self.set_status_message(&format!("Cannot save: {count} unresolved hunks"));
         } else {
-            // TODO: Implement actual file writing in Phase 7
-            self.set_status_message("File saved (not yet implemented)");
+            self.quit();
+        }
+    }
+
+    /// Writes the resolved file, requests staging, and quits (`:wa`).
+    fn write_and_stage(&mut self) {
+        if self.has_unresolved_hunks() {
+            let count = self.unresolved_count();
+            self.set_status_message(&format!("Cannot save: {count} unresolved hunks"));
+        } else {
+            self.stage_requested = true;
+            self.quit();
+        }
+    }
+
+    /// Writes and quits, with optional staging prompt (`:wq`).
+    fn write_and_quit(&mut self) {
+        if self.has_unresolved_hunks() {
+            let count = self.unresolved_count();
+            self.set_status_message(&format!("Cannot save: {count} unresolved hunks"));
+        } else if self.stage_prompt {
+            dialog::show_staging_prompt(self);
+        } else {
+            self.quit();
         }
     }
 
@@ -478,6 +506,17 @@ impl App {
     #[must_use]
     pub fn active_dialog(&self) -> Option<&Dialog> {
         self.active_dialog.as_ref()
+    }
+
+    /// Returns whether the user requested staging.
+    #[must_use]
+    pub fn stage_requested(&self) -> bool {
+        self.stage_requested
+    }
+
+    /// Sets whether to show the staging prompt on `:wq`.
+    pub fn set_stage_prompt(&mut self, enabled: bool) {
+        self.stage_prompt = enabled;
     }
 
     /// Shows the `AcceptBoth` options dialog.

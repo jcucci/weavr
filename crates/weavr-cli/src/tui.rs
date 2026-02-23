@@ -16,6 +16,8 @@ pub struct TuiResult {
     pub hunks_resolved: usize,
     /// Total number of hunks in the file.
     pub total_hunks: usize,
+    /// Whether the user requested staging (via `:wa` or staging prompt).
+    pub stage_requested: bool,
 }
 
 /// Runs the TUI for a single file.
@@ -35,6 +37,7 @@ pub fn process_file(
             content: Some(content),
             hunks_resolved: 0,
             total_hunks: 0,
+            stage_requested: false,
         });
     }
 
@@ -61,6 +64,9 @@ pub fn process_file(
         }
     }
 
+    // Wire up staging prompt from config
+    app.set_stage_prompt(config.stage_prompt);
+
     // Wire up AI if configured
     #[cfg(feature = "ai")]
     if let Some(handle) = spawn_ai_worker(&config.ai) {
@@ -69,6 +75,9 @@ pub fn process_file(
 
     // Run TUI event loop
     weavr_tui::run(&mut app)?;
+
+    // Extract staging preference before taking session
+    let stage_requested = app.stage_requested();
 
     // Extract session and check resolution state
     let session = app
@@ -91,6 +100,7 @@ pub fn process_file(
             content: Some(result.content),
             hunks_resolved: result.summary.resolved_hunks,
             total_hunks,
+            stage_requested,
         })
     } else {
         // User quit without resolving all hunks
@@ -98,6 +108,7 @@ pub fn process_file(
             content: None,
             hunks_resolved: resolved_count,
             total_hunks,
+            stage_requested: false,
         })
     }
 }

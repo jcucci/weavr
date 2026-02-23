@@ -67,6 +67,14 @@ pub struct RawHeadlessConfig {
     pub fail_on_ambiguous: Option<bool>,
 }
 
+/// Raw git integration configuration section.
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RawGitConfig {
+    pub auto_stage: Option<bool>,
+    pub stage_prompt: Option<bool>,
+}
+
 /// A keybinding value in config: either a single key string or multiple.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(untagged)]
@@ -120,6 +128,7 @@ pub struct RawConfig {
     pub theme: Option<RawThemeConfig>,
     pub strategies: Option<RawStrategiesConfig>,
     pub headless: Option<RawHeadlessConfig>,
+    pub git: Option<RawGitConfig>,
     pub keybindings: Option<RawKeybindingsConfig>,
 
     #[cfg(feature = "ai")]
@@ -143,6 +152,10 @@ impl RawConfig {
             }),
             headless: merge_option(self.headless, lower.headless, |hi, lo| RawHeadlessConfig {
                 fail_on_ambiguous: hi.fail_on_ambiguous.or(lo.fail_on_ambiguous),
+            }),
+            git: merge_option(self.git, lower.git, |hi, lo| RawGitConfig {
+                auto_stage: hi.auto_stage.or(lo.auto_stage),
+                stage_prompt: hi.stage_prompt.or(lo.stage_prompt),
             }),
             keybindings: merge_option(self.keybindings, lower.keybindings, |hi, lo| {
                 // Action-level overlay: higher priority replaces bindings
@@ -177,11 +190,14 @@ fn merge_option<T>(
 
 /// Fully resolved configuration with concrete, validated types.
 #[derive(Debug, Clone)]
+#[allow(clippy::struct_excessive_bools)] // Config structs are naturally boolean
 pub struct WeavrConfig {
     pub theme: weavr_tui::theme::ThemeName,
     pub default_strategy: Strategy,
     pub deduplicate: bool,
     pub fail_on_ambiguous: bool,
+    pub auto_stage: bool,
+    pub stage_prompt: bool,
     #[cfg(feature = "ai")]
     pub ai: weavr_ai::AiConfig,
 }
@@ -218,11 +234,21 @@ impl WeavrConfig {
             .and_then(|h| h.fail_on_ambiguous)
             .unwrap_or(false);
 
+        let auto_stage = raw.git.as_ref().and_then(|g| g.auto_stage).unwrap_or(false);
+
+        let stage_prompt = raw
+            .git
+            .as_ref()
+            .and_then(|g| g.stage_prompt)
+            .unwrap_or(true);
+
         Ok(Self {
             theme,
             default_strategy,
             deduplicate,
             fail_on_ambiguous,
+            auto_stage,
+            stage_prompt,
             #[cfg(feature = "ai")]
             ai: raw.ai.clone().unwrap_or_default(),
         })
@@ -321,6 +347,7 @@ mod tests {
         assert!(config.theme.is_none());
         assert!(config.strategies.is_none());
         assert!(config.headless.is_none());
+        assert!(config.git.is_none());
     }
 
     #[test]
@@ -407,6 +434,8 @@ mod tests {
         assert_eq!(config.default_strategy, Strategy::Left);
         assert!(!config.deduplicate);
         assert!(!config.fail_on_ambiguous);
+        assert!(!config.auto_stage);
+        assert!(config.stage_prompt);
     }
 
     #[test]
@@ -660,6 +689,42 @@ resolve_left = "a"
             kb.bindings.get("next_hunk"),
             Some(RawKeybindingValue::Single(s)) if s == "j"
         ));
+    }
+
+    #[test]
+    fn parse_toml_git_section() {
+        let toml_str = r"
+[git]
+auto_stage = true
+stage_prompt = false
+";
+        let raw: RawConfig = toml::from_str(toml_str).unwrap();
+        let config = WeavrConfig::from_raw(&raw).unwrap();
+        assert!(config.auto_stage);
+        assert!(!config.stage_prompt);
+    }
+
+    #[test]
+    fn merge_git_config() {
+        let higher = RawConfig {
+            git: Some(RawGitConfig {
+                auto_stage: Some(true),
+                stage_prompt: None,
+            }),
+            ..RawConfig::default()
+        };
+        let lower = RawConfig {
+            git: Some(RawGitConfig {
+                auto_stage: None,
+                stage_prompt: Some(false),
+            }),
+            ..RawConfig::default()
+        };
+
+        let merged = higher.merge(lower);
+        let git = merged.git.unwrap();
+        assert_eq!(git.auto_stage, Some(true));
+        assert_eq!(git.stage_prompt, Some(false));
     }
 
     #[test]

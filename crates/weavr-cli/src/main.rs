@@ -44,9 +44,27 @@ fn run(cli: &Cli) -> Result<i32, CliError> {
     if cli.fail_on_ambiguous {
         config.fail_on_ambiguous = true;
     }
+    if cli.auto_stage {
+        config.auto_stage = true;
+    }
+    if cli.no_stage {
+        config.auto_stage = false;
+        config.stage_prompt = false;
+    }
 
     // Resolve which files to process
     let files = discovery::resolve_files(cli.files.clone())?;
+
+    // Git repo discovery (needed for auto-staging, prompts, and explicit :wa)
+    let repo = match weavr_git::GitRepo::discover() {
+        Ok(r) => Some(r),
+        Err(e) => {
+            if config.auto_stage || config.stage_prompt {
+                eprintln!("weavr: git repo not found, staging disabled: {e}");
+            }
+            None
+        }
+    };
 
     // Mode: Headless
     if cli.headless {
@@ -55,6 +73,15 @@ fn run(cli: &Cli) -> Result<i32, CliError> {
         for path in &files {
             let result = headless::process_file(path, strategy, config.deduplicate)?;
             headless::write_or_print(&result, cli.dry_run)?;
+
+            if config.auto_stage && !cli.dry_run {
+                if let Some(ref repo) = repo {
+                    match repo.stage_file(path) {
+                        Ok(()) => println!("{}: staged", path.display()),
+                        Err(e) => eprintln!("{}: staging failed: {e}", path.display()),
+                    }
+                }
+            }
         }
 
         return Ok(exit_codes::SUCCESS);
@@ -73,6 +100,21 @@ fn run(cli: &Cli) -> Result<i32, CliError> {
                 path.display(),
                 result.hunks_resolved
             );
+
+            let should_stage = config.auto_stage || result.stage_requested;
+            if should_stage {
+                if let Some(ref repo) = repo {
+                    match repo.stage_file(path) {
+                        Ok(()) => println!("{}: staged", path.display()),
+                        Err(e) => eprintln!("{}: staging failed: {e}", path.display()),
+                    }
+                } else if result.stage_requested {
+                    eprintln!(
+                        "{}: staging requested but git repo not available",
+                        path.display()
+                    );
+                }
+            }
         } else {
             any_unresolved = true;
             eprintln!(

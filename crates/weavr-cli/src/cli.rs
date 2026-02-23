@@ -56,6 +56,14 @@ pub struct Cli {
     /// Theme name (overrides config file)
     #[arg(long, value_name = "THEME")]
     pub theme: Option<String>,
+
+    /// Automatically stage resolved files after writing
+    #[arg(long)]
+    pub auto_stage: bool,
+
+    /// Disable staging (no auto-stage, no prompt)
+    #[arg(long, conflicts_with = "auto_stage")]
+    pub no_stage: bool,
 }
 
 #[cfg(test)]
@@ -144,5 +152,32 @@ mod tests {
     fn cli_parse_theme_default_is_none() {
         let cli = Cli::parse_from(["weavr"]);
         assert!(cli.theme.is_none());
+    }
+
+    #[test]
+    fn cli_parse_auto_stage() {
+        let cli = Cli::parse_from(["weavr", "--auto-stage"]);
+        assert!(cli.auto_stage);
+        assert!(!cli.no_stage);
+    }
+
+    #[test]
+    fn cli_parse_no_stage() {
+        let cli = Cli::parse_from(["weavr", "--no-stage"]);
+        assert!(cli.no_stage);
+        assert!(!cli.auto_stage);
+    }
+
+    #[test]
+    fn cli_auto_stage_conflicts_with_no_stage() {
+        let result = Cli::try_parse_from(["weavr", "--auto-stage", "--no-stage"]);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn cli_auto_stage_defaults() {
+        let cli = Cli::parse_from(["weavr"]);
+        assert!(!cli.auto_stage);
+        assert!(!cli.no_stage);
     }
 }
