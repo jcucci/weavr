@@ -1,0 +1,27 @@
+[package]
+name = "weavr-ast"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "AST-based merge strategies for weavr"
+keywords = ["ast", "merge", "conflict", "language"]
+categories = ["development-tools"]
+
+[lints]
+workspace = true
+
+[features]
+default = []
+# Language-specific AST mergers (stubs — no implementations yet)
+rust = []
+csharp = []
+typescript = []
+go = []
+all-languages = ["rust", "csharp", "typescript", "go"]
+
+[dependencies]
+weavr-core.workspace = true
+thiserror.workspace = true

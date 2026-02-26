@@ -1790,6 +1790,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "weavr-ast"
+version = "0.1.0"
+dependencies = [
+ "thiserror",
+ "weavr-core",
+]
+
+[[package]]
 name = "weavr-cli"
 version = "0.1.0"
 dependencies = [
@@ -1801,6 +1809,7 @@ dependencies = [
  "tokio",
  "toml",
  "weavr-ai",
+ "weavr-ast",
  "weavr-core",
  "weavr-git",
  "weavr-tui",
@@ -1811,6 +1820,7 @@ name = "weavr-core"
 version = "0.1.0"
 dependencies = [
  "serde",
+ "serde_json",
  "thiserror",
 ]
 
