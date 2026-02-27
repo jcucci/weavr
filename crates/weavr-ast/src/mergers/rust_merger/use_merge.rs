@@ -7,9 +7,24 @@
 
 use std::collections::BTreeSet;
 
-use syn::{Item, UseTree};
+use syn::{Item, UseTree, Visibility};
 
 use crate::AstError;
+
+/// Returns `true` if any `use` item in the slice carries visibility modifiers
+/// (`pub`, `pub(crate)`, etc.), attributes (`#[cfg(...)]`, etc.), or a leading `::`.
+/// These change semantics and cannot be safely flattened into plain path strings.
+fn has_complex_use_metadata(items: &[Item]) -> bool {
+    items.iter().any(|item| {
+        if let Item::Use(u) = item {
+            !u.attrs.is_empty()
+                || !matches!(u.vis, Visibility::Inherited)
+                || u.leading_colon.is_some()
+        } else {
+            false
+        }
+    })
+}
 
 /// Recursively flattens a `UseTree` into individual path strings.
 ///
@@ -87,12 +102,21 @@ fn path_to_use_item(path: &str) -> Result<Item, AstError> {
 /// - **3-way**: respects deletions — if a path was in base but removed by one side,
 ///   it stays removed unless the other side also added it fresh.
 ///
-/// Returns `None` if both sides have identical use paths.
+/// Returns `None` if both sides have identical use paths, or if any use item
+/// carries visibility/attributes/leading `::` that would be lost during flattening.
 pub(super) fn merge_use_items(
     left: &[Item],
     right: &[Item],
     base: Option<&[Item]>,
 ) -> Result<Option<(Vec<Item>, String)>, AstError> {
+    // Bail out when use items carry metadata we can't preserve through flattening
+    if has_complex_use_metadata(left)
+        || has_complex_use_metadata(right)
+        || base.is_some_and(has_complex_use_metadata)
+    {
+        return Ok(None);
+    }
+
     let left_paths = collect_use_paths(left);
     let right_paths = collect_use_paths(right);
 
@@ -137,20 +161,14 @@ fn three_way_merge_paths(
         result.insert(path.clone());
     }
 
-    // Remove paths deleted by left (in base but not in left),
-    // unless right explicitly added them (not in base but in right — already handled above)
+    // Remove paths deleted by left (in base but not in left)
     for path in base.difference(left) {
-        if !right.difference(base).any(|p| p == path) {
-            result.remove(path);
-        }
+        result.remove(path);
     }
 
-    // Remove paths deleted by right (in base but not in right),
-    // unless left explicitly added them
+    // Remove paths deleted by right (in base but not in right)
     for path in base.difference(right) {
-        if !left.difference(base).any(|p| p == path) {
-            result.remove(path);
-        }
+        result.remove(path);
     }
 
     result
@@ -241,5 +259,29 @@ mod tests {
         assert!(paths.contains("std::io"));
         assert!(paths.contains("std::fs"));
         assert!(paths.contains("std::net"));
+    }
+
+    #[test]
+    fn bails_out_on_pub_use() {
+        let left = parse_items("pub use std::io;");
+        let right = parse_items("use std::fs;");
+        let result = merge_use_items(&left, &right, None).unwrap();
+        assert!(result.is_none(), "should bail out for pub use");
+    }
+
+    #[test]
+    fn bails_out_on_attributed_use() {
+        let left = parse_items("#[cfg(feature = \"x\")]\nuse std::io;");
+        let right = parse_items("use std::fs;");
+        let result = merge_use_items(&left, &right, None).unwrap();
+        assert!(result.is_none(), "should bail out for attributed use");
+    }
+
+    #[test]
+    fn bails_out_on_leading_colon_use() {
+        let left = parse_items("use ::std::io;");
+        let right = parse_items("use std::fs;");
+        let result = merge_use_items(&left, &right, None).unwrap();
+        assert!(result.is_none(), "should bail out for leading :: use");
     }
 }
