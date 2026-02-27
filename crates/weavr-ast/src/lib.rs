@@ -59,7 +59,13 @@ pub trait AstMerger: Send + Sync {
 
     /// Attempts to merge a conflict hunk using AST analysis.
     ///
-    /// Returns `Some(result)` on success, or `None` if the merger
-    /// cannot handle this particular conflict (e.g., too complex).
-    fn try_merge(&self, hunk: &ConflictHunk) -> Option<AstMergeResult>;
+    /// Returns `Ok(Some(result))` on success, `Ok(None)` if the merger
+    /// cannot handle this particular conflict (e.g., too complex),
+    /// or `Err` on parse/internal errors.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`AstError::ParseError`] if the source cannot be parsed,
+    /// or [`AstError::Internal`] on unexpected merge failures.
+    fn try_merge(&self, hunk: &ConflictHunk) -> Result<Option<AstMergeResult>, AstError>;
 }

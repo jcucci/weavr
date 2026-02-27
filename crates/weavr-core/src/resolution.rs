@@ -253,7 +253,7 @@ impl Resolution {
     ) -> Resolution {
         #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
         // Safety: clamp(0.0, 1.0) * 100.0 produces 0.0–100.0, which fits in u8.
-        let score = (confidence.clamp(0.0, 1.0) * 100.0) as u8;
+        let score = (confidence.clamp(0.0, 1.0) * 100.0).round() as u8;
         Resolution {
             kind: ResolutionStrategyKind::AstMerged { language },
             content,

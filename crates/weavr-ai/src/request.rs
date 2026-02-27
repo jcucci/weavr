@@ -47,11 +47,9 @@ impl AiRequest {
     #[must_use]
     pub fn from_hunk(hunk: &ConflictHunk, file_path: Option<&str>) -> Self {
         let language = file_path
-            .map(|p| {
-                let lang = weavr_core::detect_language(Path::new(p));
-                lang.display_name().to_string()
-            })
-            .filter(|name| name != "unknown");
+            .map(|p| weavr_core::detect_language(Path::new(p)))
+            .filter(|lang| *lang != weavr_core::Language::Unknown)
+            .map(|lang| lang.display_name().to_string());
 
         Self {
             left: hunk.left.text.clone(),

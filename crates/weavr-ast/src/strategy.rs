@@ -56,9 +56,9 @@ impl AstStrategy {
                 continue;
             }
 
-            if let Some(result) = merger.try_merge(hunk) {
+            if let Some(result) = merger.try_merge(hunk)? {
                 if result.confidence < self.config.min_confidence {
-                    return Ok(None);
+                    continue;
                 }
 
                 return Ok(Some(Resolution::ast_merged(
@@ -127,8 +127,8 @@ mod tests {
             self.languages.contains(&language)
         }
 
-        fn try_merge(&self, _hunk: &ConflictHunk) -> Option<AstMergeResult> {
-            self.result.clone()
+        fn try_merge(&self, _hunk: &ConflictHunk) -> Result<Option<AstMergeResult>, AstError> {
+            Ok(self.result.clone())
         }
     }
 
@@ -199,7 +199,37 @@ mod tests {
     }
 
     #[test]
-    fn returns_none_when_confidence_below_threshold() {
+    fn skips_low_confidence_and_tries_next_merger() {
+        let config = AstConfig {
+            min_confidence: 0.8,
+            ..Default::default()
+        };
+        let low_merger = FakeMerger {
+            languages: vec![Language::Rust],
+            result: Some(AstMergeResult {
+                content: "low".to_string(),
+                confidence: 0.5,
+                description: "low confidence".to_string(),
+            }),
+        };
+        let high_merger = FakeMerger {
+            languages: vec![Language::Rust],
+            result: Some(AstMergeResult {
+                content: "high".to_string(),
+                confidence: 0.9,
+                description: "high confidence".to_string(),
+            }),
+        };
+        let strategy = AstStrategy::new(vec![Box::new(low_merger), Box::new(high_merger)], config);
+        let result = strategy
+            .try_resolve(&test_hunk(), Path::new("main.rs"), Language::Rust)
+            .unwrap();
+        let resolution = result.expect("second merger should succeed");
+        assert_eq!(resolution.content, "high");
+    }
+
+    #[test]
+    fn returns_none_when_all_mergers_below_threshold() {
         let config = AstConfig {
             min_confidence: 0.8,
             ..Default::default()
