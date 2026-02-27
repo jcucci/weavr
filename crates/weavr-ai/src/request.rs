@@ -1,5 +1,7 @@
 //! Request and response types for AI providers.
 
+use std::path::Path;
+
 use serde::{Deserialize, Serialize};
 use weavr_core::ConflictHunk;
 
@@ -44,6 +46,11 @@ impl AiRequest {
     /// Creates a request from a `ConflictHunk`.
     #[must_use]
     pub fn from_hunk(hunk: &ConflictHunk, file_path: Option<&str>) -> Self {
+        let language = file_path
+            .map(|p| weavr_core::detect_language(Path::new(p)))
+            .filter(|lang| *lang != weavr_core::Language::Unknown)
+            .map(|lang| lang.display_name().to_string());
+
         Self {
             left: hunk.left.text.clone(),
             right: hunk.right.text.clone(),
@@ -52,58 +59,59 @@ impl AiRequest {
                 before: hunk.context.before.clone(),
                 after: hunk.context.after.clone(),
                 file_path: file_path.map(String::from),
-                language: file_path.and_then(detect_language),
+                language,
             },
         }
-    }
-}
-
-/// Detects programming language from file extension.
-fn detect_language(path: &str) -> Option<String> {
-    let ext = path.rsplit('.').next()?;
-    match ext.to_lowercase().as_str() {
-        "rs" => Some("rust".into()),
-        "cs" => Some("csharp".into()),
-        "ts" | "tsx" => Some("typescript".into()),
-        "js" | "jsx" => Some("javascript".into()),
-        "go" => Some("go".into()),
-        "py" => Some("python".into()),
-        "rb" => Some("ruby".into()),
-        "java" => Some("java".into()),
-        "kt" | "kts" => Some("kotlin".into()),
-        "swift" => Some("swift".into()),
-        "c" | "h" => Some("c".into()),
-        "cpp" | "cc" | "cxx" | "hpp" => Some("cpp".into()),
-        "json" => Some("json".into()),
-        "yaml" | "yml" => Some("yaml".into()),
-        "toml" => Some("toml".into()),
-        "md" => Some("markdown".into()),
-        _ => None,
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use weavr_core::{HunkContent, HunkContext, HunkId, HunkState};
 
-    #[test]
-    fn detect_rust() {
-        assert_eq!(detect_language("src/main.rs"), Some("rust".into()));
+    fn test_hunk() -> ConflictHunk {
+        ConflictHunk {
+            id: HunkId(1),
+            left: HunkContent {
+                text: "left".to_string(),
+            },
+            right: HunkContent {
+                text: "right".to_string(),
+            },
+            base: None,
+            context: HunkContext::default(),
+            state: HunkState::default(),
+        }
     }
 
     #[test]
-    fn detect_typescript() {
-        assert_eq!(detect_language("app.tsx"), Some("typescript".into()));
-        assert_eq!(detect_language("index.ts"), Some("typescript".into()));
+    fn from_hunk_detects_rust() {
+        let req = AiRequest::from_hunk(&test_hunk(), Some("src/main.rs"));
+        assert_eq!(req.context.language.as_deref(), Some("rust"));
     }
 
     #[test]
-    fn detect_unknown() {
-        assert_eq!(detect_language("file.xyz"), None);
+    fn from_hunk_detects_typescript() {
+        let req = AiRequest::from_hunk(&test_hunk(), Some("app.tsx"));
+        assert_eq!(req.context.language.as_deref(), Some("typescript"));
     }
 
     #[test]
-    fn detect_case_insensitive() {
-        assert_eq!(detect_language("Main.RS"), Some("rust".into()));
+    fn from_hunk_unknown_extension_returns_none() {
+        let req = AiRequest::from_hunk(&test_hunk(), Some("file.xyz"));
+        assert!(req.context.language.is_none());
+    }
+
+    #[test]
+    fn from_hunk_no_path_returns_none() {
+        let req = AiRequest::from_hunk(&test_hunk(), None);
+        assert!(req.context.language.is_none());
+    }
+
+    #[test]
+    fn from_hunk_case_insensitive() {
+        let req = AiRequest::from_hunk(&test_hunk(), Some("Main.RS"));
+        assert_eq!(req.context.language.as_deref(), Some("rust"));
     }
 }

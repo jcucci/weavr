@@ -6,6 +6,7 @@ members = [
     "crates/weavr-tui",
     "crates/weavr-git",
     "crates/weavr-ai",
+    "crates/weavr-ast",
 ]
 
 [workspace.package]
@@ -32,6 +33,7 @@ weavr-core = { path = "crates/weavr-core" }
 weavr-git = { path = "crates/weavr-git" }
 weavr-tui = { path = "crates/weavr-tui" }
 weavr-ai = { path = "crates/weavr-ai" }
+weavr-ast = { path = "crates/weavr-ast" }
 
 # CLI dependencies
 clap = { version = "4.4", features = ["derive"] }

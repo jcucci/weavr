@@ -7,6 +7,7 @@ use std::collections::HashSet;
 use serde::{Deserialize, Serialize};
 
 use crate::hunk::ConflictHunk;
+use crate::language::Language;
 
 /// Simple concatenation with proper newline handling.
 fn combine_simple(first: &str, second: &str) -> String {
@@ -94,7 +95,7 @@ pub enum ResolutionStrategyKind {
     /// Language-specific AST merge.
     AstMerged {
         /// The language used for AST merging.
-        language: String,
+        language: Language,
     },
     /// AI-generated suggestion.
     AiSuggested {
@@ -122,8 +123,8 @@ pub struct ResolutionMetadata {
     pub source: ResolutionSource,
     /// Optional notes.
     pub notes: Option<String>,
-    /// Confidence score for AI-generated resolutions (0-100 percentage).
-    /// Only meaningful when `source` is `ResolutionSource::Ai`.
+    /// Confidence score (0-100 percentage).
+    /// Meaningful when `source` is [`ResolutionSource::Ai`] or [`ResolutionSource::Ast`].
     pub confidence: Option<u8>,
 }
 
@@ -235,12 +236,41 @@ impl Resolution {
             metadata: ResolutionMetadata::default(),
         }
     }
+
+    /// Create a resolution from an AST-based merge.
+    ///
+    /// # Arguments
+    /// * `content` - The merged content produced by AST analysis
+    /// * `language` - The language used for AST merging
+    /// * `description` - Human-readable description (e.g., "Merged 3 imports")
+    /// * `confidence` - Confidence score from 0.0 to 1.0 (clamped, then scaled to 0-100)
+    #[must_use]
+    pub fn ast_merged(
+        content: String,
+        language: Language,
+        description: String,
+        confidence: f32,
+    ) -> Resolution {
+        #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+        // Safety: clamp(0.0, 1.0) * 100.0 produces 0.0–100.0, which fits in u8.
+        let score = (confidence.clamp(0.0, 1.0) * 100.0).round() as u8;
+        Resolution {
+            kind: ResolutionStrategyKind::AstMerged { language },
+            content,
+            metadata: ResolutionMetadata {
+                source: ResolutionSource::Ast,
+                notes: Some(description),
+                confidence: Some(score),
+            },
+        }
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::hunk::{HunkContent, HunkContext, HunkId, HunkState};
+    use crate::language::Language;
 
     fn test_hunk(left: &str, right: &str) -> ConflictHunk {
         ConflictHunk {
@@ -554,5 +584,56 @@ mod tests {
         let res1 = Resolution::manual(content.clone());
         let res2 = Resolution::manual(content);
         assert_eq!(res1, res2);
+    }
+
+    // ast_merged() tests
+
+    #[test]
+    fn ast_merged_sets_fields() {
+        let resolution = Resolution::ast_merged(
+            "merged content".to_string(),
+            Language::Rust,
+            "Merged 3 imports".to_string(),
+            0.85,
+        );
+        assert_eq!(resolution.content, "merged content");
+        assert_eq!(
+            resolution.kind,
+            ResolutionStrategyKind::AstMerged {
+                language: Language::Rust
+            }
+        );
+        assert_eq!(resolution.metadata.source, ResolutionSource::Ast);
+        assert_eq!(
+            resolution.metadata.notes.as_deref(),
+            Some("Merged 3 imports")
+        );
+        assert_eq!(resolution.metadata.confidence, Some(85));
+    }
+
+    #[test]
+    fn ast_merged_confidence_clamped_above_one() {
+        let resolution = Resolution::ast_merged(String::new(), Language::Go, String::new(), 1.5);
+        assert_eq!(resolution.metadata.confidence, Some(100));
+    }
+
+    #[test]
+    fn ast_merged_confidence_clamped_below_zero() {
+        let resolution = Resolution::ast_merged(String::new(), Language::Go, String::new(), -0.5);
+        assert_eq!(resolution.metadata.confidence, Some(0));
+    }
+
+    #[test]
+    fn ast_merged_confidence_zero() {
+        let resolution =
+            Resolution::ast_merged(String::new(), Language::Python, String::new(), 0.0);
+        assert_eq!(resolution.metadata.confidence, Some(0));
+    }
+
+    #[test]
+    fn ast_merged_confidence_one() {
+        let resolution =
+            Resolution::ast_merged(String::new(), Language::Python, String::new(), 1.0);
+        assert_eq!(resolution.metadata.confidence, Some(100));
     }
 }

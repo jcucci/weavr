@@ -24,6 +24,12 @@ ai-claude = ["ai", "weavr-ai/ai-claude"]
 ai-openai = ["ai", "weavr-ai/ai-openai"]
 ai-local = ["ai", "weavr-ai/ai-local"]
 ai-all = ["ai-claude", "ai-openai", "ai-local"]
+ast = ["dep:weavr-ast"]
+ast-rust = ["ast", "weavr-ast/rust"]
+ast-csharp = ["ast", "weavr-ast/csharp"]
+ast-typescript = ["ast", "weavr-ast/typescript"]
+ast-go = ["ast", "weavr-ast/go"]
+ast-all = ["ast-rust", "ast-csharp", "ast-typescript", "ast-go"]
 
 [dependencies]
 weavr-core.workspace = true
@@ -38,6 +44,9 @@ directories.workspace = true
 # Optional AI support
 weavr-ai = { workspace = true, optional = true }
 tokio = { workspace = true, optional = true }
+
+# Optional AST support
+weavr-ast = { workspace = true, optional = true }
 
 [dev-dependencies]
 tempfile = "3"
