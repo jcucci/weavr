@@ -1793,6 +1793,10 @@ dependencies = [
 name = "weavr-ast"
 version = "0.1.0"
 dependencies = [
+ "prettyplease",
+ "proc-macro2",
+ "quote",
+ "syn",
  "thiserror",
  "weavr-core",
 ]
