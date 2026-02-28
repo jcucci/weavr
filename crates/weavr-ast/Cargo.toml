@@ -15,8 +15,7 @@ workspace = true
 
 [features]
 default = []
-# Language-specific AST mergers (stubs — no implementations yet)
-rust = []
+rust = ["dep:syn", "dep:quote", "dep:prettyplease", "dep:proc-macro2"]
 csharp = []
 typescript = []
 go = []
@@ -25,3 +24,9 @@ all-languages = ["rust", "csharp", "typescript", "go"]
 [dependencies]
 weavr-core.workspace = true
 thiserror.workspace = true
+
+# Rust AST merger (feature-gated)
+syn = { workspace = true, optional = true }
+quote = { workspace = true, optional = true }
+prettyplease = { workspace = true, optional = true }
+proc-macro2 = { workspace = true, optional = true }
