@@ -17,7 +17,7 @@ workspace = true
 default = []
 rust = ["dep:syn", "dep:quote", "dep:prettyplease", "dep:proc-macro2"]
 csharp = ["dep:tree-sitter", "dep:tree-sitter-c-sharp", "dep:tree-sitter-language"]
-typescript = []
+typescript = ["dep:tree-sitter", "dep:tree-sitter-typescript", "dep:tree-sitter-language"]
 go = []
 all-languages = ["rust", "csharp", "typescript", "go"]
 
@@ -34,4 +34,5 @@ proc-macro2 = { workspace = true, optional = true }
 # C# AST merger (feature-gated)
 tree-sitter = { workspace = true, optional = true }
 tree-sitter-c-sharp = { workspace = true, optional = true }
+tree-sitter-typescript = { workspace = true, optional = true }
 tree-sitter-language = { workspace = true, optional = true }
