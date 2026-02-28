@@ -47,6 +47,7 @@ mod tests {
             identity: TsIdentity::Import(ImportKey {
                 module: module.to_string(),
                 kind: ImportKind::Value,
+                namespace_alias: None,
             }),
             source_text: format!("import {{ }} from '{module}';"),
             specifiers: BTreeSet::new(),

@@ -104,7 +104,9 @@ pub(super) fn parse_fragment(text: &str) -> ParsedFragment {
 
 /// Returns `true` if the text contains patterns we bail out on:
 /// - Triple-slash reference directives (`/// <reference .../>`)
-/// - Dynamic `import()` expressions (as opposed to static `import` statements)
+///
+/// Dynamic `import()` expressions are handled separately in `parse_import_statement`,
+/// which returns `ImportParseResult::Unsupported` and propagates via `NodeConversion::BailOut`.
 fn contains_bail_out_patterns(text: &str) -> bool {
     text.lines().any(|line| {
         let t = line.trim();
@@ -122,7 +124,7 @@ fn try_parse_as_module(parser: &mut Parser, text: &str) -> Option<Vec<TsDeclarat
         return None;
     }
 
-    let decls = extract_declarations(&root, text);
+    let decls = extract_declarations(&root, text)?;
     if decls.is_empty() && !text.trim().is_empty() {
         return None;
     }
@@ -154,8 +156,10 @@ fn try_parse_wrapped(parser: &mut Parser, wrapped: &str) -> Option<Vec<TsDeclara
                             if member.kind() == "{" || member.kind() == "}" {
                                 continue;
                             }
-                            if let Some(decl) = node_to_declaration(&member, wrapped) {
-                                decls.push(decl);
+                            match node_to_declaration_inner(&member, wrapped) {
+                                NodeConversion::Ok(decl) => decls.push(decl),
+                                NodeConversion::BailOut => return None,
+                                NodeConversion::Skip => {}
                             }
                         }
                     }
@@ -206,8 +210,10 @@ fn try_parse_wrapped_class(parser: &mut Parser, wrapped: &str) -> Option<Vec<TsD
                     if member.kind() == "{" || member.kind() == "}" {
                         continue;
                     }
-                    if let Some(decl) = node_to_declaration(&member, wrapped) {
-                        decls.push(decl);
+                    match node_to_declaration_inner(&member, wrapped) {
+                        NodeConversion::Ok(decl) => decls.push(decl),
+                        NodeConversion::BailOut => return None,
+                        NodeConversion::Skip => {}
                     }
                 }
             }
@@ -234,28 +240,46 @@ fn has_too_many_errors(root: &Node<'_>) -> bool {
 }
 
 /// Extracts top-level declarations from a root node.
-fn extract_declarations(root: &Node<'_>, source: &str) -> Vec<TsDeclaration> {
+///
+/// Returns `None` if any node triggers a bail-out (e.g., unsupported import form),
+/// signaling that the entire fragment should be treated as unparsable.
+fn extract_declarations(root: &Node<'_>, source: &str) -> Option<Vec<TsDeclaration>> {
     let mut decls = Vec::new();
     for i in 0..root.child_count() {
         if let Some(child) = root.child(i) {
-            if let Some(decl) = node_to_declaration(&child, source) {
-                decls.push(decl);
+            match node_to_declaration_inner(&child, source) {
+                NodeConversion::Ok(decl) => decls.push(decl),
+                NodeConversion::BailOut => return None,
+                NodeConversion::Skip => {}
             }
         }
     }
-    decls
+    Some(decls)
+}
+
+/// Result of converting a tree-sitter node into a declaration.
+enum NodeConversion {
+    /// Successfully converted to a declaration.
+    Ok(TsDeclaration),
+    /// The node contains an unsupported import form — the entire fragment is unparsable.
+    BailOut,
+    /// The node was not recognized or is not a declaration (e.g., punctuation, comments).
+    Skip,
 }
 
 /// Converts a tree-sitter node into a `TsDeclaration`.
-fn node_to_declaration(node: &Node<'_>, source: &str) -> Option<TsDeclaration> {
+fn node_to_declaration_inner(node: &Node<'_>, source: &str) -> NodeConversion {
     let source_text = node_text(node, source).to_string();
     let kind_str = node.kind();
 
     match kind_str {
-        "import_statement" => parse_import_statement(node, source),
+        "import_statement" => match parse_import_statement(node, source) {
+            ImportParseResult::Ok(decl) => NodeConversion::Ok(decl),
+            ImportParseResult::Unsupported => NodeConversion::BailOut,
+        },
         "export_statement" => {
             let name = get_export_identity(node, source);
-            Some(TsDeclaration {
+            NodeConversion::Ok(TsDeclaration {
                 kind: DeclarationKind::ExportStatement,
                 identity: TsIdentity::Export(name),
                 source_text,
@@ -264,7 +288,7 @@ fn node_to_declaration(node: &Node<'_>, source: &str) -> Option<TsDeclaration> {
         }
         "function_declaration" | "generator_function_declaration" => {
             let name = get_name_text(node, source).unwrap_or_default();
-            Some(TsDeclaration {
+            NodeConversion::Ok(TsDeclaration {
                 kind: DeclarationKind::Function,
                 identity: TsIdentity::Function(name),
                 source_text,
@@ -273,7 +297,7 @@ fn node_to_declaration(node: &Node<'_>, source: &str) -> Option<TsDeclaration> {
         }
         "class_declaration" => {
             let name = get_name_text(node, source).unwrap_or_default();
-            Some(TsDeclaration {
+            NodeConversion::Ok(TsDeclaration {
                 kind: DeclarationKind::Class,
                 identity: TsIdentity::Class(name),
                 source_text,
@@ -282,7 +306,7 @@ fn node_to_declaration(node: &Node<'_>, source: &str) -> Option<TsDeclaration> {
         }
         "interface_declaration" => {
             let name = get_name_text(node, source).unwrap_or_default();
-            Some(TsDeclaration {
+            NodeConversion::Ok(TsDeclaration {
                 kind: DeclarationKind::Interface,
                 identity: TsIdentity::Interface(name),
                 source_text,
@@ -291,7 +315,7 @@ fn node_to_declaration(node: &Node<'_>, source: &str) -> Option<TsDeclaration> {
         }
         "type_alias_declaration" => {
             let name = get_name_text(node, source).unwrap_or_default();
-            Some(TsDeclaration {
+            NodeConversion::Ok(TsDeclaration {
                 kind: DeclarationKind::TypeAlias,
                 identity: TsIdentity::TypeAlias(name),
                 source_text,
@@ -300,7 +324,7 @@ fn node_to_declaration(node: &Node<'_>, source: &str) -> Option<TsDeclaration> {
         }
         "enum_declaration" => {
             let name = get_name_text(node, source).unwrap_or_default();
-            Some(TsDeclaration {
+            NodeConversion::Ok(TsDeclaration {
                 kind: DeclarationKind::Enum,
                 identity: TsIdentity::Enum(name),
                 source_text,
@@ -309,7 +333,7 @@ fn node_to_declaration(node: &Node<'_>, source: &str) -> Option<TsDeclaration> {
         }
         "lexical_declaration" | "variable_declaration" => {
             let name = extract_variable_names(node, source);
-            Some(TsDeclaration {
+            NodeConversion::Ok(TsDeclaration {
                 kind: DeclarationKind::Variable,
                 identity: TsIdentity::Variable(name),
                 source_text,
@@ -318,45 +342,63 @@ fn node_to_declaration(node: &Node<'_>, source: &str) -> Option<TsDeclaration> {
         }
         "module" | "internal_module" => {
             let name = get_name_text(node, source).unwrap_or_default();
-            Some(TsDeclaration {
+            NodeConversion::Ok(TsDeclaration {
                 kind: DeclarationKind::Namespace,
                 identity: TsIdentity::Namespace(name),
                 source_text,
                 specifiers: BTreeSet::new(),
             })
         }
-        _ => None,
+        _ => NodeConversion::Skip,
     }
 }
 
+/// Result of attempting to parse an import statement.
+///
+/// Distinguished from `Option<TsDeclaration>` to differentiate "unsupported import
+/// that should bail out the entire fragment" from "successfully parsed import".
+pub(super) enum ImportParseResult {
+    /// Successfully parsed into a declaration.
+    Ok(TsDeclaration),
+    /// Unsupported import form (default+named combo, dynamic import) — the caller
+    /// should treat the entire fragment as unparsable to avoid silent data loss.
+    Unsupported,
+}
+
 /// Parses an import statement into a `TsDeclaration` with identity and specifiers.
-fn parse_import_statement(node: &Node<'_>, source: &str) -> Option<TsDeclaration> {
+fn parse_import_statement(node: &Node<'_>, source: &str) -> ImportParseResult {
     let source_text = node_text(node, source).to_string();
     let trimmed = source_text.trim();
 
     // Bail out on dynamic import() expressions
     if trimmed.contains("import(") {
-        return None;
+        return ImportParseResult::Unsupported;
     }
 
     // Extract the module specifier (the string after `from`)
-    let module = extract_module_specifier(node, source)?;
+    let Some(module) = extract_module_specifier(node, source) else {
+        return ImportParseResult::Unsupported;
+    };
 
     // Determine import kind and extract specifiers
-    let (kind, specifiers) = classify_import(node, source, trimmed);
+    let classification = classify_import(node, source, trimmed);
 
     // Bail out on default+named combo: `import React, { useState } from 'react'`
     if is_default_named_combo(node, source) {
-        return None;
+        return ImportParseResult::Unsupported;
     }
 
-    let import_key = ImportKey { module, kind };
+    let import_key = ImportKey {
+        module,
+        kind: classification.kind,
+        namespace_alias: classification.namespace_alias,
+    };
 
-    Some(TsDeclaration {
+    ImportParseResult::Ok(TsDeclaration {
         kind: DeclarationKind::ImportStatement,
         identity: TsIdentity::Import(import_key),
         source_text,
-        specifiers,
+        specifiers: classification.specifiers,
     })
 }
 
@@ -384,24 +426,36 @@ fn extract_module_specifier(node: &Node<'_>, source: &str) -> Option<String> {
     None
 }
 
+/// Result of classifying an import statement.
+struct ImportClassification {
+    kind: ImportKind,
+    specifiers: BTreeSet<ImportSpecifier>,
+    /// The namespace alias for `import * as X` imports.
+    namespace_alias: Option<String>,
+}
+
 /// Classifies an import statement and extracts its specifiers.
-fn classify_import(
-    node: &Node<'_>,
-    source: &str,
-    text: &str,
-) -> (ImportKind, BTreeSet<ImportSpecifier>) {
+fn classify_import(node: &Node<'_>, source: &str, text: &str) -> ImportClassification {
     let is_type_only = text.starts_with("import type ");
 
     // Check for side-effect import first: `import './polyfill'`
     // Side-effect imports have no import_clause child.
     if !has_import_clause(node) {
-        return (ImportKind::SideEffect, BTreeSet::new());
+        return ImportClassification {
+            kind: ImportKind::SideEffect,
+            specifiers: BTreeSet::new(),
+            namespace_alias: None,
+        };
     }
 
     // Check for namespace import: `import * as X from 'x'`
     // The namespace_import node lives inside import_clause.
-    if has_namespace_import(node) {
-        return (ImportKind::Namespace, BTreeSet::new());
+    if let Some(alias) = extract_namespace_alias(node, source) {
+        return ImportClassification {
+            kind: ImportKind::Namespace,
+            specifiers: BTreeSet::new(),
+            namespace_alias: Some(alias),
+        };
     }
 
     // Check for named imports: `import { A, B } from 'x'`
@@ -418,30 +472,35 @@ fn classify_import(
         ImportKind::Value
     };
 
-    (kind, specifiers)
+    ImportClassification {
+        kind,
+        specifiers,
+        namespace_alias: None,
+    }
 }
 
-/// Checks if the import statement contains a `namespace_import` node (e.g., `* as X`).
-fn has_namespace_import(node: &Node<'_>) -> bool {
+/// Extracts the namespace alias from `import * as X`, returning the alias `X`.
+/// Returns `None` if this is not a namespace import.
+fn extract_namespace_alias(node: &Node<'_>, source: &str) -> Option<String> {
     for i in 0..node.child_count() {
         let Some(child) = node.child(i) else {
             continue;
         };
         if child.kind() == "namespace_import" {
-            return true;
+            return get_name_text(&child, source);
         }
         // namespace_import may be nested inside import_clause
         if child.kind() == "import_clause" {
             for j in 0..child.child_count() {
                 if let Some(clause_child) = child.child(j) {
                     if clause_child.kind() == "namespace_import" {
-                        return true;
+                        return get_name_text(&clause_child, source);
                     }
                 }
             }
         }
     }
-    false
+    None
 }
 
 /// Checks if this import has a default+named combo pattern.
@@ -765,16 +824,13 @@ mod tests {
     }
 
     #[test]
-    fn default_named_combo_returns_none() {
+    fn default_named_combo_returns_unparsable() {
         let text = "import React, { useState } from 'react';";
         let result = parse_fragment(text);
-        match result {
-            ParsedFragment::Declarations(decls) => {
-                // default+named combo should be bailed out (no declaration produced)
-                assert!(decls.is_empty(), "default+named combo should be skipped");
-            }
-            ParsedFragment::Unparsable => { /* also acceptable */ }
-        }
+        assert!(
+            matches!(result, ParsedFragment::Unparsable),
+            "default+named combo should bail out to Unparsable"
+        );
     }
 
     #[test]

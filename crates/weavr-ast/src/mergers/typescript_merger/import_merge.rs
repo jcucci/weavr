@@ -140,11 +140,8 @@ fn format_import(key: &ImportKey, specifiers: &BTreeSet<ImportSpecifier>) -> Str
             format!("import {quote}{module}{quote};")
         }
         ImportKind::Namespace => {
-            // Namespace imports don't have specifiers; we preserve the original name
-            // by formatting a generic `* as <module_name>` pattern.
-            // The actual alias is lost during set merging, but namespace imports
-            // are identity-matched and not specifier-merged.
-            format!("import * as {module} from {quote}{module}{quote};")
+            let alias = key.namespace_alias.as_deref().unwrap_or(module);
+            format!("import * as {alias} from {quote}{module}{quote};")
         }
         ImportKind::TypeOnly => {
             if specifiers.is_empty() {
@@ -307,6 +304,7 @@ mod tests {
         let key = ImportKey {
             module: "react".to_string(),
             kind: ImportKind::Value,
+            namespace_alias: None,
         };
         let mut specs = BTreeSet::new();
         specs.insert(ImportSpecifier {
@@ -323,6 +321,7 @@ mod tests {
         let key = ImportKey {
             module: "./types".to_string(),
             kind: ImportKind::TypeOnly,
+            namespace_alias: None,
         };
         let mut specs = BTreeSet::new();
         specs.insert(ImportSpecifier {
@@ -339,6 +338,7 @@ mod tests {
         let key = ImportKey {
             module: "./polyfill".to_string(),
             kind: ImportKind::SideEffect,
+            namespace_alias: None,
         };
         let result = format_import(&key, &BTreeSet::new());
         assert_eq!(result, "import './polyfill';");

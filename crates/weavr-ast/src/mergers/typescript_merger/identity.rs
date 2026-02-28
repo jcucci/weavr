@@ -34,12 +34,18 @@ pub(super) enum TsIdentity {
 /// same kind. This allows merging `import { A } from 'react'` (left) with
 /// `import { B } from 'react'` (right) while keeping `import type { T } from 'react'`
 /// separate.
+///
+/// For namespace imports, the alias (e.g., `React` in `import * as React`) is
+/// also part of the identity — different aliases for the same module are treated
+/// as distinct imports.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub(super) struct ImportKey {
     /// The module specifier (e.g., `react`, `./utils`).
     pub module: String,
     /// The kind of import (value, type-only, side-effect, namespace).
     pub kind: ImportKind,
+    /// The namespace alias for `import * as X` imports. `None` for other kinds.
+    pub namespace_alias: Option<String>,
 }
 
 /// The kind of an import statement.
@@ -77,10 +83,12 @@ mod tests {
         let a = ImportKey {
             module: "react".to_string(),
             kind: ImportKind::Value,
+            namespace_alias: None,
         };
         let b = ImportKey {
             module: "react".to_string(),
             kind: ImportKind::Value,
+            namespace_alias: None,
         };
         assert_eq!(a, b);
     }
@@ -90,10 +98,12 @@ mod tests {
         let value = ImportKey {
             module: "react".to_string(),
             kind: ImportKind::Value,
+            namespace_alias: None,
         };
         let type_only = ImportKey {
             module: "react".to_string(),
             kind: ImportKind::TypeOnly,
+            namespace_alias: None,
         };
         assert_ne!(value, type_only);
     }
@@ -103,12 +113,29 @@ mod tests {
         let a = ImportKey {
             module: "react".to_string(),
             kind: ImportKind::Value,
+            namespace_alias: None,
         };
         let b = ImportKey {
             module: "vue".to_string(),
             kind: ImportKind::Value,
+            namespace_alias: None,
         };
         assert_ne!(a, b);
+    }
+
+    #[test]
+    fn namespace_import_different_alias() {
+        let a = ImportKey {
+            module: "react".to_string(),
+            kind: ImportKind::Namespace,
+            namespace_alias: Some("React".to_string()),
+        };
+        let b = ImportKey {
+            module: "react".to_string(),
+            kind: ImportKind::Namespace,
+            namespace_alias: Some("R".to_string()),
+        };
+        assert_ne!(a, b, "different aliases should be different identities");
     }
 
     #[test]

@@ -129,6 +129,11 @@ fn import_namespace_preserved() {
     let result = merge(left, right).unwrap();
     // Both should be present (namespace and named are separate identities)
     assert!(result.content.contains("useState"));
+    assert!(
+        result.content.contains("* as React"),
+        "namespace import should be preserved with correct alias, got: {}",
+        result.content
+    );
 }
 
 #[test]
