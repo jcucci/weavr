@@ -73,8 +73,8 @@ fn create_parser() -> Parser {
 /// Attempts to parse a text fragment into C# declarations using a tiered strategy:
 ///
 /// 1. Parse as a complete compilation unit -- handles top-level using/namespace/class.
-/// 2. Wrap in a dummy namespace + class -- handles bare method/property fragments.
-/// 3. Wrap in a dummy namespace only -- handles bare class-level declarations.
+/// 2. Wrap in a dummy namespace only -- handles bare class-level declarations.
+/// 3. Wrap in a dummy namespace + class -- handles bare method/property fragments.
 /// 4. If all fail, return [`ParsedFragment::Unparsable`].
 pub(super) fn parse_fragment(text: &str) -> ParsedFragment {
     let trimmed = text.trim();
@@ -121,6 +121,13 @@ fn contains_preprocessor_directives(text: &str) -> bool {
             || t.starts_with("#endif")
             || t.starts_with("#region")
             || t.starts_with("#endregion")
+            || t.starts_with("#nullable")
+            || t.starts_with("#pragma")
+            || t.starts_with("#define")
+            || t.starts_with("#undef")
+            || t.starts_with("#warning")
+            || t.starts_with("#error")
+            || t.starts_with("#line")
     })
 }
 
@@ -159,7 +166,9 @@ fn try_parse_wrapped(
 
     // Find the dummy namespace and extract its children
     for i in 0..root.child_count() {
-        let child = root.child(i)?;
+        let Some(child) = root.child(i) else {
+            continue;
+        };
         if child.kind() == "namespace_declaration" {
             let name = get_name_text(&child, wrapped);
             if name.as_deref() == Some("__WeavrDummy__") {
@@ -173,7 +182,7 @@ fn try_parse_wrapped(
                             }
                             if let Some(decl) = node_to_declaration(&member, wrapped) {
                                 // Re-extract with the original source offsets mapped back
-                                decls.push(remap_declaration_source(decl, wrapped));
+                                decls.push(decl);
                             }
                         }
                     }
@@ -203,17 +212,25 @@ fn try_parse_wrapped_members(
 
     // Navigate: root -> namespace_declaration -> body -> class_declaration -> body
     for i in 0..root.child_count() {
-        let ns = root.child(i)?;
+        let Some(ns) = root.child(i) else {
+            continue;
+        };
         if ns.kind() != "namespace_declaration" {
             continue;
         }
-        let ns_body = ns.child_by_field_name("body")?;
+        let Some(ns_body) = ns.child_by_field_name("body") else {
+            continue;
+        };
         for j in 0..ns_body.child_count() {
-            let class = ns_body.child(j)?;
+            let Some(class) = ns_body.child(j) else {
+                continue;
+            };
             if class.kind() != "class_declaration" {
                 continue;
             }
-            let class_body = class.child_by_field_name("body")?;
+            let Some(class_body) = class.child_by_field_name("body") else {
+                continue;
+            };
             let mut decls = Vec::new();
             for k in 0..class_body.child_count() {
                 if let Some(member) = class_body.child(k) {
@@ -221,7 +238,7 @@ fn try_parse_wrapped_members(
                         continue;
                     }
                     if let Some(decl) = node_to_declaration(&member, wrapped) {
-                        decls.push(remap_declaration_source(decl, wrapped));
+                        decls.push(decl);
                     }
                 }
             }
@@ -633,19 +650,6 @@ fn node_to_member_declaration(node: &Node<'_>, source: &str) -> Option<CSharpDec
 /// Extracts the text of a tree-sitter node from the source.
 fn node_text<'a>(node: &Node<'_>, source: &'a str) -> &'a str {
     &source[node.start_byte()..node.end_byte()]
-}
-
-/// Remaps source text in a declaration (used when parsing wrapped fragments).
-fn remap_declaration_source(mut decl: CSharpDeclaration, _wrapped: &str) -> CSharpDeclaration {
-    // The source_text already points to the right text from the wrapped source,
-    // which is fine since we preserve it as-is. The identity is already correct.
-    // For children, remap recursively.
-    decl.children = decl
-        .children
-        .into_iter()
-        .map(|c| remap_declaration_source(c, _wrapped))
-        .collect();
-    decl
 }
 
 /// Converts a member-level `CSharpDeclaration` identity into a `MemberIdentity`.

@@ -6,7 +6,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use super::identity::{CSharpIdentity, MemberIdentity};
-use super::parse::{to_member_identity, CSharpDeclaration, DeclarationKind};
+use super::parse::{is_complex_using, to_member_identity, CSharpDeclaration, DeclarationKind};
 use super::using_merge;
 
 /// The result of merging declarations from two or three sides.
@@ -91,6 +91,11 @@ pub(super) fn merge_two_way(
             merged.extend(using_decls);
             descriptions.push(desc);
             has_using_merge = true;
+        } else if left_usings.iter().any(|d| is_complex_using(d))
+            || right_usings.iter().any(|d| is_complex_using(d))
+        {
+            // Complex usings cannot be safely merged -- bail out to text merge
+            return None;
         } else {
             // Identical usings -- just keep left's
             merged.extend(left_usings);
@@ -209,6 +214,12 @@ pub(super) fn merge_three_way(
             merged.extend(using_decls);
             descriptions.push(desc);
             has_using_merge = true;
+        } else if base_usings.iter().any(|d| is_complex_using(d))
+            || left_usings.iter().any(|d| is_complex_using(d))
+            || right_usings.iter().any(|d| is_complex_using(d))
+        {
+            // Complex usings cannot be safely merged -- bail out to text merge
+            return None;
         } else {
             merged.extend(left_usings);
         }

@@ -316,6 +316,45 @@ fn preprocessor_returns_none() {
 }
 
 #[test]
+fn mixed_complex_using_with_class_bails_out() {
+    let result = merge(
+        "using static System.Math;\nclass Foo { }",
+        "using static System.Linq.Enumerable;\nclass Bar { }",
+    );
+    assert!(
+        result.is_none(),
+        "mixed hunk with complex usings should return None"
+    );
+}
+
+#[test]
+fn mixed_alias_using_with_class_bails_out() {
+    let result = merge(
+        "using Alias = System.IO;\nclass Foo { }",
+        "using System;\nclass Bar { }",
+    );
+    assert!(
+        result.is_none(),
+        "mixed hunk with alias using should return None"
+    );
+}
+
+#[test]
+fn nullable_directive_returns_none() {
+    let result = merge("#nullable enable\nusing System;", "using System.IO;");
+    assert!(result.is_none());
+}
+
+#[test]
+fn pragma_directive_returns_none() {
+    let result = merge(
+        "#pragma warning disable CS0168\nusing System;",
+        "using System.IO;",
+    );
+    assert!(result.is_none());
+}
+
+#[test]
 fn enum_disjoint() {
     let left = "enum Color { Red, Blue }";
     let right = "enum Shape { Circle, Square }";
