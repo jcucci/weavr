@@ -8,6 +8,7 @@
 use std::collections::BTreeSet;
 
 use super::parse::{is_complex_using, CSharpDeclaration, DeclarationKind};
+use crate::mergers::common::three_way_merge_sets;
 
 /// Extracts all simple using paths from a list of declarations.
 pub(super) fn collect_using_paths(decls: &[CSharpDeclaration]) -> BTreeSet<String> {
@@ -55,7 +56,7 @@ pub(super) fn merge_using_directives(
 
     let merged_paths = if let Some(base_decls) = base {
         let base_paths = collect_using_paths(base_decls);
-        three_way_merge_paths(&base_paths, &left_paths, &right_paths)
+        three_way_merge_sets(&base_paths, &left_paths, &right_paths)
     } else {
         // 2-way: union
         left_paths.union(&right_paths).cloned().collect()
@@ -78,38 +79,6 @@ pub(super) fn merge_using_directives(
 
     let description = format!("Merged {count} using directives");
     Some((decls, description))
-}
-
-/// Three-way merge for using paths: union of both sides' additions,
-/// minus paths deleted by either side (that weren't re-added by the other).
-fn three_way_merge_paths(
-    base: &BTreeSet<String>,
-    left: &BTreeSet<String>,
-    right: &BTreeSet<String>,
-) -> BTreeSet<String> {
-    let mut result = base.clone();
-
-    // Add new paths from left (not in base)
-    for path in left.difference(base) {
-        result.insert(path.clone());
-    }
-
-    // Add new paths from right (not in base)
-    for path in right.difference(base) {
-        result.insert(path.clone());
-    }
-
-    // Remove paths deleted by left (in base but not in left)
-    for path in base.difference(left) {
-        result.remove(path);
-    }
-
-    // Remove paths deleted by right (in base but not in right)
-    for path in base.difference(right) {
-        result.remove(path);
-    }
-
-    result
 }
 
 #[cfg(test)]

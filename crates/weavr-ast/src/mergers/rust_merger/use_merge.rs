@@ -9,6 +9,7 @@ use std::collections::BTreeSet;
 
 use syn::{Item, UseTree, Visibility};
 
+use crate::mergers::common::three_way_merge_sets;
 use crate::AstError;
 
 /// Returns `true` if any `use` item in the slice carries visibility modifiers
@@ -122,7 +123,7 @@ pub(super) fn merge_use_items(
 
     let merged_paths = if let Some(base_items) = base {
         let base_paths = collect_use_paths(base_items);
-        three_way_merge_paths(&base_paths, &left_paths, &right_paths)
+        three_way_merge_sets(&base_paths, &left_paths, &right_paths)
     } else {
         // 2-way: union
         left_paths.union(&right_paths).cloned().collect()
@@ -140,38 +141,6 @@ pub(super) fn merge_use_items(
 
     let description = format!("Merged {count} use statements");
     Ok(Some((items, description)))
-}
-
-/// Three-way merge for use paths: union of both sides' additions,
-/// minus paths deleted by either side (that weren't re-added by the other).
-fn three_way_merge_paths(
-    base: &BTreeSet<String>,
-    left: &BTreeSet<String>,
-    right: &BTreeSet<String>,
-) -> BTreeSet<String> {
-    let mut result = base.clone();
-
-    // Add new paths from left (not in base)
-    for path in left.difference(base) {
-        result.insert(path.clone());
-    }
-
-    // Add new paths from right (not in base)
-    for path in right.difference(base) {
-        result.insert(path.clone());
-    }
-
-    // Remove paths deleted by left (in base but not in left)
-    for path in base.difference(left) {
-        result.remove(path);
-    }
-
-    // Remove paths deleted by right (in base but not in right)
-    for path in base.difference(right) {
-        result.remove(path);
-    }
-
-    result
 }
 
 #[cfg(test)]
