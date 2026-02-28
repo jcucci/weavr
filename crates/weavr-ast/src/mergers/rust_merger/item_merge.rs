@@ -8,6 +8,7 @@ use super::identity::ItemIdentity;
 use super::impl_merge;
 use super::tokens::{build_identity_map, tokens_equal};
 use super::use_merge;
+use crate::mergers::confidence::{compute_import_confidence, compute_mixed_confidence};
 use crate::AstError;
 
 /// The result of merging items from two or three sides.
@@ -36,7 +37,7 @@ pub(super) fn merge_two_way(
     if all_uses(left) && all_uses(right) {
         return match use_merge::merge_use_items(left, right, None)? {
             Some((items, desc)) => Ok(Some(MergedItems {
-                confidence: compute_confidence(&items, false),
+                confidence: compute_import_confidence(all_uses(&items), false),
                 items,
                 description: desc,
             })),
@@ -150,7 +151,7 @@ pub(super) fn merge_three_way(
     if all_uses(left) && all_uses(right) && all_uses(base) {
         return match use_merge::merge_use_items(left, right, Some(base))? {
             Some((items, desc)) => Ok(Some(MergedItems {
-                confidence: compute_confidence(&items, true),
+                confidence: compute_import_confidence(all_uses(&items), true),
                 items,
                 description: desc,
             })),
@@ -321,24 +322,4 @@ fn merge_three_present(
     }
 
     true
-}
-
-/// Computes confidence for pure use-statement merges.
-fn compute_confidence(items: &[Item], has_base: bool) -> f32 {
-    let base_score: f32 = if all_uses(items) { 0.95 } else { 0.75 };
-    let bonus: f32 = if has_base { 0.05 } else { 0.0 };
-    (base_score + bonus).min(1.0)
-}
-
-/// Computes confidence for mixed item merges.
-fn compute_mixed_confidence(has_use_merge: bool, has_impl_disjoint: bool, has_base: bool) -> f32 {
-    let base: f32 = if has_use_merge && !has_impl_disjoint {
-        0.95 // Pure use merge
-    } else if has_impl_disjoint {
-        0.80 // Impl method additions
-    } else {
-        0.75 // Mixed disjoint items
-    };
-    let bonus: f32 = if has_base { 0.05 } else { 0.0 };
-    (base + bonus).min(1.0)
 }

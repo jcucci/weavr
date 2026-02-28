@@ -8,6 +8,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use super::identity::{CSharpIdentity, MemberIdentity};
 use super::parse::{is_complex_using, to_member_identity, CSharpDeclaration, DeclarationKind};
 use super::using_merge;
+use crate::mergers::confidence::{compute_import_confidence, compute_mixed_confidence};
 
 /// The result of merging declarations from two or three sides.
 pub(super) struct MergedDeclarations {
@@ -57,7 +58,7 @@ pub(super) fn merge_two_way(
     if all_usings(left) && all_usings(right) {
         return using_merge::merge_using_directives(left, right, None).map(|(decls, desc)| {
             MergedDeclarations {
-                confidence: compute_confidence(&decls, false),
+                confidence: compute_import_confidence(all_usings(&decls), false),
                 declarations: decls,
                 description: desc,
             }
@@ -173,7 +174,7 @@ pub(super) fn merge_three_way(
     if all_usings(left) && all_usings(right) && all_usings(base) {
         return using_merge::merge_using_directives(left, right, Some(base)).map(
             |(decls, desc)| MergedDeclarations {
-                confidence: compute_confidence(&decls, true),
+                confidence: compute_import_confidence(all_usings(&decls), true),
                 declarations: decls,
                 description: desc,
             },
@@ -528,30 +529,6 @@ fn declaration_name(decl: &CSharpDeclaration) -> String {
         | CSharpIdentity::Namespace(n) => n.clone(),
         _ => String::from("(unknown)"),
     }
-}
-
-/// Computes confidence for pure using-directive merges.
-fn compute_confidence(decls: &[CSharpDeclaration], has_base: bool) -> f32 {
-    let base_score: f32 = if all_usings(decls) { 0.95 } else { 0.75 };
-    let bonus: f32 = if has_base { 0.05 } else { 0.0 };
-    (base_score + bonus).min(1.0)
-}
-
-/// Computes confidence for mixed declaration merges.
-fn compute_mixed_confidence(
-    has_using_merge: bool,
-    has_member_disjoint: bool,
-    has_base: bool,
-) -> f32 {
-    let base: f32 = if has_using_merge && !has_member_disjoint {
-        0.95 // Pure using merge
-    } else if has_member_disjoint {
-        0.80 // Class member additions
-    } else {
-        0.75 // Mixed disjoint declarations
-    };
-    let bonus: f32 = if has_base { 0.05 } else { 0.0 };
-    (base + bonus).min(1.0)
 }
 
 #[cfg(test)]

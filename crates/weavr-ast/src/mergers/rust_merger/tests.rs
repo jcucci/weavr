@@ -2,28 +2,12 @@
 
 use std::path::Path;
 
-use weavr_core::{ConflictHunk, HunkContent, HunkContext, HunkId, HunkState, Language};
+use weavr_core::Language;
 
+use crate::mergers::test_utils::make_hunk;
 use crate::{AstMergeResult, AstMerger};
 
 use super::RustMerger;
-
-fn make_hunk(left: &str, right: &str, base: Option<&str>) -> ConflictHunk {
-    ConflictHunk {
-        id: HunkId(1),
-        left: HunkContent {
-            text: left.to_string(),
-        },
-        right: HunkContent {
-            text: right.to_string(),
-        },
-        base: base.map(|b| HunkContent {
-            text: b.to_string(),
-        }),
-        context: HunkContext::default(),
-        state: HunkState::default(),
-    }
-}
 
 fn merge(left: &str, right: &str) -> Option<AstMergeResult> {
     let merger = RustMerger::new();
