@@ -90,32 +90,33 @@ pub fn compute_line_diffs(left: &str, right: &str) -> LineDiffs {
         |result: &mut LineDiffs, deletes: &mut Vec<String>, inserts: &mut Vec<String>| {
             let pair_count = deletes.len().min(inserts.len());
 
-            for i in 0..deletes.len() {
-                if i < pair_count {
-                    result.left_lines.push(DiffLine::with_counterpart(
-                        deletes[i].clone(),
-                        ChangeTag::Delete,
-                        inserts[i].clone(),
-                    ));
-                } else {
-                    result
-                        .left_lines
-                        .push(DiffLine::new(deletes[i].clone(), ChangeTag::Delete));
-                }
+            // Paired lines: each string appears as both primary text and counterpart,
+            // so clone for the counterpart and move the primary text.
+            for i in 0..pair_count {
+                let insert_counterpart = inserts[i].clone();
+                let delete_counterpart = deletes[i].clone();
+                result.left_lines.push(DiffLine::with_counterpart(
+                    std::mem::take(&mut deletes[i]),
+                    ChangeTag::Delete,
+                    insert_counterpart,
+                ));
+                result.right_lines.push(DiffLine::with_counterpart(
+                    std::mem::take(&mut inserts[i]),
+                    ChangeTag::Insert,
+                    delete_counterpart,
+                ));
             }
 
-            for i in 0..inserts.len() {
-                if i < pair_count {
-                    result.right_lines.push(DiffLine::with_counterpart(
-                        inserts[i].clone(),
-                        ChangeTag::Insert,
-                        deletes[i].clone(),
-                    ));
-                } else {
-                    result
-                        .right_lines
-                        .push(DiffLine::new(inserts[i].clone(), ChangeTag::Insert));
-                }
+            // Unpaired excess deletes/inserts: move text, no counterpart.
+            for text in deletes.iter_mut().skip(pair_count) {
+                result
+                    .left_lines
+                    .push(DiffLine::new(std::mem::take(text), ChangeTag::Delete));
+            }
+            for text in inserts.iter_mut().skip(pair_count) {
+                result
+                    .right_lines
+                    .push(DiffLine::new(std::mem::take(text), ChangeTag::Insert));
             }
 
             deletes.clear();

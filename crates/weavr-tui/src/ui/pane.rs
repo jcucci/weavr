@@ -583,7 +583,7 @@ fn build_word_diff_line(
         PaneSide::Right => ChangeTag::Insert,
     };
 
-    for word in &word_changes {
+    for word in word_changes {
         let style = if word.tag == ChangeTag::Equal {
             base_style
         } else if word.tag == own_change_tag {
@@ -592,7 +592,7 @@ fn build_word_diff_line(
             // Skip words that belong to the other side
             continue;
         };
-        spans.push(Span::styled(word.text.clone(), style));
+        spans.push(Span::styled(word.text, style));
     }
 
     Line::from(spans)
