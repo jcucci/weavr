@@ -16,7 +16,7 @@ workspace = true
 [features]
 default = []
 rust = ["dep:syn", "dep:quote", "dep:prettyplease", "dep:proc-macro2"]
-csharp = []
+csharp = ["dep:tree-sitter", "dep:tree-sitter-c-sharp", "dep:tree-sitter-language"]
 typescript = []
 go = []
 all-languages = ["rust", "csharp", "typescript", "go"]
@@ -30,3 +30,8 @@ syn = { workspace = true, optional = true }
 quote = { workspace = true, optional = true }
 prettyplease = { workspace = true, optional = true }
 proc-macro2 = { workspace = true, optional = true }
+
+# C# AST merger (feature-gated)
+tree-sitter = { workspace = true, optional = true }
+tree-sitter-c-sharp = { workspace = true, optional = true }
+tree-sitter-language = { workspace = true, optional = true }

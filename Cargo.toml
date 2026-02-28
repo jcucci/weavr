@@ -63,3 +63,6 @@ syn = { version = "2", features = ["full", "parsing", "printing"] }
 quote = "1"
 prettyplease = "0.2"
 proc-macro2 = "1"
+tree-sitter = "0.24"
+tree-sitter-c-sharp = "0.23"
+tree-sitter-language = "0.1"

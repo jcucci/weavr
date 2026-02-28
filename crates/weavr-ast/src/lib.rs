@@ -13,8 +13,8 @@
 //! # Feature Flags
 //!
 //! Language mergers are opt-in:
-//! - `rust` — Rust AST merger (stub)
-//! - `csharp` — C# AST merger (stub)
+//! - `rust` — Rust AST merger
+//! - `csharp` — C# AST merger (tree-sitter)
 //! - `typescript` — TypeScript AST merger (stub)
 //! - `go` — Go AST merger (stub)
 //! - `all-languages` — enables all language mergers
