@@ -16,7 +16,7 @@ use similar::ChangeTag;
 use weavr_core::{HunkState, Segment};
 
 use crate::ai::AiState;
-use crate::diff::{compute_line_diffs, DiffConfig};
+use crate::diff::{compute_line_diffs, compute_word_diffs, DiffConfig, DiffLine};
 use crate::input::InputMode;
 use crate::{App, FocusedPane};
 
@@ -298,7 +298,7 @@ fn build_side_document<'a>(
     side: PaneSide,
     current_hunk_idx: usize,
     theme: &'a crate::theme::Theme,
-    _diff_config: DiffConfig,
+    diff_config: DiffConfig,
 ) -> Vec<Line<'a>> {
     let mut lines = Vec::new();
     let mut line_number = 1;
@@ -344,14 +344,24 @@ fn build_side_document<'a>(
                 }
 
                 for diff_line in diff_lines {
-                    // Apply style based on diff tag
-                    let style = match diff_line.tag {
-                        ChangeTag::Equal => theme.diff.context,
-                        ChangeTag::Delete => theme.diff.removed,
-                        ChangeTag::Insert => theme.diff.added,
-                    };
+                    if diff_config.word_diff && diff_line.counterpart.is_some() {
+                        lines.push(build_word_diff_line(
+                            line_number,
+                            diff_line,
+                            side,
+                            theme,
+                            is_current,
+                        ));
+                    } else {
+                        // Apply style based on diff tag
+                        let style = match diff_line.tag {
+                            ChangeTag::Equal => theme.diff.context,
+                            ChangeTag::Delete => theme.diff.removed,
+                            ChangeTag::Insert => theme.diff.added,
+                        };
 
-                    lines.push(build_line(line_number, &diff_line.text, style, is_current));
+                        lines.push(build_line(line_number, &diff_line.text, style, is_current));
+                    }
                     line_number += 1;
                 }
 
@@ -529,6 +539,65 @@ fn build_line(line_number: usize, text: &str, style: Style, highlight: bool) -> 
     ])
 }
 
+/// Builds a line with word-level diff highlighting.
+///
+/// Uses the counterpart text to compute word-level diffs and renders
+/// each word segment with appropriate styling: base diff style for
+/// unchanged words, `theme.diff.modified` for changed words.
+fn build_word_diff_line(
+    line_number: usize,
+    diff_line: &DiffLine,
+    side: PaneSide,
+    theme: &crate::theme::Theme,
+    highlight: bool,
+) -> Line<'static> {
+    let line_num_style = if highlight {
+        Style::default()
+            .fg(ratatui::style::Color::Yellow)
+            .add_modifier(Modifier::BOLD)
+    } else {
+        Style::default().add_modifier(Modifier::DIM)
+    };
+
+    let counterpart = diff_line.counterpart.as_deref().unwrap_or("");
+
+    // Compute word diffs: for left side, our text is "old" and counterpart is "new";
+    // for right side, counterpart is "old" and our text is "new".
+    let word_changes = match side {
+        PaneSide::Left => compute_word_diffs(&diff_line.text, counterpart),
+        PaneSide::Right => compute_word_diffs(counterpart, &diff_line.text),
+    };
+
+    let base_style = match diff_line.tag {
+        ChangeTag::Delete => theme.diff.removed,
+        ChangeTag::Insert => theme.diff.added,
+        ChangeTag::Equal => theme.diff.context,
+    };
+    let modified_style = theme.diff.modified;
+
+    let mut spans = vec![Span::styled(format!("{line_number:4} "), line_num_style)];
+
+    // Which tag represents "our" changed words?
+    let own_change_tag = match side {
+        PaneSide::Left => ChangeTag::Delete,
+        PaneSide::Right => ChangeTag::Insert,
+    };
+
+    for word in &word_changes {
+        let style = if word.tag == ChangeTag::Equal {
+            base_style
+        } else if word.tag == own_change_tag {
+            modified_style
+        } else {
+            // Skip words that belong to the other side
+            continue;
+        };
+        spans.push(Span::styled(word.text.clone(), style));
+    }
+
+    Line::from(spans)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -640,5 +709,27 @@ mod tests {
                 })
                 .unwrap();
         }
+    }
+
+    #[test]
+    fn word_diff_line_produces_multiple_spans() {
+        use crate::diff::DiffLine;
+        use crate::theme::Theme;
+
+        let theme = Theme::from(ThemeName::Dark);
+        let diff_line = DiffLine::with_counterpart(
+            "hello world",
+            ChangeTag::Delete,
+            "hello universe".to_string(),
+        );
+
+        let line = build_word_diff_line(1, &diff_line, PaneSide::Left, &theme, false);
+
+        // Should have: line number span + word spans (more than 2 total)
+        assert!(
+            line.spans.len() > 2,
+            "Expected multiple spans for word diff, got {}",
+            line.spans.len()
+        );
     }
 }

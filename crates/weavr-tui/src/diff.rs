@@ -12,6 +12,9 @@ pub struct DiffLine {
     pub text: String,
     /// The diff tag indicating the line's status.
     pub tag: ChangeTag,
+    /// The paired line's text from the other side, if available.
+    /// Used for word-level diff computation during rendering.
+    pub counterpart: Option<String>,
 }
 
 impl DiffLine {
@@ -21,6 +24,17 @@ impl DiffLine {
         Self {
             text: text.into(),
             tag,
+            counterpart: None,
+        }
+    }
+
+    /// Creates a new diff line with a counterpart from the other side.
+    #[must_use]
+    pub fn with_counterpart(text: impl Into<String>, tag: ChangeTag, counterpart: String) -> Self {
+        Self {
+            text: text.into(),
+            tag,
+            counterpart: Some(counterpart),
         }
     }
 }
@@ -59,29 +73,68 @@ pub struct LineDiffs {
 /// Returns separate line lists for each side with appropriate diff tags:
 /// - Left side: `Delete` for lines only in left, `Equal` for shared lines
 /// - Right side: `Insert` for lines only in right, `Equal` for shared lines
+///
+/// Changed lines are paired with their counterparts from the other side
+/// (by position within each change group) to enable word-level diff rendering.
 #[must_use]
 pub fn compute_line_diffs(left: &str, right: &str) -> LineDiffs {
     let diff = TextDiff::from_lines(left, right);
     let mut result = LineDiffs::default();
+
+    // Collect changes into groups of consecutive non-Equal changes
+    // so we can pair Delete lines with Insert lines.
+    let mut pending_deletes: Vec<String> = Vec::new();
+    let mut pending_inserts: Vec<String> = Vec::new();
+
+    let flush_pending =
+        |result: &mut LineDiffs, deletes: &mut Vec<String>, inserts: &mut Vec<String>| {
+            let pair_count = deletes.len().min(inserts.len());
+
+            for i in 0..deletes.len() {
+                if i < pair_count {
+                    result.left_lines.push(DiffLine::with_counterpart(
+                        deletes[i].clone(),
+                        ChangeTag::Delete,
+                        inserts[i].clone(),
+                    ));
+                } else {
+                    result
+                        .left_lines
+                        .push(DiffLine::new(deletes[i].clone(), ChangeTag::Delete));
+                }
+            }
+
+            for i in 0..inserts.len() {
+                if i < pair_count {
+                    result.right_lines.push(DiffLine::with_counterpart(
+                        inserts[i].clone(),
+                        ChangeTag::Insert,
+                        deletes[i].clone(),
+                    ));
+                } else {
+                    result
+                        .right_lines
+                        .push(DiffLine::new(inserts[i].clone(), ChangeTag::Insert));
+                }
+            }
+
+            deletes.clear();
+            inserts.clear();
+        };
 
     for change in diff.iter_all_changes() {
         let text = change.value().trim_end_matches('\n').to_string();
 
         match change.tag() {
             ChangeTag::Delete => {
-                // Line exists only in left (old)
-                result
-                    .left_lines
-                    .push(DiffLine::new(text, ChangeTag::Delete));
+                pending_deletes.push(text);
             }
             ChangeTag::Insert => {
-                // Line exists only in right (new)
-                result
-                    .right_lines
-                    .push(DiffLine::new(text, ChangeTag::Insert));
+                pending_inserts.push(text);
             }
             ChangeTag::Equal => {
-                // Line exists in both
+                // Flush any pending changes before adding equal lines
+                flush_pending(&mut result, &mut pending_deletes, &mut pending_inserts);
                 result
                     .left_lines
                     .push(DiffLine::new(text.clone(), ChangeTag::Equal));
@@ -91,6 +144,9 @@ pub fn compute_line_diffs(left: &str, right: &str) -> LineDiffs {
             }
         }
     }
+
+    // Flush any remaining pending changes
+    flush_pending(&mut result, &mut pending_deletes, &mut pending_inserts);
 
     result
 }
@@ -231,5 +287,61 @@ mod tests {
     fn diff_config_default() {
         let config = DiffConfig::default();
         assert!(config.word_diff);
+    }
+
+    #[test]
+    fn diff_line_new_has_no_counterpart() {
+        let line = DiffLine::new("hello", ChangeTag::Delete);
+        assert_eq!(line.text, "hello");
+        assert_eq!(line.tag, ChangeTag::Delete);
+        assert!(line.counterpart.is_none());
+    }
+
+    #[test]
+    fn diff_line_with_counterpart() {
+        let line =
+            DiffLine::with_counterpart("old line", ChangeTag::Delete, "new line".to_string());
+        assert_eq!(line.text, "old line");
+        assert_eq!(line.tag, ChangeTag::Delete);
+        assert_eq!(line.counterpart.as_deref(), Some("new line"));
+    }
+
+    #[test]
+    fn compute_line_diffs_pairs_changed_lines() {
+        let left = "shared\nold line\n";
+        let right = "shared\nnew line\n";
+        let diffs = compute_line_diffs(left, right);
+
+        // The changed lines should be paired
+        assert_eq!(diffs.left_lines.len(), 2);
+        assert_eq!(diffs.right_lines.len(), 2);
+
+        // Equal lines have no counterpart
+        assert!(diffs.left_lines[0].counterpart.is_none());
+        assert!(diffs.right_lines[0].counterpart.is_none());
+
+        // Changed lines are paired
+        assert_eq!(diffs.left_lines[1].counterpart.as_deref(), Some("new line"));
+        assert_eq!(
+            diffs.right_lines[1].counterpart.as_deref(),
+            Some("old line")
+        );
+    }
+
+    #[test]
+    fn compute_line_diffs_unpaired_extra_deletes() {
+        let left = "line one\nline two\nline three\n";
+        let right = "line one new\n";
+        let diffs = compute_line_diffs(left, right);
+
+        // First delete should be paired with the insert
+        assert!(diffs.left_lines[0].counterpart.is_some());
+
+        // Extra deletes should have no counterpart
+        for line in &diffs.left_lines[1..] {
+            if line.tag == ChangeTag::Delete {
+                assert!(line.counterpart.is_none());
+            }
+        }
     }
 }
