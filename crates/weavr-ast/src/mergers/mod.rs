@@ -4,7 +4,8 @@
 //! structural merging for a specific language.
 //!
 //! Shared infrastructure (set merging, confidence scoring, test helpers) lives
-//! in `common`, `confidence`, and `test_utils` — these are NOT feature-gated.
+//! in `common`, `confidence`, and `test_utils` — these are compiled when any
+//! language feature is active, not gated to a single language.
 
 #[cfg(any(feature = "rust", feature = "csharp"))]
 pub(crate) mod common;
