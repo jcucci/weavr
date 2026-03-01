@@ -166,6 +166,9 @@ fn dispatch_action(app: &mut App, action: Action) {
             app.prepare_editor();
         }
 
+        // Display
+        Action::ToggleWordDiff => app.toggle_word_diff(),
+
         // AI
         Action::AiSuggest => ai::request_suggestion(app),
         Action::AiSuggestAll => ai::request_all_suggestions(app),
@@ -517,6 +520,21 @@ mod tests {
 
         assert_eq!(app.input_mode(), InputMode::Dialog);
         assert!(app.active_dialog().is_some());
+    }
+
+    #[test]
+    fn w_key_toggles_word_diff() {
+        let mut app = App::new();
+        assert!(app.diff_config().word_diff);
+
+        let event = Event::Key(make_key_event(KeyCode::Char('w'), KeyModifiers::NONE));
+        handle_event(&mut app, &event);
+
+        assert!(!app.diff_config().word_diff);
+
+        // Toggle back
+        handle_event(&mut app, &event);
+        assert!(app.diff_config().word_diff);
     }
 
     #[test]

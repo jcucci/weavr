@@ -74,6 +74,10 @@ pub enum Action {
     /// Open the current hunk in an external editor.
     EditInEditor,
 
+    // Display
+    /// Toggle word-level diff highlighting.
+    ToggleWordDiff,
+
     // AI
     /// Request an AI suggestion for the current hunk.
     AiSuggest,
@@ -111,6 +115,7 @@ const ALL_ACTIONS: &[Action] = &[
     Action::Undo,
     Action::Redo,
     Action::EditInEditor,
+    Action::ToggleWordDiff,
     Action::AiSuggest,
     Action::AiSuggestAll,
     Action::AiExplainOrHelp,
@@ -160,6 +165,7 @@ impl Action {
             Self::Undo => "undo",
             Self::Redo => "redo",
             Self::EditInEditor => "edit_in_editor",
+            Self::ToggleWordDiff => "toggle_word_diff",
             Self::AiSuggest => "ai_suggest",
             Self::AiSuggestAll => "ai_suggest_all",
             Self::AiExplainOrHelp => "ai_explain_or_help",
@@ -576,6 +582,9 @@ impl KeybindingMap {
             KeyInput::Single(KeyCode::Char('r'), KeyModifiers::CONTROL),
         );
         map.bind(Action::EditInEditor, single_char('e'));
+
+        // Display
+        map.bind(Action::ToggleWordDiff, single_char('w'));
 
         // AI
         map.bind(Action::AiSuggest, single_char('s'));
@@ -1023,6 +1032,15 @@ mod tests {
         let mut overrides = BTreeMap::new();
         overrides.insert("quit".to_string(), vec!["<Nonexistent>".to_string()]);
         assert!(build_from_config(&overrides).is_err());
+    }
+
+    #[test]
+    fn w_key_bound_to_toggle_word_diff() {
+        let map = KeybindingMap::defaults();
+        assert_eq!(
+            map.lookup_single(KeyCode::Char('w'), KeyModifiers::NONE),
+            Some(Action::ToggleWordDiff)
+        );
     }
 
     #[test]
