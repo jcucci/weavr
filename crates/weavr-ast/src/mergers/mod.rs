@@ -7,13 +7,28 @@
 //! in `common`, `confidence`, and `test_utils` — these are compiled when any
 //! language feature is active, not gated to a single language.
 
-#[cfg(any(feature = "rust", feature = "csharp", feature = "typescript"))]
+#[cfg(any(
+    feature = "rust",
+    feature = "csharp",
+    feature = "typescript",
+    feature = "go"
+))]
 pub(crate) mod common;
-#[cfg(any(feature = "rust", feature = "csharp", feature = "typescript"))]
+#[cfg(any(
+    feature = "rust",
+    feature = "csharp",
+    feature = "typescript",
+    feature = "go"
+))]
 pub(crate) mod confidence;
 #[cfg(all(
     test,
-    any(feature = "rust", feature = "csharp", feature = "typescript")
+    any(
+        feature = "rust",
+        feature = "csharp",
+        feature = "typescript",
+        feature = "go"
+    )
 ))]
 pub(crate) mod test_utils;
 
@@ -26,7 +41,5 @@ pub mod csharp_merger;
 #[cfg(feature = "typescript")]
 pub mod typescript_merger;
 
-// Future language mergers will be added here behind feature gates:
-//
-// #[cfg(feature = "go")]
-// pub mod go_merger;
+#[cfg(feature = "go")]
+pub mod go_merger;

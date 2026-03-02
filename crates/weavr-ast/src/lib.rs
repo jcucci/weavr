@@ -15,8 +15,8 @@
 //! Language mergers are opt-in:
 //! - `rust` — Rust AST merger
 //! - `csharp` — C# AST merger (tree-sitter)
-//! - `typescript` — TypeScript AST merger (stub)
-//! - `go` — Go AST merger (stub)
+//! - `typescript` — TypeScript AST merger (tree-sitter)
+//! - `go` — Go AST merger (tree-sitter)
 //! - `all-languages` — enables all language mergers
 
 #![forbid(unsafe_code)]
