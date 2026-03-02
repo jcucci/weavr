@@ -78,14 +78,10 @@ pub(super) fn parse_fragment(text: &str) -> ParsedFragment {
         return ParsedFragment::Declarations(decls);
     }
 
-    // Strategy 2: wrap in package clause
+    // Strategy 2: wrap in package clause (package_clause nodes are already
+    // filtered out by node_to_declaration returning None)
     let wrapped_pkg = format!("package __weavr__\n{trimmed}");
     if let Some(decls) = try_parse_as_source_file(&mut parser, &wrapped_pkg) {
-        // Filter out the synthetic package clause
-        let decls = decls
-            .into_iter()
-            .filter(|d| !matches!(&d.identity, GoIdentity::Unknown(s) if s == "package __weavr__"))
-            .collect::<Vec<_>>();
         if !decls.is_empty() {
             return ParsedFragment::Declarations(decls);
         }
@@ -94,14 +90,10 @@ pub(super) fn parse_fragment(text: &str) -> ParsedFragment {
     // Strategy 3: wrap in package clause + function body
     let wrapped_func = format!("package __weavr__\nfunc __weavr__() {{\n{trimmed}\n}}");
     if let Some(decls) = try_parse_as_source_file(&mut parser, &wrapped_func) {
-        // Extract the inner statements as-is — but this is rarely useful for Go
-        // top-level merging, so we only use it as a last resort
+        // Filter out the synthetic wrapper function
         let inner: Vec<GoDeclaration> = decls
             .into_iter()
-            .filter(|d| {
-                !matches!(&d.identity, GoIdentity::Unknown(s) if s == "package __weavr__")
-                    && !matches!(&d.identity, GoIdentity::Function(s) if s == "__weavr__")
-            })
+            .filter(|d| !matches!(&d.identity, GoIdentity::Function(s) if s == "__weavr__"))
             .collect();
         if !inner.is_empty() {
             return ParsedFragment::Declarations(inner);
@@ -120,10 +112,21 @@ fn contains_build_directives(text: &str) -> bool {
 }
 
 /// Returns `true` if the text contains CGO blocks (`import "C"`).
+///
+/// Handles optional semicolons and trailing comments
+/// (e.g., `import "C" // required for cgo`).
 fn contains_cgo(text: &str) -> bool {
     text.lines().any(|line| {
-        let t = line.trim();
-        t == "import \"C\"" || t == "import \"C\";"
+        let t = line.trim_start();
+        let rest = if let Some(rest) = t.strip_prefix("import \"C\";") {
+            rest
+        } else if let Some(rest) = t.strip_prefix("import \"C\"") {
+            rest
+        } else {
+            return false;
+        };
+        let rest = rest.trim_start();
+        rest.is_empty() || rest.starts_with("//")
     })
 }
 
@@ -215,12 +218,9 @@ fn node_to_declaration(node: &Node<'_>, source: &str) -> Option<GoDeclaration> {
                 children: Vec::new(),
             })
         }
-        "package_clause" => Some(GoDeclaration {
-            kind: DeclarationKind::Function, // placeholder kind
-            identity: GoIdentity::Unknown(source_text.clone()),
-            source_text,
-            children: Vec::new(),
-        }),
+        // Ignore package clauses -- treating them as declarations would risk
+        // emitting duplicate `package` lines during merges.
+        "package_clause" => None,
         _ => None,
     }
 }
@@ -314,8 +314,14 @@ fn parse_import_spec(node: &Node<'_>, source: &str) -> Option<GoDeclaration> {
 
 /// Parses a `type_declaration` node. Extracts the type name and nested
 /// members for structs and interfaces.
+///
+/// For grouped declarations (`type (A ...; B ...)`), returns one
+/// `GoDeclaration` per spec so that individual types can be matched
+/// across conflict sides.
 fn parse_type_declaration(node: &Node<'_>, source: &str) -> Option<GoDeclaration> {
     let source_text = node_text(node, source).to_string();
+
+    let mut specs = Vec::new();
 
     // type_declaration -> type_spec | type_alias (possibly inside parenthesized group)
     for i in 0..node.child_count() {
@@ -324,14 +330,17 @@ fn parse_type_declaration(node: &Node<'_>, source: &str) -> Option<GoDeclaration
         };
         match child.kind() {
             "type_spec" => {
-                return parse_type_spec(&child, source, &source_text);
+                let spec_text = node_text(&child, source).to_string();
+                if let Some(decl) = parse_type_spec(&child, source, &spec_text) {
+                    specs.push(decl);
+                }
             }
             "type_alias" => {
                 let name = get_field_text(&child, "name", source).unwrap_or_default();
-                return Some(GoDeclaration {
+                specs.push(GoDeclaration {
                     kind: DeclarationKind::TypeDeclaration,
                     identity: GoIdentity::Type(name),
-                    source_text,
+                    source_text: node_text(&child, source).to_string(),
                     children: Vec::new(),
                 });
             }
@@ -339,14 +348,34 @@ fn parse_type_declaration(node: &Node<'_>, source: &str) -> Option<GoDeclaration
         }
     }
 
-    // Fallback: try extracting name directly
-    let name = get_field_text(node, "name", source).unwrap_or_default();
-    Some(GoDeclaration {
-        kind: DeclarationKind::TypeDeclaration,
-        identity: GoIdentity::Type(name),
-        source_text,
-        children: Vec::new(),
-    })
+    match specs.len() {
+        0 => {
+            // Fallback: try extracting name directly
+            let name = get_field_text(node, "name", source).unwrap_or_default();
+            Some(GoDeclaration {
+                kind: DeclarationKind::TypeDeclaration,
+                identity: GoIdentity::Type(name),
+                source_text,
+                children: Vec::new(),
+            })
+        }
+        1 => {
+            // Single spec: use the full declaration source text
+            let mut decl = specs.into_iter().next().unwrap();
+            decl.source_text = source_text;
+            Some(decl)
+        }
+        _ => {
+            // Grouped type declaration: wrap specs as children so each
+            // type can be individually matched during merge
+            Some(GoDeclaration {
+                kind: DeclarationKind::TypeDeclaration,
+                identity: GoIdentity::Unknown(source_text.clone()),
+                source_text,
+                children: specs,
+            })
+        }
+    }
 }
 
 /// Parses a `type_spec` node, extracting struct fields or interface methods.
@@ -383,11 +412,19 @@ fn extract_struct_fields(node: &Node<'_>, source: &str) -> Vec<GoDeclaration> {
                     continue;
                 };
                 if field.kind() == "field_declaration" {
-                    let field_name = get_field_text(&field, "name", source).unwrap_or_default();
                     let field_text = node_text(&field, source).to_string();
+                    let field_name = get_field_text(&field, "name", source).unwrap_or_default();
+                    // Embedded fields (e.g., `io.Reader`) have no name field;
+                    // derive identity from full text to avoid collapsing distinct
+                    // fields onto the same `Var("")` identity.
+                    let identity = if field_name.is_empty() {
+                        GoIdentity::Unknown(field_text.clone())
+                    } else {
+                        GoIdentity::Var(field_name)
+                    };
                     fields.push(GoDeclaration {
                         kind: DeclarationKind::Var, // reuse Var for struct fields
-                        identity: GoIdentity::Var(field_name),
+                        identity,
                         source_text: field_text,
                         children: Vec::new(),
                     });
@@ -407,11 +444,18 @@ fn extract_interface_methods(node: &Node<'_>, source: &str) -> Vec<GoDeclaration
         };
         match child.kind() {
             "method_elem" => {
-                let name = get_field_text(&child, "name", source).unwrap_or_default();
                 let method_text = node_text(&child, source).to_string();
+                let name = get_field_text(&child, "name", source).unwrap_or_default();
+                // Embedded interfaces may lack a name field; use full text
+                // as identity to avoid collapsing distinct members.
+                let identity = if name.is_empty() {
+                    GoIdentity::Unknown(method_text.clone())
+                } else {
+                    GoIdentity::Function(name)
+                };
                 methods.push(GoDeclaration {
                     kind: DeclarationKind::Function, // reuse Function for interface methods
-                    identity: GoIdentity::Function(name),
+                    identity,
                     source_text: method_text,
                     children: Vec::new(),
                 });
@@ -466,7 +510,7 @@ fn extract_spec_names(node: &Node<'_>, source: &str, spec_kind: &str) -> String 
         }
     }
     if names.is_empty() {
-        // Fallback: use source text hash
+        // Fallback: use full source text as identity
         node_text(node, source).to_string()
     } else {
         names.join(",")
@@ -707,6 +751,44 @@ mod tests {
                 assert!(is_dot_import(&decls[0]));
             }
             ParsedFragment::Unparsable => panic!("should parse dot import"),
+        }
+    }
+
+    #[test]
+    fn cgo_import_with_comment_returns_unparsable() {
+        let text = "import \"C\" // required for cgo";
+        assert!(matches!(parse_fragment(text), ParsedFragment::Unparsable));
+    }
+
+    #[test]
+    fn cgo_import_with_semicolon_returns_unparsable() {
+        let text = "import \"C\"; // cgo";
+        assert!(matches!(parse_fragment(text), ParsedFragment::Unparsable));
+    }
+
+    #[test]
+    fn embedded_struct_fields_have_distinct_identities() {
+        let text = "type Foo struct {\n\tio.Reader\n\tio.Writer\n}";
+        match parse_fragment(text) {
+            ParsedFragment::Declarations(decls) => {
+                assert_eq!(decls[0].children.len(), 2);
+                // Embedded fields should not collapse to the same identity
+                assert_ne!(decls[0].children[0].identity, decls[0].children[1].identity);
+            }
+            ParsedFragment::Unparsable => panic!("should parse struct with embedded fields"),
+        }
+    }
+
+    #[test]
+    fn package_clause_filtered_out() {
+        let text = "package main\n\nimport \"fmt\"";
+        match parse_fragment(text) {
+            ParsedFragment::Declarations(decls) => {
+                // package clause should be filtered out, only import remains
+                assert_eq!(decls.len(), 1);
+                assert_eq!(decls[0].kind, DeclarationKind::ImportDeclaration);
+            }
+            ParsedFragment::Unparsable => panic!("should parse"),
         }
     }
 

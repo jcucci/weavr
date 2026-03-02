@@ -237,6 +237,12 @@ fn cgo_import_returns_none() {
 }
 
 #[test]
+fn cgo_import_with_comment_returns_none() {
+    let result = merge("import \"C\" // required for cgo", "import \"fmt\"");
+    assert!(result.is_none());
+}
+
+#[test]
 fn unparsable_input_returns_none() {
     let result = merge("this is not Go @#$%", "import \"fmt\"");
     assert!(result.is_none());
