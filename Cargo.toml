@@ -29,11 +29,11 @@ pedantic = "warn"
 
 [workspace.dependencies]
 # Internal crates
-weavr-core = { path = "crates/weavr-core" }
-weavr-git = { path = "crates/weavr-git" }
-weavr-tui = { path = "crates/weavr-tui" }
-weavr-ai = { path = "crates/weavr-ai" }
-weavr-ast = { path = "crates/weavr-ast" }
+weavr-core = { path = "crates/weavr-core", version = "0.1.0" }
+weavr-git = { path = "crates/weavr-git", version = "0.1.0" }
+weavr-tui = { path = "crates/weavr-tui", version = "0.1.0" }
+weavr-ai = { path = "crates/weavr-ai", version = "0.1.0" }
+weavr-ast = { path = "crates/weavr-ast", version = "0.1.0" }
 
 # CLI dependencies
 clap = { version = "4.4", features = ["derive"] }
@@ -68,3 +68,8 @@ tree-sitter-c-sharp = "0.23"
 tree-sitter-language = "0.1"
 tree-sitter-go = "0.23"
 tree-sitter-typescript = "0.23"
+
+[profile.release]
+lto = "thin"
+strip = true
+codegen-units = 1

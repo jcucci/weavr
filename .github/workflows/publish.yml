@@ -1,0 +1,44 @@
+name: Publish to crates.io
+
+on:
+  release:
+    types: [published]
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+
+jobs:
+  publish:
+    name: Publish crates
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+
+      # Tier 1: No internal dependencies
+      - name: Publish weavr-core
+        run: cargo publish -p weavr-core
+
+      - name: Publish weavr-git
+        run: cargo publish -p weavr-git
+
+      - name: Wait for crates.io index
+        run: sleep 30
+
+      # Tier 2: Depend on core
+      - name: Publish weavr-ai
+        run: cargo publish -p weavr-ai
+
+      - name: Publish weavr-ast
+        run: cargo publish -p weavr-ast
+
+      - name: Publish weavr-tui
+        run: cargo publish -p weavr-tui
+
+      - name: Wait for crates.io index
+        run: sleep 30
+
+      # Tier 3: Depends on all
+      - name: Publish weavr-cli
+        run: cargo publish -p weavr-cli

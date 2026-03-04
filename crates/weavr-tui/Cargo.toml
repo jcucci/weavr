@@ -13,6 +13,10 @@ categories = ["command-line-interface"]
 [lints]
 workspace = true
 
+[features]
+default = []
+__dev = []
+
 [dependencies]
 weavr-core.workspace = true
 ratatui.workspace = true
@@ -26,3 +30,4 @@ similar = { version = "2", features = ["inline"] }
 [[bin]]
 name = "weavr-tui-dev"
 path = "src/main.rs"
+required-features = ["__dev"]

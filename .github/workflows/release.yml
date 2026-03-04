@@ -1,0 +1,147 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  validate:
+    name: Validate tag
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Extract version from tag
+        id: version
+        run: |
+          TAG="${GITHUB_REF#refs/tags/v}"
+          echo "version=$TAG" >> "$GITHUB_OUTPUT"
+
+      - name: Check Cargo.toml version matches tag
+        run: |
+          CARGO_VERSION=$(grep '^version' Cargo.toml | head -1 | sed 's/.*"\(.*\)".*/\1/')
+          TAG_VERSION="${GITHUB_REF#refs/tags/v}"
+          # Strip any prerelease suffix for comparison (v0.1.0-rc.1 matches 0.1.0)
+          TAG_BASE="${TAG_VERSION%%-*}"
+          if [ "$CARGO_VERSION" != "$TAG_BASE" ]; then
+            echo "::error::Tag version ($TAG_BASE) does not match Cargo.toml version ($CARGO_VERSION)"
+            exit 1
+          fi
+
+  build:
+    name: Build (${{ matrix.target }})
+    needs: validate
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-gnu
+            runner: ubuntu-latest
+            use-cross: false
+          - target: x86_64-unknown-linux-musl
+            runner: ubuntu-latest
+            use-cross: false
+          - target: aarch64-unknown-linux-gnu
+            runner: ubuntu-latest
+            use-cross: true
+          - target: x86_64-apple-darwin
+            runner: macos-13
+            use-cross: false
+          - target: aarch64-apple-darwin
+            runner: macos-latest
+            use-cross: false
+          - target: x86_64-pc-windows-msvc
+            runner: windows-latest
+            use-cross: false
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Install musl-tools
+        if: matrix.target == 'x86_64-unknown-linux-musl'
+        run: sudo apt-get update && sudo apt-get install -y musl-tools
+
+      - name: Install cross
+        if: matrix.use-cross
+        run: cargo install cross --locked
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
+
+      - name: Build
+        run: |
+          if [ "${{ matrix.use-cross }}" = "true" ]; then
+            cross build --release --target ${{ matrix.target }} -p weavr-cli --features ai-all,ast-all
+          else
+            cargo build --release --target ${{ matrix.target }} -p weavr-cli --features ai-all,ast-all
+          fi
+        shell: bash
+
+      - name: Package (Unix)
+        if: runner.os != 'Windows'
+        run: |
+          cd target/${{ matrix.target }}/release
+          tar czf ../../../weavr-v${{ needs.validate.outputs.version }}-${{ matrix.target }}.tar.gz weavr
+        shell: bash
+
+      - name: Package (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          cd target/${{ matrix.target }}/release
+          7z a ../../../weavr-v${{ needs.validate.outputs.version }}-${{ matrix.target }}.zip weavr.exe
+        shell: bash
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: weavr-${{ matrix.target }}
+          path: weavr-v${{ needs.validate.outputs.version }}-${{ matrix.target }}.*
+
+  release:
+    name: Create release
+    needs: [validate, build]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: Generate checksums
+        run: |
+          cd artifacts
+          sha256sum weavr-* > sha256sums.txt
+          cat sha256sums.txt
+
+      - name: Determine prerelease
+        id: prerelease
+        run: |
+          TAG="${GITHUB_REF#refs/tags/}"
+          if echo "$TAG" | grep -q '-'; then
+            echo "prerelease=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "prerelease=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: artifacts/*
+          generate_release_notes: true
+          prerelease: ${{ steps.prerelease.outputs.prerelease }}
