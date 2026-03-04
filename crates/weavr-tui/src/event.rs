@@ -7,6 +7,7 @@ use std::time::Duration;
 use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 
 use crate::ai;
+use crate::ast;
 use crate::input::{Dialog, InputMode};
 use crate::keybindings::Action;
 use crate::{App, KEY_SEQUENCE_TIMEOUT};
@@ -137,8 +138,13 @@ fn dispatch_action(app: &mut App, action: Action) {
         Action::CycleFocus => app.cycle_focus(),
         Action::CycleFocusBack => app.cycle_focus_back(),
         Action::FocusResult => {
-            // Context-sensitive: accept AI suggestion if present, else focus result
+            // Context-sensitive: accept AST or AI suggestion if present, else focus result
             if app
+                .current_hunk()
+                .is_some_and(|h| app.ast_state().has_suggestion_for(h.id))
+            {
+                ast::accept_suggestion(app);
+            } else if app
                 .current_hunk()
                 .is_some_and(|h| app.ai_state().has_suggestion_for(h.id))
             {
@@ -183,13 +189,24 @@ fn dispatch_action(app: &mut App, action: Action) {
             }
         }
         Action::DismissAiSuggestion => {
+            // Dismiss AST suggestion first (if present), then AI suggestion
             if app
+                .current_hunk()
+                .is_some_and(|h| app.ast_state().has_suggestion_for(h.id))
+            {
+                ast::dismiss_suggestion(app);
+            } else if app
                 .current_hunk()
                 .is_some_and(|h| app.ai_state().has_suggestion_for(h.id))
             {
                 ai::dismiss_suggestion(app);
             }
         }
+
+        // AST Merge
+        Action::AstSuggest => ast::request_suggestion(app),
+        Action::AstSuggestAll => ast::request_all_suggestions(app),
+        Action::DismissAstSuggestion => ast::dismiss_suggestion(app),
     }
 }
 

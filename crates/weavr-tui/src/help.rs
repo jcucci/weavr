@@ -28,6 +28,7 @@ pub struct HelpSection {
 /// bound to them (which may differ from defaults if the user has
 /// customized their config).
 #[must_use]
+#[allow(clippy::too_many_lines)]
 pub fn build_help_sections(map: &KeybindingMap) -> Vec<HelpSection> {
     vec![
         HelpSection {
@@ -79,6 +80,14 @@ pub fn build_help_sections(map: &KeybindingMap) -> Vec<HelpSection> {
                 ),
                 binding(map, Action::FocusResult, "Accept AI suggestion"),
                 binding(map, Action::DismissAiSuggestion, "Dismiss AI suggestion"),
+            ],
+        },
+        HelpSection {
+            title: "AST Merge",
+            bindings: vec![
+                binding(map, Action::AstSuggest, "AST merge (current hunk)"),
+                binding(map, Action::AstSuggestAll, "AST merge (all unresolved)"),
+                binding(map, Action::FocusResult, "Accept AST suggestion"),
             ],
         },
         HelpSection {

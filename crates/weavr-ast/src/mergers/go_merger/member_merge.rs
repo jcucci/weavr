@@ -92,8 +92,7 @@ pub(super) fn merge_two_way(
             merged.extend(import_decls);
             descriptions.push(desc);
             has_import_merge = true;
-        } else if left_imports.iter().any(|d| is_dot_import(d))
-            || right_imports.iter().any(|d| is_dot_import(d))
+        } else if left_imports.iter().any(is_dot_import) || right_imports.iter().any(is_dot_import)
         {
             // Dot imports cannot be safely merged -- bail out to text merge
             return None;
@@ -217,9 +216,9 @@ pub(super) fn merge_three_way(
             merged.extend(import_decls);
             descriptions.push(desc);
             has_import_merge = true;
-        } else if base_imports.iter().any(|d| is_dot_import(d))
-            || left_imports.iter().any(|d| is_dot_import(d))
-            || right_imports.iter().any(|d| is_dot_import(d))
+        } else if base_imports.iter().any(is_dot_import)
+            || left_imports.iter().any(is_dot_import)
+            || right_imports.iter().any(is_dot_import)
         {
             // Dot imports cannot be safely merged -- bail out to text merge
             return None;

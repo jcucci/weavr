@@ -16,6 +16,7 @@ use similar::ChangeTag;
 use weavr_core::{HunkState, Segment};
 
 use crate::ai::AiState;
+use crate::ast::AstState;
 use crate::diff::{compute_line_diffs, compute_word_diffs, DiffConfig, DiffLine};
 use crate::input::InputMode;
 use crate::{App, FocusedPane};
@@ -114,6 +115,7 @@ pub fn render_result_pane(frame: &mut Frame, area: Rect, app: &App) {
             app.current_hunk_index(),
             theme,
             app.ai_state(),
+            app.ast_state(),
         ),
         None => vec![Line::from(Span::styled(
             "No file loaded",
@@ -270,6 +272,20 @@ pub fn render_status_bar(frame: &mut Frame, area: Rect, app: &App) {
         String::new()
     };
 
+    // Add AST indicator when AST merging is available
+    let ast_indicator = if app.ast_available() {
+        if app
+            .current_hunk()
+            .is_some_and(|h| app.ast_state().has_suggestion_for(h.id))
+        {
+            " | AST [ready]".to_string()
+        } else {
+            " | AST".to_string()
+        }
+    } else {
+        String::new()
+    };
+
     // Build undo/redo indicator
     let undo_redo_indicator = {
         let can_undo = app.can_undo();
@@ -286,7 +302,7 @@ pub fn render_status_bar(frame: &mut Frame, area: Rect, app: &App) {
         }
     };
 
-    let full_status = format!("{status_text}{undo_redo_indicator}{ai_indicator}");
+    let full_status = format!("{status_text}{undo_redo_indicator}{ai_indicator}{ast_indicator}");
     let status = Paragraph::new(full_status).style(theme.ui.status.bg(theme.base.background));
     frame.render_widget(status, area);
 }
@@ -393,6 +409,7 @@ fn build_result_document<'a>(
     current_hunk_idx: usize,
     theme: &'a crate::theme::Theme,
     ai_state: &AiState,
+    ast_state: &AstState,
 ) -> Vec<Line<'a>> {
     let mut lines = Vec::new();
     let mut line_number = 1;
@@ -434,6 +451,39 @@ fn build_result_document<'a>(
                             style.add_modifier(Modifier::BOLD),
                         )));
                     }
+                } else if is_current && ast_state.has_suggestion_for(hunk.id) {
+                    // AST merge suggestion ghost text
+                    let suggestion = ast_state.suggestion_for(hunk.id).unwrap();
+                    let ghost_style = Style::default()
+                        .fg(theme.base.muted)
+                        .add_modifier(Modifier::ITALIC);
+                    let header_style = ghost_style.add_modifier(Modifier::BOLD);
+
+                    let conf_str = suggestion
+                        .confidence
+                        .map(|c| format!(" ({c}%)"))
+                        .unwrap_or_default();
+                    lines.push(Line::from(Span::styled(
+                        format!("──── AST Merge{conf_str} ────"),
+                        header_style,
+                    )));
+                    for line_text in suggestion.resolution.content.lines() {
+                        lines.push(Line::from(vec![
+                            Span::styled(
+                                "   ~ ".to_string(),
+                                Style::default().add_modifier(Modifier::DIM),
+                            ),
+                            Span::styled(line_text.to_string(), ghost_style),
+                        ]));
+                    }
+                    lines.push(Line::from(Span::styled(
+                        "  [Enter] Accept  [Esc] Dismiss",
+                        Style::default().fg(theme.base.muted),
+                    )));
+                    lines.push(Line::from(Span::styled(
+                        "────────────────────",
+                        header_style,
+                    )));
                 } else if is_current && ai_state.has_suggestion_for(hunk.id) {
                     // AI suggestion ghost text
                     let suggestion = ai_state.suggestion_for(hunk.id).unwrap();

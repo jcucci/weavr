@@ -87,6 +87,14 @@ pub enum Action {
     AiExplainOrHelp,
     /// Dismiss the current AI suggestion.
     DismissAiSuggestion,
+
+    // AST Merge
+    /// Request an AST-based merge for the current hunk.
+    AstSuggest,
+    /// Request AST-based merges for all unresolved hunks.
+    AstSuggestAll,
+    /// Dismiss the current AST suggestion.
+    DismissAstSuggestion,
 }
 
 /// All `Action` variants in declaration order.
@@ -120,6 +128,9 @@ const ALL_ACTIONS: &[Action] = &[
     Action::AiSuggestAll,
     Action::AiExplainOrHelp,
     Action::DismissAiSuggestion,
+    Action::AstSuggest,
+    Action::AstSuggestAll,
+    Action::DismissAstSuggestion,
 ];
 
 impl Action {
@@ -170,6 +181,9 @@ impl Action {
             Self::AiSuggestAll => "ai_suggest_all",
             Self::AiExplainOrHelp => "ai_explain_or_help",
             Self::DismissAiSuggestion => "dismiss_ai_suggestion",
+            Self::AstSuggest => "ast_suggest",
+            Self::AstSuggestAll => "ast_suggest_all",
+            Self::DismissAstSuggestion => "dismiss_ast_suggestion",
         }
     }
 }
@@ -591,6 +605,11 @@ impl KeybindingMap {
         map.bind(Action::AiSuggestAll, single_char('S'));
         map.bind(Action::AiExplainOrHelp, single_char('?'));
         map.bind(Action::DismissAiSuggestion, single_key(KeyCode::Esc));
+
+        // AST Merge
+        map.bind(Action::AstSuggest, single_char('a'));
+        map.bind(Action::AstSuggestAll, single_char('A'));
+        // DismissAstSuggestion has no default binding; Esc covers both AI and AST
 
         map
     }

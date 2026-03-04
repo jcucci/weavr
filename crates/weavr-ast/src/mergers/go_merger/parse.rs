@@ -199,7 +199,7 @@ fn node_to_declaration(node: &Node<'_>, source: &str) -> Option<GoDeclaration> {
                 children: Vec::new(),
             })
         }
-        "type_declaration" => parse_type_declaration(node, source),
+        "type_declaration" => Some(parse_type_declaration(node, source)),
         "const_declaration" => {
             let name = extract_spec_names(node, source, "const_spec");
             Some(GoDeclaration {
@@ -218,9 +218,9 @@ fn node_to_declaration(node: &Node<'_>, source: &str) -> Option<GoDeclaration> {
                 children: Vec::new(),
             })
         }
-        // Ignore package clauses -- treating them as declarations would risk
-        // emitting duplicate `package` lines during merges.
-        "package_clause" => None,
+        // Ignore package clauses and other unrecognized node kinds -- treating
+        // package clauses as declarations would risk emitting duplicate `package`
+        // lines during merges.
         _ => None,
     }
 }
@@ -318,7 +318,7 @@ fn parse_import_spec(node: &Node<'_>, source: &str) -> Option<GoDeclaration> {
 /// For grouped declarations (`type (A ...; B ...)`), returns one
 /// `GoDeclaration` per spec so that individual types can be matched
 /// across conflict sides.
-fn parse_type_declaration(node: &Node<'_>, source: &str) -> Option<GoDeclaration> {
+fn parse_type_declaration(node: &Node<'_>, source: &str) -> GoDeclaration {
     let source_text = node_text(node, source).to_string();
 
     let mut specs = Vec::new();
@@ -352,28 +352,28 @@ fn parse_type_declaration(node: &Node<'_>, source: &str) -> Option<GoDeclaration
         0 => {
             // Fallback: try extracting name directly
             let name = get_field_text(node, "name", source).unwrap_or_default();
-            Some(GoDeclaration {
+            GoDeclaration {
                 kind: DeclarationKind::TypeDeclaration,
                 identity: GoIdentity::Type(name),
                 source_text,
                 children: Vec::new(),
-            })
+            }
         }
         1 => {
             // Single spec: use the full declaration source text
             let mut decl = specs.into_iter().next().unwrap();
             decl.source_text = source_text;
-            Some(decl)
+            decl
         }
         _ => {
             // Grouped type declaration: wrap specs as children so each
             // type can be individually matched during merge
-            Some(GoDeclaration {
+            GoDeclaration {
                 kind: DeclarationKind::TypeDeclaration,
                 identity: GoIdentity::Unknown(source_text.clone()),
                 source_text,
                 children: specs,
-            })
+            }
         }
     }
 }
@@ -496,7 +496,7 @@ fn extract_receiver_type(node: &Node<'_>, source: &str) -> String {
     String::new()
 }
 
-/// Extracts names from spec children (const_spec, var_spec).
+/// Extracts names from spec children (`const_spec`, `var_spec`).
 fn extract_spec_names(node: &Node<'_>, source: &str, spec_kind: &str) -> String {
     let mut names = Vec::new();
     for i in 0..node.child_count() {

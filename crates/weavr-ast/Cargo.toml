@@ -24,6 +24,7 @@ all-languages = ["rust", "csharp", "typescript", "go"]
 [dependencies]
 weavr-core.workspace = true
 thiserror.workspace = true
+serde.workspace = true
 
 # Rust AST merger (feature-gated)
 syn = { workspace = true, optional = true }

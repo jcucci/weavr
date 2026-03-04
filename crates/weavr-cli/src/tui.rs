@@ -76,6 +76,13 @@ pub fn process_file(
         app.set_ai_handle(handle);
     }
 
+    // Wire up AST strategy if configured
+    #[cfg(feature = "ast")]
+    {
+        let ast_strategy = build_ast_strategy(&config.ast);
+        app.set_ast_strategy(ast_strategy);
+    }
+
     // Run TUI event loop
     weavr_tui::run(&mut app)?;
 
@@ -202,6 +209,13 @@ pub fn process_files(
         app.set_ai_handle(handle);
     }
 
+    // Wire up AST strategy if configured
+    #[cfg(feature = "ast")]
+    {
+        let ast_strategy = build_ast_strategy(&config.ast);
+        app.set_ast_strategy(ast_strategy);
+    }
+
     // Set workspace and run TUI
     app.set_workspace(workspace);
     weavr_tui::run(&mut app)?;
@@ -245,6 +259,35 @@ pub fn process_files(
     }
 
     Ok(results)
+}
+
+// ---------------------------------------------------------------------------
+// AST strategy builder (feature-gated)
+// ---------------------------------------------------------------------------
+
+/// Builds an `AstStrategy` with all available language mergers.
+#[cfg(feature = "ast")]
+#[allow(clippy::vec_init_then_push)] // pushes are conditionally compiled per language feature
+pub(crate) fn build_ast_strategy(config: &weavr_ast::AstConfig) -> weavr_ast::AstStrategy {
+    let mut mergers: Vec<Box<dyn weavr_ast::AstMerger>> = Vec::new();
+
+    #[cfg(feature = "ast-rust")]
+    mergers.push(Box::new(weavr_ast::mergers::rust_merger::RustMerger::new()));
+
+    #[cfg(feature = "ast-csharp")]
+    mergers.push(Box::new(
+        weavr_ast::mergers::csharp_merger::CSharpMerger::new(),
+    ));
+
+    #[cfg(feature = "ast-typescript")]
+    mergers.push(Box::new(
+        weavr_ast::mergers::typescript_merger::TypeScriptMerger::new(),
+    ));
+
+    #[cfg(feature = "ast-go")]
+    mergers.push(Box::new(weavr_ast::mergers::go_merger::GoMerger::new()));
+
+    weavr_ast::AstStrategy::new(mergers, config.clone())
 }
 
 // ---------------------------------------------------------------------------
