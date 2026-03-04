@@ -2,7 +2,7 @@
 //!
 //! Unlike AI suggestions (which use channel-based async workers), AST merging
 //! is synchronous CPU-bound work with no I/O. When the user presses the AST
-//! keybinding, we call [`AstStrategy::try_resolve`] directly on the main thread
+//! keybinding, we call `AstStrategy::try_resolve` directly on the main thread
 //! and store the result immediately.
 
 use std::collections::HashMap;
@@ -121,57 +121,87 @@ pub fn request_suggestion(app: &mut App) {
 
 /// Requests AST merge suggestions for all unresolved hunks.
 #[cfg(feature = "ast")]
+#[allow(clippy::missing_panics_doc)] // unwraps guarded by early returns
 pub fn request_all_suggestions(app: &mut App) {
-    let Some(ref ast_strategy) = app.ast_strategy else {
+    if app.ast_strategy.is_none() {
         app.set_status_message("AST merging not available");
         return;
+    }
+
+    // Gather file metadata and candidate hunk IDs without cloning full hunks.
+    let (file_path, language, hunk_ids) = {
+        let Some(session) = &app.session else {
+            return;
+        };
+        let file_path = session.input().left.path.clone();
+        let language = weavr_core::detect_language(&file_path);
+        let ids: Vec<HunkId> = session
+            .hunks()
+            .iter()
+            .filter(|h| matches!(h.state, weavr_core::HunkState::Unresolved))
+            .filter(|h| !app.ast_state.has_suggestion_for(h.id))
+            .map(|h| h.id)
+            .collect();
+        (file_path, language, ids)
     };
-    let Some(session) = &app.session else {
-        return;
-    };
 
-    let file_path = session.input().left.path.clone();
-    let language = weavr_core::detect_language(&file_path);
-
-    let unresolved: Vec<_> = session
-        .hunks()
-        .iter()
-        .filter(|h| matches!(h.state, weavr_core::HunkState::Unresolved))
-        .filter(|h| !app.ast_state.has_suggestion_for(h.id))
-        .cloned()
-        .collect();
-
-    if unresolved.is_empty() {
+    if hunk_ids.is_empty() {
         app.set_status_message("No unresolved hunks to merge");
         return;
     }
 
+    let total = hunk_ids.len();
     let mut count = 0;
-    for hunk in &unresolved {
-        if let Ok(Some(resolution)) = ast_strategy.try_resolve(hunk, &file_path, language) {
-            let confidence = resolution.metadata.confidence;
-            let description = resolution.metadata.notes.clone().unwrap_or_default();
-            app.ast_state.suggestions.insert(
-                hunk.id,
-                AstSuggestion {
-                    hunk_id: hunk.id,
-                    resolution,
-                    confidence,
-                    description,
-                },
-            );
-            count += 1;
+    let mut errors = 0;
+
+    for hunk_id in &hunk_ids {
+        // Scope borrows so we can mutate ast_state after try_resolve returns.
+        let result = {
+            let ast_strategy = app.ast_strategy.as_ref().unwrap();
+            let session = app.session.as_ref().unwrap();
+            session
+                .hunks()
+                .iter()
+                .find(|h| h.id == *hunk_id)
+                .map(|h| ast_strategy.try_resolve(h, &file_path, language))
+        };
+
+        match result {
+            Some(Ok(Some(resolution))) => {
+                let confidence = resolution.metadata.confidence;
+                let description = resolution.metadata.notes.clone().unwrap_or_default();
+                app.ast_state.suggestions.insert(
+                    *hunk_id,
+                    AstSuggestion {
+                        hunk_id: *hunk_id,
+                        resolution,
+                        confidence,
+                        description,
+                    },
+                );
+                count += 1;
+            }
+            Some(Err(_)) => {
+                errors += 1;
+            }
+            // Ok(None) = merger declined, None = hunk not found
+            _ => {}
         }
     }
 
-    if count > 0 {
-        app.set_status_message(&format!(
-            "AST merge: {count}/{} hunks resolved",
-            unresolved.len()
-        ));
-    } else {
-        app.set_status_message("AST: no hunks could be merged structurally");
-    }
+    let msg = match (count, errors) {
+        (0, 0) => "AST: no hunks could be merged structurally".to_string(),
+        (0, e) => format!(
+            "AST: no hunks merged ({e} parse error{})",
+            if e == 1 { "" } else { "s" }
+        ),
+        (c, 0) => format!("AST merge: {c}/{total} hunks resolved"),
+        (c, e) => format!(
+            "AST merge: {c}/{total} hunks resolved ({e} error{})",
+            if e == 1 { "" } else { "s" }
+        ),
+    };
+    app.set_status_message(&msg);
 }
 
 /// Stub when `ast` feature is disabled.

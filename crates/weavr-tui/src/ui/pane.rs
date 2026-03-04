@@ -463,8 +463,13 @@ fn build_result_document<'a>(
                         .confidence
                         .map(|c| format!(" ({c}%)"))
                         .unwrap_or_default();
+                    let desc_str = if suggestion.description.is_empty() {
+                        String::new()
+                    } else {
+                        format!(": {}", suggestion.description)
+                    };
                     lines.push(Line::from(Span::styled(
-                        format!("──── AST Merge{conf_str} ────"),
+                        format!("──── AST Merge{conf_str}{desc_str} ────"),
                         header_style,
                     )));
                     for line_text in suggestion.resolution.content.lines() {
