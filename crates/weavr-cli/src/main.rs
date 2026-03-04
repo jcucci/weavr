@@ -70,8 +70,19 @@ fn run(cli: &Cli) -> Result<i32, CliError> {
     if cli.headless {
         let strategy = config.default_strategy;
 
+        // Build AST handle for headless mode
+        #[cfg(feature = "ast")]
+        let ast_strategy;
+        #[cfg(feature = "ast")]
+        let ast_handle = {
+            ast_strategy = tui::build_ast_strategy(&config.ast);
+            headless::AstHandle::some(&ast_strategy)
+        };
+        #[cfg(not(feature = "ast"))]
+        let ast_handle = headless::AstHandle::none();
+
         for path in &files {
-            let result = headless::process_file(path, strategy, config.deduplicate)?;
+            let result = headless::process_file(path, strategy, config.deduplicate, &ast_handle)?;
             headless::write_or_print(&result, cli.dry_run)?;
 
             if config.auto_stage && !cli.dry_run {

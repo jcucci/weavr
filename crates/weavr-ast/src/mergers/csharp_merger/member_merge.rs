@@ -92,8 +92,8 @@ pub(super) fn merge_two_way(
             merged.extend(using_decls);
             descriptions.push(desc);
             has_using_merge = true;
-        } else if left_usings.iter().any(|d| is_complex_using(d))
-            || right_usings.iter().any(|d| is_complex_using(d))
+        } else if left_usings.iter().any(is_complex_using)
+            || right_usings.iter().any(is_complex_using)
         {
             // Complex usings cannot be safely merged -- bail out to text merge
             return None;
@@ -215,9 +215,9 @@ pub(super) fn merge_three_way(
             merged.extend(using_decls);
             descriptions.push(desc);
             has_using_merge = true;
-        } else if base_usings.iter().any(|d| is_complex_using(d))
-            || left_usings.iter().any(|d| is_complex_using(d))
-            || right_usings.iter().any(|d| is_complex_using(d))
+        } else if base_usings.iter().any(is_complex_using)
+            || left_usings.iter().any(is_complex_using)
+            || right_usings.iter().any(is_complex_using)
         {
             // Complex usings cannot be safely merged -- bail out to text merge
             return None;

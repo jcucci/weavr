@@ -1889,6 +1889,7 @@ dependencies = [
  "prettyplease",
  "proc-macro2",
  "quote",
+ "serde",
  "syn",
  "thiserror",
  "tree-sitter",
@@ -1945,6 +1946,7 @@ dependencies = [
  "similar",
  "tempfile",
  "thiserror",
+ "weavr-ast",
  "weavr-core",
 ]
 

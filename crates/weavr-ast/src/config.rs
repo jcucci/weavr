@@ -3,7 +3,8 @@
 use weavr_core::Language;
 
 /// Configuration for the AST merge strategy.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Deserialize)]
+#[serde(default)]
 pub struct AstConfig {
     /// Whether AST merging is enabled globally.
     pub enabled: bool,

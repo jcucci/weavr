@@ -13,6 +13,8 @@ pub enum Strategy {
     Right,
     /// Accept both sides (combine left then right)
     Both,
+    /// AST-based structural merge (falls back to left when unavailable)
+    Ast,
 }
 
 /// A terminal-first merge conflict resolver

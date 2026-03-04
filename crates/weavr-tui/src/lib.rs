@@ -22,6 +22,7 @@ use weavr_core::{ConflictHunk, MergeSession};
 const KEY_SEQUENCE_TIMEOUT: Duration = Duration::from_millis(500);
 
 pub mod ai;
+pub mod ast;
 pub mod dialog;
 pub mod diff;
 pub mod editor;
@@ -109,6 +110,11 @@ pub struct App {
     pub(crate) ai_handle: Option<ai::AiHandle>,
     /// AI suggestion state for UI rendering.
     pub(crate) ai_state: ai::AiState,
+    /// AST merge strategy (optional, set by CLI when AST mergers are available).
+    #[cfg(feature = "ast")]
+    pub(crate) ast_strategy: Option<weavr_ast::AstStrategy>,
+    /// AST merge suggestion state for UI rendering.
+    pub(crate) ast_state: ast::AstState,
     /// Whether the user requested staging (set by `:wa` or staging prompt).
     pub(crate) stage_requested: bool,
     /// Whether to show a staging prompt on `:wq`.
@@ -144,6 +150,9 @@ impl App {
             help_sections,
             ai_handle: None,
             ai_state: ai::AiState::default(),
+            #[cfg(feature = "ast")]
+            ast_strategy: None,
+            ast_state: ast::AstState::default(),
             stage_requested: false,
             stage_prompt: false,
             workspace: None,
@@ -176,6 +185,9 @@ impl App {
             help_sections,
             ai_handle: None,
             ai_state: ai::AiState::default(),
+            #[cfg(feature = "ast")]
+            ast_strategy: None,
+            ast_state: ast::AstState::default(),
             stage_requested: false,
             stage_prompt: false,
             workspace: None,
@@ -665,8 +677,9 @@ impl App {
         let changed = self.workspace.as_mut().is_some_and(|ws| ws.go_to(index));
         if changed {
             self.load_file_state();
-            // Clear AI state for the new file
+            // Clear AI and AST state for the new file
             self.ai_state = ai::AiState::default();
+            self.ast_state = ast::AstState::default();
             let file_num = index + 1;
             let file_count = self.file_count();
             if let Some(ref ws) = self.workspace {
@@ -815,6 +828,33 @@ impl App {
     #[must_use]
     pub fn ai_state(&self) -> &ai::AiState {
         &self.ai_state
+    }
+
+    // --- AST Integration ---
+
+    /// Sets the AST merge strategy.
+    #[cfg(feature = "ast")]
+    pub fn set_ast_strategy(&mut self, strategy: weavr_ast::AstStrategy) {
+        self.ast_strategy = Some(strategy);
+    }
+
+    /// Returns whether AST merging is available.
+    #[must_use]
+    pub fn ast_available(&self) -> bool {
+        #[cfg(feature = "ast")]
+        {
+            self.ast_strategy.is_some()
+        }
+        #[cfg(not(feature = "ast"))]
+        {
+            false
+        }
+    }
+
+    /// Returns a reference to the AST state.
+    #[must_use]
+    pub fn ast_state(&self) -> &ast::AstState {
+        &self.ast_state
     }
 }
 

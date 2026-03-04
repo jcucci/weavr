@@ -133,6 +133,9 @@ pub struct RawConfig {
 
     #[cfg(feature = "ai")]
     pub ai: Option<weavr_ai::AiConfig>,
+
+    #[cfg(feature = "ast")]
+    pub ast: Option<weavr_ast::AstConfig>,
 }
 
 impl RawConfig {
@@ -166,6 +169,8 @@ impl RawConfig {
             }),
             #[cfg(feature = "ai")]
             ai: self.ai.or(lower.ai),
+            #[cfg(feature = "ast")]
+            ast: self.ast.or(lower.ast),
         }
     }
 }
@@ -200,6 +205,8 @@ pub struct WeavrConfig {
     pub stage_prompt: bool,
     #[cfg(feature = "ai")]
     pub ai: weavr_ai::AiConfig,
+    #[cfg(feature = "ast")]
+    pub ast: weavr_ast::AstConfig,
 }
 
 impl WeavrConfig {
@@ -217,7 +224,7 @@ impl WeavrConfig {
             Some(name) => parse_strategy(name).ok_or_else(|| ConfigError::InvalidValue {
                 key: "strategies.default".into(),
                 value: name.into(),
-                hint: "valid strategies: left, right, both".into(),
+                hint: "valid strategies: left, right, both, ast".into(),
             })?,
             None => Strategy::Left,
         };
@@ -251,6 +258,8 @@ impl WeavrConfig {
             stage_prompt,
             #[cfg(feature = "ai")]
             ai: raw.ai.clone().unwrap_or_default(),
+            #[cfg(feature = "ast")]
+            ast: raw.ast.clone().unwrap_or_default(),
         })
     }
 }
@@ -276,6 +285,7 @@ fn parse_strategy(s: &str) -> Option<Strategy> {
         "left" => Some(Strategy::Left),
         "right" => Some(Strategy::Right),
         "both" => Some(Strategy::Both),
+        "ast" => Some(Strategy::Ast),
         _ => None,
     }
 }
