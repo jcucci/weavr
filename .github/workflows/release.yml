@@ -28,7 +28,7 @@ jobs:
 
       - name: Check Cargo.toml version matches tag
         run: |
-          CARGO_VERSION=$(grep '^version' Cargo.toml | head -1 | sed 's/.*"\(.*\)".*/\1/')
+          CARGO_VERSION=$(cargo metadata --no-deps --format-version 1 | jq -r '.packages[] | select(.name == "weavr-cli") | .version')
           TAG_VERSION="${GITHUB_REF#refs/tags/v}"
           # Strip any prerelease suffix for comparison (v0.1.0-rc.1 matches 0.1.0)
           TAG_BASE="${TAG_VERSION%%-*}"
@@ -75,7 +75,7 @@ jobs:
 
       - name: Install cross
         if: matrix.use-cross
-        run: cargo install cross --locked
+        run: cargo install cross --locked --version 0.2.5
 
       - uses: Swatinem/rust-cache@v2
         with:

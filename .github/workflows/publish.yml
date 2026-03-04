@@ -11,6 +11,7 @@ env:
 jobs:
   publish:
     name: Publish crates
+    if: github.event.release.prerelease == false
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -23,22 +24,16 @@ jobs:
       - name: Publish weavr-git
         run: cargo publish -p weavr-git
 
-      - name: Wait for crates.io index
-        run: sleep 30
-
-      # Tier 2: Depend on core
+      # Tier 2: Depend on core (retry with backoff for index propagation)
       - name: Publish weavr-ai
-        run: cargo publish -p weavr-ai
+        run: .github/scripts/publish-with-retry.sh weavr-ai
 
       - name: Publish weavr-ast
-        run: cargo publish -p weavr-ast
+        run: .github/scripts/publish-with-retry.sh weavr-ast
 
       - name: Publish weavr-tui
-        run: cargo publish -p weavr-tui
-
-      - name: Wait for crates.io index
-        run: sleep 30
+        run: .github/scripts/publish-with-retry.sh weavr-tui
 
       # Tier 3: Depends on all
       - name: Publish weavr-cli
-        run: cargo publish -p weavr-cli
+        run: .github/scripts/publish-with-retry.sh weavr-cli
