@@ -1951,6 +1951,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "weavr-vcs"
+version = "0.1.0"
+dependencies = [
+ "thiserror",
+]
+
+[[package]]
 name = "web-sys"
 version = "0.3.85"
 source = "registry+https://github.com/rust-lang/crates.io-index"
