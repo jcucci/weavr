@@ -1916,6 +1916,7 @@ dependencies = [
  "weavr-core",
  "weavr-git",
  "weavr-tui",
+ "weavr-vcs",
 ]
 
 [[package]]
@@ -1933,6 +1934,7 @@ version = "0.1.0"
 dependencies = [
  "tempfile",
  "thiserror",
+ "weavr-vcs",
 ]
 
 [[package]]

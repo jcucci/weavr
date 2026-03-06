@@ -34,6 +34,7 @@ ast-all = ["ast-rust", "ast-csharp", "ast-typescript", "ast-go"]
 [dependencies]
 weavr-core.workspace = true
 weavr-git.workspace = true
+weavr-vcs.workspace = true
 weavr-tui.workspace = true
 clap.workspace = true
 thiserror.workspace = true

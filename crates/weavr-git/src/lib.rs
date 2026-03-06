@@ -33,3 +33,6 @@ pub use error::GitError;
 pub use porcelain::{ConflictEntry, ConflictType};
 pub use repo::GitRepo;
 pub use state::GitOperation;
+
+// Re-export VcsBackend types for convenience.
+pub use weavr_vcs::{ConflictKind, ConflictedFile, VcsBackend, VcsError, VcsOperation};

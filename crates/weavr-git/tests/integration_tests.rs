@@ -4,7 +4,7 @@ use std::fs;
 use std::path::PathBuf;
 use std::process::Command;
 use tempfile::TempDir;
-use weavr_git::{GitOperation, GitRepo};
+use weavr_git::{ConflictKind, GitOperation, GitRepo, VcsBackend, VcsOperation};
 
 /// Helper to create a Git repository in a temp directory.
 fn setup_git_repo() -> TempDir {
@@ -342,4 +342,116 @@ fn conflicted_entries_returns_conflict_types() {
         entries[0].conflict_type,
         weavr_git::ConflictType::BothModified
     );
+}
+
+// --- VcsBackend trait integration tests ---
+
+/// Helper to create a merge conflict and return the temp dir and `GitRepo`.
+fn setup_merge_conflict() -> (TempDir, GitRepo) {
+    let dir = setup_git_repo();
+
+    commit_file(&dir, "file.txt", "initial", "Initial commit");
+
+    Command::new("git")
+        .args(["checkout", "-b", "feature"])
+        .current_dir(dir.path())
+        .output()
+        .expect("create branch");
+    commit_file(&dir, "file.txt", "feature change", "Feature commit");
+
+    Command::new("git")
+        .args(["checkout", "main"])
+        .current_dir(dir.path())
+        .output()
+        .expect("checkout main");
+    commit_file(&dir, "file.txt", "main change", "Main commit");
+
+    let merge_output = Command::new("git")
+        .args(["merge", "feature"])
+        .current_dir(dir.path())
+        .output()
+        .expect("git merge feature");
+    assert!(
+        !merge_output.status.success(),
+        "expected 'git merge feature' to produce a conflict (non-zero exit status), \
+stdout: {}, stderr: {}",
+        String::from_utf8_lossy(&merge_output.stdout),
+        String::from_utf8_lossy(&merge_output.stderr)
+    );
+
+    let repo = GitRepo::discover_from(dir.path()).expect("discover repo");
+    (dir, repo)
+}
+
+#[test]
+fn vcs_backend_name_returns_git() {
+    let dir = setup_git_repo();
+    commit_file(&dir, "file.txt", "content", "Initial commit");
+    let repo = GitRepo::discover_from(dir.path()).expect("discover repo");
+    let backend: &dyn VcsBackend = &repo;
+    assert_eq!(backend.name(), "git");
+}
+
+#[test]
+fn vcs_backend_root_matches_repo_root() {
+    let dir = setup_git_repo();
+    commit_file(&dir, "file.txt", "content", "Initial commit");
+    let repo = GitRepo::discover_from(dir.path()).expect("discover repo");
+    let backend: &dyn VcsBackend = &repo;
+    assert_eq!(
+        canonicalize_for_comparison(backend.root()),
+        canonicalize_for_comparison(dir.path())
+    );
+}
+
+#[test]
+fn vcs_backend_conflicted_files_returns_correct_kind() {
+    let (_dir, repo) = setup_merge_conflict();
+    let backend: &dyn VcsBackend = &repo;
+
+    let files = backend.conflicted_files().expect("get conflicted files");
+    assert_eq!(files.len(), 1);
+    assert_eq!(files[0].path, PathBuf::from("file.txt"));
+    assert_eq!(files[0].kind, ConflictKind::BothModified);
+}
+
+#[test]
+fn vcs_backend_current_operation_during_merge() {
+    let (_dir, repo) = setup_merge_conflict();
+    let backend: &dyn VcsBackend = &repo;
+
+    let op = backend.current_operation().expect("get current operation");
+    assert_eq!(op, VcsOperation::Merge);
+}
+
+#[test]
+fn vcs_backend_current_operation_when_clean() {
+    let dir = setup_git_repo();
+    commit_file(&dir, "file.txt", "content", "Initial commit");
+    let repo = GitRepo::discover_from(dir.path()).expect("discover repo");
+    let backend: &dyn VcsBackend = &repo;
+
+    let op = backend.current_operation().expect("get current operation");
+    assert_eq!(op, VcsOperation::None);
+}
+
+#[test]
+fn vcs_backend_stage_file_clears_conflict() {
+    let (dir, repo) = setup_merge_conflict();
+    let backend: &dyn VcsBackend = &repo;
+
+    // Verify conflict exists
+    let before = backend.conflicted_files().expect("get conflicts");
+    assert_eq!(before.len(), 1);
+
+    // Resolve and stage via VcsBackend
+    let file_path = dir.path().join("file.txt");
+    fs::write(&file_path, "resolved content").expect("write resolved");
+    backend
+        .stage_file(&PathBuf::from("file.txt"))
+        .expect("stage file");
+
+    // Conflict should be cleared
+    let after = backend.conflicted_files().expect("get conflicts");
+    assert!(after.is_empty());
 }
