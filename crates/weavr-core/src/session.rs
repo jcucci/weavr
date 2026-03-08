@@ -100,7 +100,9 @@ impl MergeSession {
     /// assert_eq!(session.hunks().len(), 1);
     /// ```
     pub fn from_conflicted(content: &str, path: PathBuf) -> Result<Self, ParseError> {
-        let ParsedConflict { hunks, segments } = parse_conflict_markers(content)?;
+        let ParsedConflict {
+            hunks, segments, ..
+        } = parse_conflict_markers(content)?;
 
         // Determine state based on whether conflicts were found
         let state = if hunks.is_empty() {
@@ -407,6 +409,7 @@ impl MergeSession {
                     line.starts_with("<<<<<<<")
                         || line.starts_with("=======")
                         || line.starts_with(">>>>>>>")
+                        || is_jj_marker(line)
                 });
                 if has_markers {
                     count += 1;
@@ -487,6 +490,15 @@ impl MergeSession {
 
         Ok(output)
     }
+}
+
+/// Checks if a line looks like a jj snapshot marker (`+++++++` or `-------`).
+///
+/// Only matches when the marker is followed by a space or is the entire line,
+/// to avoid false positives with regular content.
+fn is_jj_marker(line: &str) -> bool {
+    (line.starts_with("+++++++") || line.starts_with("-------"))
+        && (line.len() == 7 || line.as_bytes().get(7) == Some(&b' '))
 }
 
 #[cfg(test)]
