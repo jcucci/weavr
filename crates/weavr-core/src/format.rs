@@ -11,34 +11,45 @@ pub enum ConflictFormat {
     Git,
     /// Jujutsu snapshot format (`+++++++` for sides, `-------` for base).
     JjSnapshot,
-    /// Jujutsu diff format (not yet supported).
+    /// Jujutsu diff format (`%%%%%%%` for diff sections, `+++++++` for snapshot sides).
     JjDiff,
 }
 
 /// Detects the conflict marker format used in file content.
 ///
-/// Scans for the first `<<<<<<<` block, then inspects the first inner marker
-/// to determine the format:
-/// - `+++++++` → `JjSnapshot`
+/// Scans the first `<<<<<<<` block for inner markers to determine the format:
+/// - `%%%%%%%` anywhere in the block → `JjDiff` (covers mixed and pure diff)
+/// - Only `+++++++` (no `%`) → `JjSnapshot`
 /// - `|||||||` or `=======` → `Git`
 ///
 /// Returns `None` if no conflict markers are found.
 #[must_use]
 pub fn detect_format(content: &str) -> Option<ConflictFormat> {
     let mut in_conflict = false;
+    let mut saw_plus = false;
+    let mut saw_percent = false;
 
     for line in content.lines() {
         if in_conflict {
-            // First inner marker determines the format.
-            // Use boundary-aware checks matching the parser logic.
-            if is_marker_run(line, b'+') {
-                return Some(ConflictFormat::JjSnapshot);
+            if is_marker_run(line, b'>') {
+                // End of first conflict block — decide based on what we saw.
+                if saw_percent {
+                    return Some(ConflictFormat::JjDiff);
+                }
+                if saw_plus {
+                    return Some(ConflictFormat::JjSnapshot);
+                }
+                // Should not happen (block with no inner markers), but be safe.
+                return None;
+            }
+            if is_marker_run(line, b'%') {
+                saw_percent = true;
+            } else if is_marker_run(line, b'+') {
+                saw_plus = true;
             }
             if is_marker_run(line, b'|') || is_separator_marker(line) {
                 return Some(ConflictFormat::Git);
             }
-            // For jj diff format, the marker after <<<<<<< would be different;
-            // for now we keep scanning content lines until we hit a marker
         } else if is_marker_run(line, b'<') {
             in_conflict = true;
         }
@@ -103,5 +114,23 @@ mod tests {
     fn detect_format_unclosed_no_inner_marker() {
         let content = "<<<<<<< HEAD\nsome content but no inner markers";
         assert_eq!(detect_format(content), None);
+    }
+
+    #[test]
+    fn detect_format_jj_diff_mixed() {
+        let content = "<<<<<<< Conflict 1 of 1\n+++++++ Side #1\nleft\n%%%%%%% Side #2\n context\n-base\n+side2\n>>>>>>> Conflict 1 of 1";
+        assert_eq!(detect_format(content), Some(ConflictFormat::JjDiff));
+    }
+
+    #[test]
+    fn detect_format_jj_diff_pure() {
+        let content = "<<<<<<< Conflict 1 of 1\n%%%%%%% Side #1\n context\n-base\n+side1\n%%%%%%% Side #2\n context\n-base\n+side2\n>>>>>>> Conflict 1 of 1";
+        assert_eq!(detect_format(content), Some(ConflictFormat::JjDiff));
+    }
+
+    #[test]
+    fn detect_format_jj_snapshot_not_confused_with_diff() {
+        let content = "<<<<<<< Conflict 1 of 1\n+++++++ Side #1\nleft\n------- Base\nbase\n+++++++ Side #2\nright\n>>>>>>> Conflict 1 of 1";
+        assert_eq!(detect_format(content), Some(ConflictFormat::JjSnapshot));
     }
 }
