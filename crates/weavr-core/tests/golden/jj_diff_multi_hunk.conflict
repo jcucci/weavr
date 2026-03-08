@@ -1,0 +1,25 @@
+fn foo() {
+<<<<<<< Conflict 1 of 2
++++++++ Side #1
+    println!("foo from side 1");
+%%%%%%% Side #2
+     println!("foo");
+-    println!("foo");
++    println!("foo from side 2");
+>>>>>>> Conflict 1 of 2
+}
+
+fn bar() {
+    // unchanged
+}
+
+fn baz() {
+<<<<<<< Conflict 2 of 2
++++++++ Side #1
+    println!("baz from side 1");
+%%%%%%% Side #2
+     println!("baz");
+-    println!("baz");
++    println!("baz from side 2");
+>>>>>>> Conflict 2 of 2
+}

@@ -1,0 +1,10 @@
+fn main() {
+<<<<<<< Conflict 1 of 1
++++++++ Side #1 (Commit abc123)
+    println!("Hello from side 1");
+%%%%%%% Side #2 (Commit def456)
+     println!("Hello");
+-    println!("Hello");
++    println!("Hello from side 2");
+>>>>>>> Conflict 1 of 1
+}

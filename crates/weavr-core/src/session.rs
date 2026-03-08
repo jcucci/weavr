@@ -492,11 +492,11 @@ impl MergeSession {
     }
 }
 
-/// Checks if a line looks like a jj snapshot marker (a run of `+` or `-`).
+/// Checks if a line looks like a jj conflict marker (a run of `+`, `-`, or `%`).
 ///
-/// Matches when the line starts with 7 or more identical `+` or `-` characters,
-/// and the run is either the entire line or is followed by a space, to avoid
-/// false positives with regular content.
+/// Matches when the line starts with 7 or more identical `+`, `-`, or `%`
+/// characters, and the run is either the entire line or is followed by a space,
+/// to avoid false positives with regular content.
 fn is_jj_marker(line: &str) -> bool {
     let bytes = line.as_bytes();
     if bytes.is_empty() {
@@ -504,7 +504,7 @@ fn is_jj_marker(line: &str) -> bool {
     }
 
     let first = bytes[0];
-    if first != b'+' && first != b'-' {
+    if first != b'+' && first != b'-' && first != b'%' {
         return false;
     }
 

@@ -165,3 +165,93 @@ fn golden_jj_snapshot_multi_hunk() {
     }
     assert!(saw_clean && saw_conflict);
 }
+
+// --- jj Diff Golden Tests ---
+
+#[test]
+fn golden_jj_diff_mixed() {
+    let input = include_str!("golden/jj_diff_mixed.conflict");
+    let parsed = parse_conflict_markers(input).expect("should parse jj diff mixed conflict");
+
+    assert_eq!(parsed.hunks.len(), 1, "should have exactly one hunk");
+    assert_eq!(parsed.format, Some(ConflictFormat::JjDiff));
+
+    let hunk = &parsed.hunks[0];
+    assert_eq!(hunk.left.text, "    println!(\"Hello from side 1\");");
+    assert_eq!(
+        hunk.right.text,
+        "    println!(\"Hello\");\n    println!(\"Hello from side 2\");"
+    );
+    assert!(
+        hunk.base.is_some(),
+        "should have base from diff reconstruction"
+    );
+    assert_eq!(
+        hunk.base.as_ref().unwrap().text,
+        "    println!(\"Hello\");\n    println!(\"Hello\");"
+    );
+    assert_eq!(hunk.state, HunkState::Unresolved);
+
+    // Context
+    assert_eq!(hunk.context.before.len(), 1);
+    assert_eq!(hunk.context.before[0], "fn main() {");
+    assert_eq!(hunk.context.after.len(), 1);
+    assert_eq!(hunk.context.after[0], "}");
+}
+
+#[test]
+fn golden_jj_diff_pure() {
+    let input = include_str!("golden/jj_diff_pure.conflict");
+    let parsed = parse_conflict_markers(input).expect("should parse jj diff pure conflict");
+
+    assert_eq!(parsed.hunks.len(), 1, "should have exactly one hunk");
+    assert_eq!(parsed.format, Some(ConflictFormat::JjDiff));
+
+    let hunk = &parsed.hunks[0];
+    assert_eq!(
+        hunk.left.text,
+        "    println!(\"Hello\");\n    println!(\"Hello from side 1\");"
+    );
+    assert_eq!(
+        hunk.right.text,
+        "    println!(\"Hello\");\n    println!(\"Hello from side 2\");"
+    );
+    assert!(hunk.base.is_some(), "pure diff should reconstruct base");
+    assert_eq!(
+        hunk.base.as_ref().unwrap().text,
+        "    println!(\"Hello\");\n    println!(\"Hello\");"
+    );
+}
+
+#[test]
+fn golden_jj_diff_multi_hunk() {
+    let input = include_str!("golden/jj_diff_multi_hunk.conflict");
+    let parsed = parse_conflict_markers(input).expect("should parse jj diff multi-hunk conflict");
+
+    assert_eq!(parsed.hunks.len(), 2, "should have exactly two hunks");
+    assert_eq!(parsed.format, Some(ConflictFormat::JjDiff));
+
+    let hunk1 = &parsed.hunks[0];
+    assert!(hunk1.left.text.contains("foo from side 1"));
+    assert!(hunk1.right.text.contains("foo from side 2"));
+    assert!(hunk1.base.is_some());
+
+    let hunk2 = &parsed.hunks[1];
+    assert!(hunk2.left.text.contains("baz from side 1"));
+    assert!(hunk2.right.text.contains("baz from side 2"));
+    assert!(hunk2.base.is_some());
+
+    assert_eq!(hunk1.id.0, 0);
+    assert_eq!(hunk2.id.0, 1);
+
+    // Verify segments structure
+    let mut saw_clean = false;
+    let mut saw_conflict = false;
+    for segment in &parsed.segments {
+        match segment {
+            Segment::Clean(_) => saw_clean = true,
+            Segment::Conflict(_) => saw_conflict = true,
+        }
+    }
+    assert!(saw_clean && saw_conflict);
+}
