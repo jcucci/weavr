@@ -2,6 +2,8 @@
 
 use std::path::PathBuf;
 
+use weavr_vcs::ConflictKind;
+
 /// Conflict type from git status porcelain output.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ConflictType {
@@ -24,6 +26,18 @@ pub struct ConflictEntry {
     pub path: PathBuf,
     /// The type of conflict.
     pub conflict_type: ConflictType,
+}
+
+impl From<ConflictType> for ConflictKind {
+    fn from(ct: ConflictType) -> Self {
+        match ct {
+            ConflictType::BothModified => Self::BothModified,
+            ConflictType::BothAdded => Self::BothAdded,
+            ConflictType::BothDeleted => Self::BothDeleted,
+            ConflictType::AddedByUsDeletedByThem => Self::AddDelete,
+            ConflictType::AddedByThemDeletedByUs => Self::DeleteAdd,
+        }
+    }
 }
 
 /// Parses `git status --porcelain=v1` output and extracts conflicted files.
@@ -284,5 +298,45 @@ mod tests {
         let entries = parse_porcelain_v1(output);
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].path, PathBuf::from("file with \"quotes\".rs"));
+    }
+
+    #[test]
+    fn both_modified_converts_to_conflict_kind() {
+        assert_eq!(
+            ConflictKind::from(ConflictType::BothModified),
+            ConflictKind::BothModified
+        );
+    }
+
+    #[test]
+    fn both_added_converts_to_conflict_kind() {
+        assert_eq!(
+            ConflictKind::from(ConflictType::BothAdded),
+            ConflictKind::BothAdded
+        );
+    }
+
+    #[test]
+    fn both_deleted_converts_to_conflict_kind() {
+        assert_eq!(
+            ConflictKind::from(ConflictType::BothDeleted),
+            ConflictKind::BothDeleted
+        );
+    }
+
+    #[test]
+    fn added_by_us_converts_to_add_delete() {
+        assert_eq!(
+            ConflictKind::from(ConflictType::AddedByUsDeletedByThem),
+            ConflictKind::AddDelete
+        );
+    }
+
+    #[test]
+    fn added_by_them_converts_to_delete_add() {
+        assert_eq!(
+            ConflictKind::from(ConflictType::AddedByThemDeletedByUs),
+            ConflictKind::DeleteAdd
+        );
     }
 }

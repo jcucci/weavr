@@ -40,3 +40,48 @@ pub enum GitError {
         source: std::io::Error,
     },
 }
+
+impl From<GitError> for weavr_vcs::VcsError {
+    fn from(err: GitError) -> Self {
+        match err {
+            GitError::NotGitRepo => Self::NotInRepo,
+            GitError::DiscoveryFailed(msg) => Self::DiscoveryFailed(msg),
+            GitError::CommandFailed(io) => Self::CommandFailed(io),
+            GitError::CommandError { stderr } => Self::OperationError(stderr),
+            GitError::ParseError(msg) => Self::ParseError(msg),
+            GitError::FileError { path, source } => Self::FileError { path, source },
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn not_git_repo_converts_to_not_in_repo() {
+        let vcs_err: weavr_vcs::VcsError = GitError::NotGitRepo.into();
+        assert!(matches!(vcs_err, weavr_vcs::VcsError::NotInRepo));
+    }
+
+    #[test]
+    fn discovery_failed_converts() {
+        let vcs_err: weavr_vcs::VcsError = GitError::DiscoveryFailed("bad path".into()).into();
+        assert!(matches!(vcs_err, weavr_vcs::VcsError::DiscoveryFailed(msg) if msg == "bad path"));
+    }
+
+    #[test]
+    fn command_error_converts_to_operation_error() {
+        let vcs_err: weavr_vcs::VcsError = GitError::CommandError {
+            stderr: "fatal".into(),
+        }
+        .into();
+        assert!(matches!(vcs_err, weavr_vcs::VcsError::OperationError(msg) if msg == "fatal"));
+    }
+
+    #[test]
+    fn parse_error_converts() {
+        let vcs_err: weavr_vcs::VcsError = GitError::ParseError("bad output".into()).into();
+        assert!(matches!(vcs_err, weavr_vcs::VcsError::ParseError(msg) if msg == "bad output"));
+    }
+}

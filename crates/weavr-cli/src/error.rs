@@ -32,6 +32,9 @@ pub enum CliError {
     #[error("Git error: {0}")]
     Git(#[from] weavr_git::GitError),
 
+    #[error("VCS error: {0}")]
+    Vcs(#[from] weavr_vcs::VcsError),
+
     #[error("Resolution error: {0}")]
     Resolution(#[from] weavr_core::ResolutionError),
 

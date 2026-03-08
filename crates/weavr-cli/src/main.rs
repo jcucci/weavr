@@ -16,14 +16,29 @@ mod tui;
 
 use clap::Parser;
 
+use weavr_vcs::VcsBackend;
+
 use cli::Cli;
 use config::WeavrConfig;
 use error::{exit_codes, CliError};
 
+/// Discovers the VCS backend (currently only Git).
+fn discover_backend() -> Option<Box<dyn VcsBackend>> {
+    match weavr_git::GitRepo::discover() {
+        Ok(repo) => Some(Box::new(repo)),
+        Err(_) => None,
+    }
+}
+
 fn run(cli: &Cli) -> Result<i32, CliError> {
+    let backend = discover_backend();
+
     // Mode: List conflicted files
     if cli.list {
-        discovery::list_conflicted_files()?;
+        let backend = backend
+            .as_deref()
+            .ok_or(CliError::Vcs(weavr_vcs::VcsError::NotInRepo))?;
+        discovery::list_conflicted_files(backend)?;
         return Ok(exit_codes::SUCCESS);
     }
 
@@ -52,19 +67,12 @@ fn run(cli: &Cli) -> Result<i32, CliError> {
         config.stage_prompt = false;
     }
 
-    // Resolve which files to process
-    let files = discovery::resolve_files(cli.files.clone())?;
+    if backend.is_none() && (config.auto_stage || config.stage_prompt) {
+        eprintln!("weavr: VCS backend not found, staging disabled");
+    }
 
-    // Git repo discovery (needed for auto-staging, prompts, and explicit :wa)
-    let repo = match weavr_git::GitRepo::discover() {
-        Ok(r) => Some(r),
-        Err(e) => {
-            if config.auto_stage || config.stage_prompt {
-                eprintln!("weavr: git repo not found, staging disabled: {e}");
-            }
-            None
-        }
-    };
+    // Resolve which files to process
+    let files = discovery::resolve_files(cli.files.clone(), backend.as_deref())?;
 
     // Mode: Headless
     if cli.headless {
@@ -86,8 +94,8 @@ fn run(cli: &Cli) -> Result<i32, CliError> {
             headless::write_or_print(&result, cli.dry_run)?;
 
             if config.auto_stage && !cli.dry_run {
-                if let Some(ref repo) = repo {
-                    match repo.stage_file(path) {
+                if let Some(ref backend) = backend {
+                    match backend.stage_file(path) {
                         Ok(()) => println!("{}: staged", path.display()),
                         Err(e) => eprintln!("{}: staging failed: {e}", path.display()),
                     }
@@ -113,14 +121,14 @@ fn run(cli: &Cli) -> Result<i32, CliError> {
 
             let should_stage = config.auto_stage || result.stage_requested;
             if should_stage {
-                if let Some(ref repo) = repo {
-                    match repo.stage_file(&result.path) {
+                if let Some(ref backend) = backend {
+                    match backend.stage_file(&result.path) {
                         Ok(()) => println!("{}: staged", result.path.display()),
                         Err(e) => eprintln!("{}: staging failed: {e}", result.path.display()),
                     }
                 } else if result.stage_requested {
                     eprintln!(
-                        "{}: staging requested but git repo not available",
+                        "{}: staging requested but VCS backend not available",
                         result.path.display()
                     );
                 }

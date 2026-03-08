@@ -1,16 +1,15 @@
-//! Git conflict file discovery.
+//! VCS conflict file discovery.
 
 use std::path::{Path, PathBuf};
 
-use weavr_git::GitRepo;
+use weavr_vcs::VcsBackend;
 
 use crate::error::CliError;
 
-/// Discovers files with Git merge conflicts in the current repository.
-pub fn discover_conflicted_files() -> Result<Vec<PathBuf>, CliError> {
-    let repo = GitRepo::discover()?;
-    let files = repo.conflicted_files()?;
-    Ok(files)
+/// Discovers files with merge conflicts using the given VCS backend.
+pub fn discover_conflicted_files(backend: &dyn VcsBackend) -> Result<Vec<PathBuf>, CliError> {
+    let files = backend.conflicted_files()?;
+    Ok(files.into_iter().map(|f| f.path).collect())
 }
 
 /// Checks if a file contains conflict markers.
@@ -19,10 +18,14 @@ pub fn has_conflict_markers(path: &Path) -> Result<bool, CliError> {
     Ok(content.contains("<<<<<<<") && content.contains("=======") && content.contains(">>>>>>>"))
 }
 
-/// Filters provided paths to only those with conflicts, or discovers all.
-pub fn resolve_files(provided: Vec<PathBuf>) -> Result<Vec<PathBuf>, CliError> {
+/// Filters provided paths to only those with conflicts, or discovers all via `backend`.
+pub fn resolve_files(
+    provided: Vec<PathBuf>,
+    backend: Option<&dyn VcsBackend>,
+) -> Result<Vec<PathBuf>, CliError> {
     if provided.is_empty() {
-        let files = discover_conflicted_files()?;
+        let backend = backend.ok_or(CliError::Vcs(weavr_vcs::VcsError::NotInRepo))?;
+        let files = discover_conflicted_files(backend)?;
         if files.is_empty() {
             return Err(CliError::NoConflictedFiles);
         }
@@ -46,8 +49,8 @@ pub fn resolve_files(provided: Vec<PathBuf>) -> Result<Vec<PathBuf>, CliError> {
 }
 
 /// Lists conflicted files to stdout.
-pub fn list_conflicted_files() -> Result<(), CliError> {
-    let files = discover_conflicted_files()?;
+pub fn list_conflicted_files(backend: &dyn VcsBackend) -> Result<(), CliError> {
+    let files = discover_conflicted_files(backend)?;
 
     if files.is_empty() {
         println!("No conflicted files found");

@@ -3,6 +3,8 @@
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+use weavr_vcs::{ConflictedFile, VcsBackend, VcsError, VcsOperation};
+
 use crate::error::GitError;
 use crate::porcelain::{parse_porcelain_v1, ConflictEntry};
 use crate::state::GitOperation;
@@ -186,5 +188,35 @@ impl GitRepo {
         }
 
         Ok(String::from_utf8_lossy(&output.stdout).into_owned())
+    }
+}
+
+impl VcsBackend for GitRepo {
+    #[allow(clippy::unnecessary_literal_bound)]
+    fn name(&self) -> &str {
+        "git"
+    }
+
+    fn root(&self) -> &Path {
+        &self.root
+    }
+
+    fn conflicted_files(&self) -> Result<Vec<ConflictedFile>, VcsError> {
+        let entries = self.conflicted_entries().map_err(VcsError::from)?;
+        Ok(entries
+            .into_iter()
+            .map(|e| ConflictedFile {
+                path: e.path,
+                kind: e.conflict_type.into(),
+            })
+            .collect())
+    }
+
+    fn stage_file(&self, path: &Path) -> Result<(), VcsError> {
+        GitRepo::stage_file(self, path).map_err(VcsError::from)
+    }
+
+    fn current_operation(&self) -> Result<VcsOperation, VcsError> {
+        Ok(GitRepo::current_operation(self).into())
     }
 }
