@@ -29,21 +29,46 @@ pub fn detect_format(content: &str) -> Option<ConflictFormat> {
 
     for line in content.lines() {
         if in_conflict {
-            // First inner marker determines the format
-            if line.starts_with("+++++++") {
+            // First inner marker determines the format.
+            // Use boundary-aware checks matching the parser logic.
+            if is_marker_run(line, b'+') {
                 return Some(ConflictFormat::JjSnapshot);
             }
-            if line.starts_with("|||||||") || line.starts_with("=======") {
+            if is_marker_run(line, b'|') || is_separator_marker(line) {
                 return Some(ConflictFormat::Git);
             }
             // For jj diff format, the marker after <<<<<<< would be different;
             // for now we keep scanning content lines until we hit a marker
-        } else if line.starts_with("<<<<<<<") {
+        } else if is_marker_run(line, b'<') {
             in_conflict = true;
         }
     }
 
     None
+}
+
+/// Checks if a line is a run of 7+ identical `ch` characters, followed by
+/// either end-of-line or a space. This matches the parser's marker validation.
+fn is_marker_run(line: &str, ch: u8) -> bool {
+    let bytes = line.as_bytes();
+    if bytes.len() < 7 {
+        return false;
+    }
+
+    let count = bytes.iter().take_while(|&&b| b == ch).count();
+    if count < 7 {
+        return false;
+    }
+
+    count == bytes.len() || bytes.get(count) == Some(&b' ')
+}
+
+/// Checks if a line is a Git `=======` separator (exactly 7 `=`, then only whitespace).
+fn is_separator_marker(line: &str) -> bool {
+    let bytes = line.as_bytes();
+    bytes.len() >= 7
+        && bytes.iter().take(7).all(|&b| b == b'=')
+        && bytes[7..].iter().all(u8::is_ascii_whitespace)
 }
 
 #[cfg(test)]
