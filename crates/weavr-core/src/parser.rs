@@ -708,18 +708,18 @@ fn reconstruct_from_diff(diff_lines: &[String]) -> Result<(String, String), Pars
     Ok((base_lines.join("\n"), side_lines.join("\n")))
 }
 
-/// Fills in 'after' context for all hunks using explicit end-marker line positions.
+/// Fills in 'after' context for all hunks using explicit marker line positions.
 ///
-/// Unlike `fill_after_context`, this variant takes explicit `>>>>>>>` line positions
-/// rather than computing them from `start_line_right + right_line_count`, which
+/// Unlike `fill_after_context`, this variant takes explicit `<<<<<<<` and `>>>>>>>`
+/// line positions rather than computing them from content start lines, which
 /// doesn't work for diff format since diff lines != reconstructed content lines.
-fn fill_after_context_with_ends(hunks: &mut [ConflictHunk], lines: &[&str], end_lines: &[usize]) {
+fn fill_after_context_with_ends(
+    hunks: &mut [ConflictHunk],
+    lines: &[&str],
+    start_lines: &[usize],
+    end_lines: &[usize],
+) {
     let hunk_count = hunks.len();
-
-    let hunk_starts: Vec<usize> = hunks
-        .iter()
-        .map(|h| h.context.start_line_left.saturating_sub(1))
-        .collect();
 
     for hunk_index in 0..hunk_count {
         let end_marker_line = end_lines[hunk_index]; // 1-indexed line of >>>>>>>
@@ -728,8 +728,9 @@ fn fill_after_context_with_ends(hunks: &mut [ConflictHunk], lines: &[&str], end_
         let after_start = end_marker_line; // 0-indexed start = end_marker_line (1-indexed is line after)
         let after_end = (after_start + DEFAULT_CONTEXT_LINES).min(lines.len());
 
+        // Use the actual <<<<<<< line of the next conflict for boundary checking
         let next_conflict_start = if hunk_index + 1 < hunk_count {
-            hunk_starts[hunk_index + 1]
+            start_lines[hunk_index + 1] - 1 // Convert 1-indexed to 0-indexed
         } else {
             usize::MAX
         };
@@ -766,6 +767,7 @@ fn parse_jj_diff_markers(content: &str) -> Result<ParsedConflict, ParseError> {
     let mut hunk_id_counter: u32 = 0;
     let mut section_count: u8 = 0;
     let mut has_snapshot: bool = false;
+    let mut start_lines: Vec<usize> = Vec::new();
     let mut end_lines: Vec<usize> = Vec::new();
 
     for (line_num, line) in lines.iter().enumerate() {
@@ -889,7 +891,8 @@ fn parse_jj_diff_markers(content: &str) -> Result<ParsedConflict, ParseError> {
                 let hunk_index = hunks.len();
                 hunks.push(hunk);
                 segments.push(Segment::Conflict(hunk_index));
-                end_lines.push(one_indexed); // Track end marker position
+                start_lines.push(hunk_start_line); // Track <<<<<<< position
+                end_lines.push(one_indexed); // Track >>>>>>> position
 
                 hunk_id_counter += 1;
                 snapshot_buffer.clear();
@@ -958,7 +961,7 @@ fn parse_jj_diff_markers(content: &str) -> Result<ParsedConflict, ParseError> {
     }
 
     // Fill in 'after' context using explicit end-marker positions
-    fill_after_context_with_ends(&mut hunks, &lines, &end_lines);
+    fill_after_context_with_ends(&mut hunks, &lines, &start_lines, &end_lines);
 
     let format = if hunks.is_empty() {
         None
