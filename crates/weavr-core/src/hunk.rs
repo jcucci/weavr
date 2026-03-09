@@ -46,6 +46,7 @@ pub enum HunkState {
 
 /// A contiguous region of conflicting content.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[non_exhaustive]
 pub struct ConflictHunk {
     /// Unique identifier.
     pub id: HunkId,
@@ -68,6 +69,31 @@ pub struct ConflictHunk {
 }
 
 impl ConflictHunk {
+    /// Creates a new `ConflictHunk` with the given sides, base, context, and state.
+    ///
+    /// `extra_sides` and `extra_bases` default to empty. Use the fields directly
+    /// (within `weavr-core`) or the setter methods to populate them.
+    #[must_use]
+    pub fn new(
+        id: HunkId,
+        left: HunkContent,
+        right: HunkContent,
+        base: Option<HunkContent>,
+        context: HunkContext,
+        state: HunkState,
+    ) -> Self {
+        Self {
+            id,
+            left,
+            right,
+            base,
+            extra_sides: vec![],
+            extra_bases: vec![],
+            context,
+            state,
+        }
+    }
+
     /// Returns a hash of the hunk's content (all sides and bases).
     ///
     /// Used for caching AI explanations — identical content produces the same

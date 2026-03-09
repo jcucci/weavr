@@ -83,6 +83,7 @@ pub struct AcceptBothOptions {
 
 /// Describes the source/method of a resolution.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[non_exhaustive]
 pub enum ResolutionStrategyKind {
     /// Use left content verbatim.
     AcceptLeft,
