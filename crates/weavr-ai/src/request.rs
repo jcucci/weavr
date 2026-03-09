@@ -80,6 +80,8 @@ mod tests {
                 text: "right".to_string(),
             },
             base: None,
+            extra_sides: vec![],
+            extra_bases: vec![],
             context: HunkContext::default(),
             state: HunkState::default(),
         }

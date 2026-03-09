@@ -15,6 +15,8 @@ pub(crate) fn make_hunk(left: &str, right: &str, base: Option<&str>) -> Conflict
         base: base.map(|b| HunkContent {
             text: b.to_string(),
         }),
+        extra_sides: vec![],
+        extra_bases: vec![],
         context: HunkContext::default(),
         state: HunkState::default(),
     }

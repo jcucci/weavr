@@ -231,6 +231,8 @@ fn parse_git_markers(content: &str) -> Result<ParsedConflict, ParseError> {
                     base: base_buffer
                         .take()
                         .map(|b| HunkContent { text: b.join("\n") }),
+                    extra_sides: vec![],
+                    extra_bases: vec![],
                     context: HunkContext {
                         before,
                         after: Vec::new(), // Will be filled after parsing completes
@@ -479,6 +481,8 @@ fn parse_jj_snapshot_markers(content: &str) -> Result<ParsedConflict, ParseError
                     base: base_buffer
                         .take()
                         .map(|b| HunkContent { text: b.join("\n") }),
+                    extra_sides: vec![],
+                    extra_bases: vec![],
                     context: HunkContext {
                         before,
                         after: Vec::new(),
@@ -879,6 +883,8 @@ fn parse_jj_diff_markers(content: &str) -> Result<ParsedConflict, ParseError> {
                     left: HunkContent { text: left },
                     right: HunkContent { text: right },
                     base: base.map(|b| HunkContent { text: b }),
+                    extra_sides: vec![],
+                    extra_bases: vec![],
                     context: HunkContext {
                         before,
                         after: Vec::new(),

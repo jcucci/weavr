@@ -55,6 +55,12 @@ pub struct ConflictHunk {
     pub right: HunkContent,
     /// Base content (if 3-way merge).
     pub base: Option<HunkContent>,
+    /// Additional sides beyond left and right (for N-way merges).
+    #[serde(default)]
+    pub extra_sides: Vec<HunkContent>,
+    /// Additional bases beyond the primary base (for N-way merges).
+    #[serde(default)]
+    pub extra_bases: Vec<HunkContent>,
     /// Surrounding context.
     pub context: HunkContext,
     /// Resolution state.
@@ -62,7 +68,7 @@ pub struct ConflictHunk {
 }
 
 impl ConflictHunk {
-    /// Returns a hash of the hunk's content (left, right, base text).
+    /// Returns a hash of the hunk's content (all sides and bases).
     ///
     /// Used for caching AI explanations — identical content produces the same
     /// hash, and any change in content automatically invalidates the cache.
@@ -75,7 +81,53 @@ impl ConflictHunk {
         if let Some(base) = &self.base {
             base.text.hash(&mut hasher);
         }
+        for side in &self.extra_sides {
+            side.text.hash(&mut hasher);
+        }
+        for base in &self.extra_bases {
+            base.text.hash(&mut hasher);
+        }
         hasher.finish()
+    }
+
+    /// Iterates over all sides: left, right, then extra sides.
+    pub fn sides(&self) -> impl Iterator<Item = &HunkContent> {
+        std::iter::once(&self.left)
+            .chain(std::iter::once(&self.right))
+            .chain(self.extra_sides.iter())
+    }
+
+    /// Iterates over all bases: primary base (if present), then extra bases.
+    pub fn bases(&self) -> impl Iterator<Item = &HunkContent> {
+        self.base.iter().chain(self.extra_bases.iter())
+    }
+
+    /// Returns the side at the given index (0=left, 1=right, 2+=extra).
+    #[must_use]
+    pub fn side(&self, index: usize) -> Option<&HunkContent> {
+        match index {
+            0 => Some(&self.left),
+            1 => Some(&self.right),
+            i => self.extra_sides.get(i - 2),
+        }
+    }
+
+    /// Returns the total number of sides (always >= 2).
+    #[must_use]
+    pub fn side_count(&self) -> usize {
+        2 + self.extra_sides.len()
+    }
+
+    /// Returns the total number of bases.
+    #[must_use]
+    pub fn base_count(&self) -> usize {
+        usize::from(self.base.is_some()) + self.extra_bases.len()
+    }
+
+    /// Returns true when this conflict has more than 2 sides.
+    #[must_use]
+    pub fn is_multi_sided(&self) -> bool {
+        !self.extra_sides.is_empty()
     }
 }
 
@@ -125,6 +177,8 @@ mod tests {
             base: base.map(|b| HunkContent {
                 text: b.to_string(),
             }),
+            extra_sides: vec![],
+            extra_bases: vec![],
             context: HunkContext::default(),
             state: HunkState::default(),
         }
@@ -159,5 +213,125 @@ mod tests {
         b.id = HunkId(99);
         b.state = HunkState::Invalid;
         assert_eq!(a.content_hash(), b.content_hash());
+    }
+
+    fn make_multi_hunk(extras: &[&str], extra_bases: &[&str]) -> ConflictHunk {
+        let mut hunk = make_hunk("left", "right", Some("base"));
+        hunk.extra_sides = extras
+            .iter()
+            .map(|s| HunkContent {
+                text: (*s).to_string(),
+            })
+            .collect();
+        hunk.extra_bases = extra_bases
+            .iter()
+            .map(|b| HunkContent {
+                text: (*b).to_string(),
+            })
+            .collect();
+        hunk
+    }
+
+    #[test]
+    fn sides_iterator_two_sided() {
+        let hunk = make_hunk("left", "right", None);
+        let sides: Vec<&str> = hunk.sides().map(|s| s.text.as_str()).collect();
+        assert_eq!(sides, vec!["left", "right"]);
+    }
+
+    #[test]
+    fn sides_iterator_multi_sided() {
+        let hunk = make_multi_hunk(&["third", "fourth"], &[]);
+        let sides: Vec<&str> = hunk.sides().map(|s| s.text.as_str()).collect();
+        assert_eq!(sides, vec!["left", "right", "third", "fourth"]);
+    }
+
+    #[test]
+    fn bases_iterator_no_base() {
+        let hunk = make_hunk("left", "right", None);
+        assert_eq!(hunk.bases().count(), 0);
+    }
+
+    #[test]
+    fn bases_iterator_single_base() {
+        let hunk = make_hunk("left", "right", Some("base"));
+        let bases: Vec<&str> = hunk.bases().map(|b| b.text.as_str()).collect();
+        assert_eq!(bases, vec!["base"]);
+    }
+
+    #[test]
+    fn bases_iterator_multi_base() {
+        let hunk = make_multi_hunk(&[], &["base2", "base3"]);
+        let bases: Vec<&str> = hunk.bases().map(|b| b.text.as_str()).collect();
+        assert_eq!(bases, vec!["base", "base2", "base3"]);
+    }
+
+    #[test]
+    fn side_by_index() {
+        let hunk = make_multi_hunk(&["third"], &[]);
+        assert_eq!(hunk.side(0).unwrap().text, "left");
+        assert_eq!(hunk.side(1).unwrap().text, "right");
+        assert_eq!(hunk.side(2).unwrap().text, "third");
+        assert!(hunk.side(3).is_none());
+    }
+
+    #[test]
+    fn side_count_two_sided() {
+        let hunk = make_hunk("left", "right", None);
+        assert_eq!(hunk.side_count(), 2);
+    }
+
+    #[test]
+    fn side_count_multi_sided() {
+        let hunk = make_multi_hunk(&["third", "fourth"], &[]);
+        assert_eq!(hunk.side_count(), 4);
+    }
+
+    #[test]
+    fn base_count_none() {
+        let hunk = make_hunk("left", "right", None);
+        assert_eq!(hunk.base_count(), 0);
+    }
+
+    #[test]
+    fn base_count_with_extras() {
+        let hunk = make_multi_hunk(&[], &["base2"]);
+        assert_eq!(hunk.base_count(), 2);
+    }
+
+    #[test]
+    fn is_multi_sided_false_for_two_sided() {
+        let hunk = make_hunk("left", "right", None);
+        assert!(!hunk.is_multi_sided());
+    }
+
+    #[test]
+    fn is_multi_sided_true_for_three_sided() {
+        let hunk = make_multi_hunk(&["third"], &[]);
+        assert!(hunk.is_multi_sided());
+    }
+
+    #[test]
+    fn content_hash_differs_with_extra_sides() {
+        let a = make_hunk("left", "right", Some("base"));
+        let b = make_multi_hunk(&["third"], &[]);
+        assert_ne!(a.content_hash(), b.content_hash());
+    }
+
+    #[test]
+    fn content_hash_differs_with_extra_bases() {
+        let a = make_hunk("left", "right", Some("base"));
+        let b = make_multi_hunk(&[], &["base2"]);
+        assert_ne!(a.content_hash(), b.content_hash());
+    }
+
+    #[test]
+    fn default_construction_matches_existing_behavior() {
+        let hunk = make_hunk("left", "right", Some("base"));
+        assert!(!hunk.is_multi_sided());
+        assert_eq!(hunk.side_count(), 2);
+        assert_eq!(hunk.base_count(), 1);
+        assert!(hunk.extra_sides.is_empty());
+        assert!(hunk.extra_bases.is_empty());
     }
 }
