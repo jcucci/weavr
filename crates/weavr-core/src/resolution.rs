@@ -83,11 +83,14 @@ pub struct AcceptBothOptions {
 
 /// Describes the source/method of a resolution.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[non_exhaustive]
 pub enum ResolutionStrategyKind {
     /// Use left content verbatim.
     AcceptLeft,
     /// Use right content verbatim.
     AcceptRight,
+    /// Accept a side by index (0=left, 1=right, 2+=extra).
+    AcceptSide(usize),
     /// Combine left and right.
     AcceptBoth(AcceptBothOptions),
     /// User-provided content.
@@ -211,6 +214,20 @@ impl Resolution {
         }
     }
 
+    /// Create a resolution that accepts a side by index.
+    ///
+    /// Returns `None` if the index is out of bounds for the given hunk.
+    /// Index 0 = left, 1 = right, 2+ = extra sides.
+    #[must_use]
+    pub fn accept_side(hunk: &ConflictHunk, index: usize) -> Option<Resolution> {
+        let content = hunk.side(index)?;
+        Some(Resolution {
+            kind: ResolutionStrategyKind::AcceptSide(index),
+            content: content.text.clone(),
+            metadata: ResolutionMetadata::default(),
+        })
+    }
+
     /// Create a resolution with user-provided content.
     ///
     /// This is the escape hatch for complex merges where automated strategies
@@ -282,6 +299,8 @@ mod tests {
                 text: right.to_string(),
             },
             base: None,
+            extra_sides: vec![],
+            extra_bases: vec![],
             context: HunkContext::default(),
             state: HunkState::default(),
         }
@@ -635,5 +654,43 @@ mod tests {
         let resolution =
             Resolution::ast_merged(String::new(), Language::Python, String::new(), 1.0);
         assert_eq!(resolution.metadata.confidence, Some(100));
+    }
+
+    // accept_side() tests
+
+    #[test]
+    fn accept_side_zero_matches_accept_left() {
+        let hunk = test_hunk("left content", "right content");
+        let side = Resolution::accept_side(&hunk, 0).unwrap();
+        let left = Resolution::accept_left(&hunk);
+        assert_eq!(side.content, left.content);
+        assert_eq!(side.kind, ResolutionStrategyKind::AcceptSide(0));
+    }
+
+    #[test]
+    fn accept_side_one_matches_accept_right() {
+        let hunk = test_hunk("left content", "right content");
+        let side = Resolution::accept_side(&hunk, 1).unwrap();
+        let right = Resolution::accept_right(&hunk);
+        assert_eq!(side.content, right.content);
+        assert_eq!(side.kind, ResolutionStrategyKind::AcceptSide(1));
+    }
+
+    #[test]
+    fn accept_side_extra() {
+        let mut hunk = test_hunk("left", "right");
+        hunk.extra_sides = vec![HunkContent {
+            text: "third".to_string(),
+        }];
+        let side = Resolution::accept_side(&hunk, 2).unwrap();
+        assert_eq!(side.content, "third");
+        assert_eq!(side.kind, ResolutionStrategyKind::AcceptSide(2));
+    }
+
+    #[test]
+    fn accept_side_out_of_bounds() {
+        let hunk = test_hunk("left", "right");
+        assert!(Resolution::accept_side(&hunk, 2).is_none());
+        assert!(Resolution::accept_side(&hunk, 99).is_none());
     }
 }

@@ -71,18 +71,18 @@ mod tests {
     use weavr_core::{HunkContent, HunkContext, HunkId, HunkState};
 
     fn test_hunk() -> ConflictHunk {
-        ConflictHunk {
-            id: HunkId(1),
-            left: HunkContent {
+        ConflictHunk::new(
+            HunkId(1),
+            HunkContent {
                 text: "left".to_string(),
             },
-            right: HunkContent {
+            HunkContent {
                 text: "right".to_string(),
             },
-            base: None,
-            context: HunkContext::default(),
-            state: HunkState::default(),
-        }
+            None,
+            HunkContext::default(),
+            HunkState::default(),
+        )
     }
 
     #[test]
