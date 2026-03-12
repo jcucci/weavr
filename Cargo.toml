@@ -8,6 +8,7 @@ members = [
     "crates/weavr-ai",
     "crates/weavr-ast",
     "crates/weavr-vcs",
+    "crates/weavr-jj",
 ]
 
 [workspace.package]
@@ -36,6 +37,7 @@ weavr-tui = { path = "crates/weavr-tui", version = "0.1.0" }
 weavr-ai = { path = "crates/weavr-ai", version = "0.1.0" }
 weavr-ast = { path = "crates/weavr-ast", version = "0.1.0" }
 weavr-vcs = { path = "crates/weavr-vcs", version = "0.1.0" }
+weavr-jj = { path = "crates/weavr-jj", version = "0.1.0" }
 
 # CLI dependencies
 clap = { version = "4.4", features = ["derive"] }
