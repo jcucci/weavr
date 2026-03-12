@@ -1938,6 +1938,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "weavr-jj"
+version = "0.1.0"
+dependencies = [
+ "tempfile",
+ "thiserror",
+ "weavr-vcs",
+]
+
+[[package]]
 name = "weavr-tui"
 version = "0.1.0"
 dependencies = [

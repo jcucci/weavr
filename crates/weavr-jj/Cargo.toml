@@ -1,0 +1,21 @@
+[package]
+name = "weavr-jj"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Jujutsu (jj) integration for weavr - repository discovery and conflict detection"
+keywords = ["jj", "jujutsu", "merge", "conflict"]
+categories = ["development-tools"]
+
+[lints]
+workspace = true
+
+[dependencies]
+thiserror.workspace = true
+weavr-vcs.workspace = true
+
+[dev-dependencies]
+tempfile = "3"
