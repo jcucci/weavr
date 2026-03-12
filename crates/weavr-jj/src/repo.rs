@@ -32,7 +32,7 @@ impl JjRepo {
 
     /// Discovers the Jujutsu repository starting from the given path.
     ///
-    /// Uses `jj root --repository <path>` to find the repository root.
+    /// Uses `jj root` with the given path as the working directory to find the repository root.
     ///
     /// # Errors
     ///
@@ -109,7 +109,7 @@ impl VcsBackend for JjRepo {
             .into_iter()
             .map(|path| ConflictedFile {
                 path,
-                kind: ConflictKind::BothModified,
+                kind: ConflictKind::Other,
             })
             .collect())
     }
