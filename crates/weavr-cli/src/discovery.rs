@@ -1,10 +1,47 @@
-//! VCS conflict file discovery.
+//! VCS conflict file discovery and backend auto-detection.
 
 use std::path::{Path, PathBuf};
 
 use weavr_vcs::VcsBackend;
 
+use crate::cli::VcsChoice;
 use crate::error::CliError;
+
+/// Discovers the VCS backend based on the user's choice.
+///
+/// - `Auto`: tries jj first (for colocated repos), then falls back to git.
+/// - `Git`: only tries git.
+/// - `Jj`: only tries jj.
+///
+/// Returns `None` if no backend can be discovered for the given choice.
+pub fn discover_backend(vcs_choice: VcsChoice) -> Option<Box<dyn VcsBackend>> {
+    match vcs_choice {
+        VcsChoice::Git => try_git(),
+        VcsChoice::Jj => try_jj(),
+        VcsChoice::Auto => try_jj().or_else(try_git),
+    }
+}
+
+/// Attempts to discover a Git repository.
+fn try_git() -> Option<Box<dyn VcsBackend>> {
+    weavr_git::GitRepo::discover()
+        .ok()
+        .map(|repo| Box::new(repo) as Box<dyn VcsBackend>)
+}
+
+/// Attempts to discover a Jujutsu repository.
+#[cfg(feature = "jj")]
+fn try_jj() -> Option<Box<dyn VcsBackend>> {
+    weavr_jj::JjRepo::discover()
+        .ok()
+        .map(|repo| Box::new(repo) as Box<dyn VcsBackend>)
+}
+
+/// Stub when jj feature is disabled.
+#[cfg(not(feature = "jj"))]
+fn try_jj() -> Option<Box<dyn VcsBackend>> {
+    None
+}
 
 /// Discovers files with merge conflicts using the given VCS backend.
 pub fn discover_conflicted_files(backend: &dyn VcsBackend) -> Result<Vec<PathBuf>, CliError> {

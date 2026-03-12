@@ -1915,6 +1915,7 @@ dependencies = [
  "weavr-ast",
  "weavr-core",
  "weavr-git",
+ "weavr-jj",
  "weavr-tui",
  "weavr-vcs",
 ]
