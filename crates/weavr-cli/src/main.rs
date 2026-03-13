@@ -136,24 +136,37 @@ fn run(cli: &Cli) -> Result<i32, CliError> {
     for result in &results {
         if let Some(ref content) = result.content {
             std::fs::write(&result.path, content)?;
-            println!(
-                "{}: {} hunks resolved",
-                result.path.display(),
-                result.hunks_resolved
-            );
 
-            let should_stage = config.auto_stage || result.stage_requested;
-            if should_stage {
-                if let Some(ref backend) = backend {
-                    match backend.stage_file(&result.path) {
-                        Ok(()) => println!("{}: staged", result.path.display()),
-                        Err(e) => eprintln!("{}: staging failed: {e}", result.path.display()),
+            if result.is_partial {
+                // Partial write — conflict markers remain
+                let remaining = result.total_hunks - result.hunks_resolved;
+                println!(
+                    "{}: saved with {} unresolved hunks (markers preserved)",
+                    result.path.display(),
+                    remaining
+                );
+                any_unresolved = true;
+                // Do NOT auto-stage — file still has conflict markers
+            } else {
+                println!(
+                    "{}: {} hunks resolved",
+                    result.path.display(),
+                    result.hunks_resolved
+                );
+
+                let should_stage = config.auto_stage || result.stage_requested;
+                if should_stage {
+                    if let Some(ref backend) = backend {
+                        match backend.stage_file(&result.path) {
+                            Ok(()) => println!("{}: staged", result.path.display()),
+                            Err(e) => eprintln!("{}: staging failed: {e}", result.path.display()),
+                        }
+                    } else if result.stage_requested {
+                        eprintln!(
+                            "{}: staging requested but VCS backend not available",
+                            result.path.display()
+                        );
                     }
-                } else if result.stage_requested {
-                    eprintln!(
-                        "{}: staging requested but VCS backend not available",
-                        result.path.display()
-                    );
                 }
             }
         } else {

@@ -66,6 +66,10 @@ pub struct ConflictHunk {
     pub context: HunkContext,
     /// Resolution state.
     pub state: HunkState,
+    /// The verbatim original conflict marker text (from `<<<<<<<` through `>>>>>>>`).
+    /// Used for partial save to preserve unresolved hunks with perfect fidelity.
+    #[serde(default)]
+    pub original_text: Option<String>,
 }
 
 impl ConflictHunk {
@@ -91,6 +95,7 @@ impl ConflictHunk {
             extra_bases: vec![],
             context,
             state,
+            original_text: None,
         }
     }
 
@@ -207,6 +212,7 @@ mod tests {
             extra_bases: vec![],
             context: HunkContext::default(),
             state: HunkState::default(),
+            original_text: None,
         }
     }
 

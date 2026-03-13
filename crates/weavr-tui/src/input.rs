@@ -82,6 +82,10 @@ pub enum Command {
     Quit,
     /// Write and quit (`:wq` or `:x`).
     WriteQuit,
+    /// Write with unresolved hunks, preserving conflict markers (`:w!`).
+    WritePartial,
+    /// Write with unresolved hunks and quit (`:wq!`).
+    WritePartialQuit,
     /// Force quit without saving (`:q!`).
     ForceQuit,
     /// Show help (`:help`).
@@ -110,6 +114,8 @@ impl Command {
             "wa" => Self::WriteAndStage,
             "q" => Self::Quit,
             "wq" | "x" => Self::WriteQuit,
+            "w!" => Self::WritePartial,
+            "wq!" => Self::WritePartialQuit,
             "q!" => Self::ForceQuit,
             "help" => Self::Help,
             "n" | "next" => Self::NextFile,
@@ -138,6 +144,8 @@ impl Command {
     pub fn description(&self) -> &str {
         match self {
             Self::Write => "write",
+            Self::WritePartial => "write (partial)",
+            Self::WritePartialQuit => "write (partial) and quit",
             Self::WriteAndStage => "write and stage",
             Self::Quit => "quit",
             Self::WriteQuit => "write and quit",
@@ -254,6 +262,18 @@ mod tests {
     fn parse_write_quit() {
         assert_eq!(Command::parse("wq"), Command::WriteQuit);
         assert_eq!(Command::parse("x"), Command::WriteQuit);
+    }
+
+    #[test]
+    fn parse_w_bang() {
+        assert_eq!(Command::parse("w!"), Command::WritePartial);
+        assert_eq!(Command::parse("  w!  "), Command::WritePartial);
+    }
+
+    #[test]
+    fn parse_wq_bang() {
+        assert_eq!(Command::parse("wq!"), Command::WritePartialQuit);
+        assert_eq!(Command::parse("  wq!  "), Command::WritePartialQuit);
     }
 
     #[test]

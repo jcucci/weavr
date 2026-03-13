@@ -303,6 +303,7 @@ mod tests {
             extra_bases: vec![],
             context: HunkContext::default(),
             state: HunkState::default(),
+            original_text: None,
         }
     }
 

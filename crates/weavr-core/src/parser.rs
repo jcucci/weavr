@@ -219,6 +219,9 @@ fn parse_git_markers(content: &str) -> Result<ParsedConflict, ParseError> {
                     .map(|s| (*s).to_string())
                     .collect();
 
+                // Capture the verbatim conflict marker text for partial save
+                let original_text = lines[hunk_start_line - 1..=line_num].join("\n");
+
                 // Build the hunk
                 let hunk = ConflictHunk {
                     id: HunkId(hunk_id_counter),
@@ -240,6 +243,7 @@ fn parse_git_markers(content: &str) -> Result<ParsedConflict, ParseError> {
                         start_line_right: right_content_start,
                     },
                     state: HunkState::Unresolved,
+                    original_text: Some(original_text),
                 };
 
                 let hunk_index = hunks.len();
@@ -470,6 +474,9 @@ fn parse_jj_snapshot_markers(content: &str) -> Result<ParsedConflict, ParseError
                     .map(|s| (*s).to_string())
                     .collect();
 
+                // Capture the verbatim conflict marker text for partial save
+                let original_text = lines[hunk_start_line - 1..=line_num].join("\n");
+
                 let hunk = ConflictHunk {
                     id: HunkId(hunk_id_counter),
                     left: HunkContent {
@@ -490,6 +497,7 @@ fn parse_jj_snapshot_markers(content: &str) -> Result<ParsedConflict, ParseError
                         start_line_right: side2_content_start,
                     },
                     state: HunkState::Unresolved,
+                    original_text: Some(original_text),
                 };
 
                 let hunk_index = hunks.len();
@@ -878,6 +886,9 @@ fn parse_jj_diff_markers(content: &str) -> Result<ParsedConflict, ParseError> {
                     (left_text, right_text, Some(base1))
                 };
 
+                // Capture the verbatim conflict marker text for partial save
+                let original_text = lines[hunk_start_line - 1..=line_num].join("\n");
+
                 let hunk = ConflictHunk {
                     id: HunkId(hunk_id_counter),
                     left: HunkContent { text: left },
@@ -892,6 +903,7 @@ fn parse_jj_diff_markers(content: &str) -> Result<ParsedConflict, ParseError> {
                         start_line_right: section2_content_start,
                     },
                     state: HunkState::Unresolved,
+                    original_text: Some(original_text),
                 };
 
                 let hunk_index = hunks.len();
@@ -1931,5 +1943,62 @@ after";
         assert!(matches!(&result.segments[0], Segment::Clean(s) if s == "before"));
         assert!(matches!(&result.segments[1], Segment::Conflict(0)));
         assert!(matches!(&result.segments[2], Segment::Clean(s) if s == "after"));
+    }
+
+    #[test]
+    fn original_text_captured_git_2way() {
+        let content = "before\n<<<<<<< HEAD\nleft\n=======\nright\n>>>>>>> feature\nafter";
+        let result = parse_conflict_markers(content).unwrap();
+        assert_eq!(result.hunks.len(), 1);
+        let expected = "<<<<<<< HEAD\nleft\n=======\nright\n>>>>>>> feature";
+        assert_eq!(result.hunks[0].original_text.as_deref(), Some(expected));
+    }
+
+    #[test]
+    fn original_text_captured_git_diff3() {
+        let content =
+            "before\n<<<<<<< HEAD\nleft\n||||||| base\nbase\n=======\nright\n>>>>>>> feature\nafter";
+        let result = parse_conflict_markers(content).unwrap();
+        assert_eq!(result.hunks.len(), 1);
+        let expected = "<<<<<<< HEAD\nleft\n||||||| base\nbase\n=======\nright\n>>>>>>> feature";
+        assert_eq!(result.hunks[0].original_text.as_deref(), Some(expected));
+    }
+
+    #[test]
+    fn original_text_captured_jj_snapshot() {
+        let content = "before\n<<<<<<< Conflict 1 of 1\n+++++++ Side #1\nleft\n+++++++ Side #2\nright\n>>>>>>> Conflict 1 of 1\nafter";
+        let result = parse_conflict_markers(content).unwrap();
+        assert_eq!(result.hunks.len(), 1);
+        let expected = "<<<<<<< Conflict 1 of 1\n+++++++ Side #1\nleft\n+++++++ Side #2\nright\n>>>>>>> Conflict 1 of 1";
+        assert_eq!(result.hunks[0].original_text.as_deref(), Some(expected));
+    }
+
+    #[test]
+    fn original_text_captured_jj_diff() {
+        let content = concat!(
+            "before\n",
+            "<<<<<<< Conflict 1 of 1\n",
+            "+++++++ Side #1\n",
+            "left\n",
+            "%%%%%%% Side #2\n",
+            " base\n",
+            "-base\n",
+            "+right\n",
+            ">>>>>>> Conflict 1 of 1\n",
+            "after",
+        );
+        let result = parse_conflict_markers(content).unwrap();
+        assert_eq!(result.hunks.len(), 1);
+        let expected = concat!(
+            "<<<<<<< Conflict 1 of 1\n",
+            "+++++++ Side #1\n",
+            "left\n",
+            "%%%%%%% Side #2\n",
+            " base\n",
+            "-base\n",
+            "+right\n",
+            ">>>>>>> Conflict 1 of 1",
+        );
+        assert_eq!(result.hunks[0].original_text.as_deref(), Some(expected));
     }
 }

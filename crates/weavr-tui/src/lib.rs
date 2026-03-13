@@ -69,6 +69,7 @@ pub enum FocusedPane {
 }
 
 /// Application state for the TUI.
+#[allow(clippy::struct_excessive_bools)]
 pub struct App {
     /// The active merge session.
     pub(crate) session: Option<MergeSession>,
@@ -121,6 +122,8 @@ pub struct App {
     pub(crate) stage_prompt: bool,
     /// Multi-file workspace (None for single-file mode).
     pub(crate) workspace: Option<workspace::Workspace>,
+    /// Whether a partial write was requested (single-file mode).
+    pub(crate) partial_write: bool,
 }
 
 impl App {
@@ -156,6 +159,7 @@ impl App {
             stage_requested: false,
             stage_prompt: false,
             workspace: None,
+            partial_write: false,
         }
     }
 
@@ -191,6 +195,7 @@ impl App {
             stage_requested: false,
             stage_prompt: false,
             workspace: None,
+            partial_write: false,
         }
     }
 
@@ -440,6 +445,8 @@ impl App {
         let cmd = Command::parse(&self.command_buffer);
         match cmd {
             Command::Write => self.write_file(),
+            Command::WritePartial => self.write_file_partial(),
+            Command::WritePartialQuit => self.write_partial_and_quit(),
             Command::WriteAndStage => self.write_and_stage(),
             Command::Quit => self.try_quit(),
             Command::WriteQuit => self.write_and_quit(),
@@ -503,6 +510,44 @@ impl App {
         }
     }
 
+    /// Writes the file with unresolved hunks preserved as conflict markers (`:w!`).
+    fn write_file_partial(&mut self) {
+        if !self.has_unresolved_hunks() {
+            // No unresolved hunks — delegate to normal write
+            self.write_file();
+            return;
+        }
+        let count = self.unresolved_count();
+        if self.is_multi_file() {
+            if let Some(ref mut ws) = self.workspace {
+                ws.current_mut().written = true;
+                ws.current_mut().partial = true;
+            }
+            self.set_status_message(&format!("Saved with {count} unresolved hunks remaining"));
+        } else {
+            self.partial_write = true;
+            self.quit();
+        }
+    }
+
+    /// Writes the file with unresolved hunks and quits/advances (`:wq!`).
+    fn write_partial_and_quit(&mut self) {
+        if !self.has_unresolved_hunks() {
+            // No unresolved hunks — delegate to normal write-quit
+            self.write_and_quit();
+            return;
+        }
+        if self.is_multi_file() {
+            if let Some(ref mut ws) = self.workspace {
+                ws.current_mut().partial = true;
+            }
+            self.complete_current_and_advance();
+        } else {
+            self.partial_write = true;
+            self.quit();
+        }
+    }
+
     /// Attempts to quit, showing a warning if there are unresolved hunks.
     fn try_quit(&mut self) {
         if self.is_multi_file() {
@@ -556,6 +601,12 @@ impl App {
     #[must_use]
     pub fn stage_requested(&self) -> bool {
         self.stage_requested
+    }
+
+    /// Returns whether a partial write was requested.
+    #[must_use]
+    pub fn partial_write_requested(&self) -> bool {
+        self.partial_write
     }
 
     /// Sets whether to show the staging prompt on `:wq`.
