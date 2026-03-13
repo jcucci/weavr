@@ -18,7 +18,8 @@ path = "src/main.rs"
 workspace = true
 
 [features]
-default = []
+default = ["jj"]
+jj = ["dep:weavr-jj"]
 ai = ["dep:weavr-ai", "dep:tokio"]
 ai-claude = ["ai", "weavr-ai/ai-claude"]
 ai-openai = ["ai", "weavr-ai/ai-openai"]
@@ -45,6 +46,9 @@ directories.workspace = true
 # Optional AI support
 weavr-ai = { workspace = true, optional = true }
 tokio = { workspace = true, optional = true }
+
+# Optional jj (Jujutsu) support
+weavr-jj = { workspace = true, optional = true }
 
 # Optional AST support
 weavr-ast = { workspace = true, optional = true }

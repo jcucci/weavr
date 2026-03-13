@@ -4,6 +4,18 @@ use std::path::PathBuf;
 
 use clap::{Parser, ValueEnum};
 
+/// VCS backend selection.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, ValueEnum)]
+pub enum VcsChoice {
+    /// Auto-detect (tries jj first, then git)
+    #[default]
+    Auto,
+    /// Force Git backend
+    Git,
+    /// Force Jujutsu (jj) backend
+    Jj,
+}
+
 /// Resolution strategy for headless mode.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
 pub enum Strategy {
@@ -23,6 +35,10 @@ pub enum Strategy {
 #[command(author, version, about, long_about = None)]
 #[allow(clippy::struct_excessive_bools)] // CLI flags are naturally boolean
 pub struct Cli {
+    /// VCS backend to use (auto-detects by default)
+    #[arg(long, value_enum, default_value_t = VcsChoice::Auto)]
+    pub vcs: VcsChoice,
+
     /// Files to resolve (defaults to all conflicted files)
     #[arg(value_name = "FILE")]
     pub files: Vec<PathBuf>,
@@ -82,6 +98,7 @@ mod tests {
         assert!(!cli.dry_run);
         assert!(!cli.fail_on_ambiguous);
         assert!(!cli.list);
+        assert_eq!(cli.vcs, VcsChoice::Auto);
     }
 
     #[test]
@@ -181,5 +198,23 @@ mod tests {
         let cli = Cli::parse_from(["weavr"]);
         assert!(!cli.auto_stage);
         assert!(!cli.no_stage);
+    }
+
+    #[test]
+    fn cli_parse_vcs_git() {
+        let cli = Cli::parse_from(["weavr", "--vcs", "git"]);
+        assert_eq!(cli.vcs, VcsChoice::Git);
+    }
+
+    #[test]
+    fn cli_parse_vcs_jj() {
+        let cli = Cli::parse_from(["weavr", "--vcs", "jj"]);
+        assert_eq!(cli.vcs, VcsChoice::Jj);
+    }
+
+    #[test]
+    fn cli_parse_vcs_auto() {
+        let cli = Cli::parse_from(["weavr", "--vcs", "auto"]);
+        assert_eq!(cli.vcs, VcsChoice::Auto);
     }
 }

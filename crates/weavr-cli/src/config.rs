@@ -119,6 +119,15 @@ impl RawKeybindingsConfig {
     }
 }
 
+/// Raw jj integration configuration section.
+#[cfg(feature = "jj")]
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RawJjConfig {
+    /// Run `jj squash` after all hunks in a file are resolved.
+    pub squash_after_resolve: Option<bool>,
+}
+
 /// Raw TOML configuration. All fields optional for layered merging.
 ///
 /// Top-level struct does NOT use `deny_unknown_fields` so that `[ai]`
@@ -130,6 +139,9 @@ pub struct RawConfig {
     pub headless: Option<RawHeadlessConfig>,
     pub git: Option<RawGitConfig>,
     pub keybindings: Option<RawKeybindingsConfig>,
+
+    #[cfg(feature = "jj")]
+    pub jj: Option<RawJjConfig>,
 
     #[cfg(feature = "ai")]
     pub ai: Option<weavr_ai::AiConfig>,
@@ -167,6 +179,10 @@ impl RawConfig {
                 merged.extend(hi.bindings);
                 RawKeybindingsConfig { bindings: merged }
             }),
+            #[cfg(feature = "jj")]
+            jj: merge_option(self.jj, lower.jj, |hi, lo| RawJjConfig {
+                squash_after_resolve: hi.squash_after_resolve.or(lo.squash_after_resolve),
+            }),
             #[cfg(feature = "ai")]
             ai: self.ai.or(lower.ai),
             #[cfg(feature = "ast")]
@@ -203,6 +219,8 @@ pub struct WeavrConfig {
     pub fail_on_ambiguous: bool,
     pub auto_stage: bool,
     pub stage_prompt: bool,
+    #[cfg(feature = "jj")]
+    pub squash_after_resolve: bool,
     #[cfg(feature = "ai")]
     pub ai: weavr_ai::AiConfig,
     #[cfg(feature = "ast")]
@@ -249,6 +267,13 @@ impl WeavrConfig {
             .and_then(|g| g.stage_prompt)
             .unwrap_or(true);
 
+        #[cfg(feature = "jj")]
+        let squash_after_resolve = raw
+            .jj
+            .as_ref()
+            .and_then(|j| j.squash_after_resolve)
+            .unwrap_or(false);
+
         Ok(Self {
             theme,
             default_strategy,
@@ -256,6 +281,8 @@ impl WeavrConfig {
             fail_on_ambiguous,
             auto_stage,
             stage_prompt,
+            #[cfg(feature = "jj")]
+            squash_after_resolve,
             #[cfg(feature = "ai")]
             ai: raw.ai.clone().unwrap_or_default(),
             #[cfg(feature = "ast")]
@@ -735,6 +762,59 @@ stage_prompt = false
         let git = merged.git.unwrap();
         assert_eq!(git.auto_stage, Some(true));
         assert_eq!(git.stage_prompt, Some(false));
+    }
+
+    #[cfg(feature = "jj")]
+    #[test]
+    fn parse_toml_jj_section() {
+        let toml_str = r"
+[jj]
+squash_after_resolve = true
+";
+        let raw: RawConfig = toml::from_str(toml_str).unwrap();
+        let jj = raw.jj.unwrap();
+        assert_eq!(jj.squash_after_resolve, Some(true));
+    }
+
+    #[cfg(feature = "jj")]
+    #[test]
+    fn merge_jj_config() {
+        let higher = RawConfig {
+            jj: Some(RawJjConfig {
+                squash_after_resolve: None,
+            }),
+            ..RawConfig::default()
+        };
+        let lower = RawConfig {
+            jj: Some(RawJjConfig {
+                squash_after_resolve: Some(true),
+            }),
+            ..RawConfig::default()
+        };
+
+        let merged = higher.merge(lower);
+        let jj = merged.jj.unwrap();
+        assert_eq!(jj.squash_after_resolve, Some(true));
+    }
+
+    #[cfg(feature = "jj")]
+    #[test]
+    fn from_raw_jj_defaults() {
+        let config = WeavrConfig::from_raw(&RawConfig::default()).unwrap();
+        assert!(!config.squash_after_resolve);
+    }
+
+    #[cfg(feature = "jj")]
+    #[test]
+    fn from_raw_jj_squash_enabled() {
+        let raw = RawConfig {
+            jj: Some(RawJjConfig {
+                squash_after_resolve: Some(true),
+            }),
+            ..RawConfig::default()
+        };
+        let config = WeavrConfig::from_raw(&raw).unwrap();
+        assert!(config.squash_after_resolve);
     }
 
     #[test]

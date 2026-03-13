@@ -16,22 +16,38 @@ mod tui;
 
 use clap::Parser;
 
-use weavr_vcs::VcsBackend;
-
 use cli::Cli;
 use config::WeavrConfig;
 use error::{exit_codes, CliError};
 
-/// Discovers the VCS backend (currently only Git).
-fn discover_backend() -> Option<Box<dyn VcsBackend>> {
-    match weavr_git::GitRepo::discover() {
-        Ok(repo) => Some(Box::new(repo)),
-        Err(_) => None,
+/// Runs `jj squash` in the repo root when squash-after-resolve is enabled.
+#[cfg(feature = "jj")]
+fn run_jj_squash(backend: &dyn weavr_vcs::VcsBackend) {
+    if backend.name() != "jj" {
+        return;
+    }
+    let root = backend.root();
+    match std::process::Command::new("jj")
+        .arg("squash")
+        .current_dir(root)
+        .output()
+    {
+        Ok(output) if output.status.success() => {
+            println!("jj: squashed resolved changes");
+        }
+        Ok(output) => {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            eprintln!("jj squash failed: {stderr}");
+        }
+        Err(e) => {
+            eprintln!("jj squash failed: {e}");
+        }
     }
 }
 
+#[allow(clippy::too_many_lines)]
 fn run(cli: &Cli) -> Result<i32, CliError> {
-    let backend = discover_backend();
+    let backend = discovery::discover_backend(cli.vcs);
 
     // Mode: List conflicted files
     if cli.list {
@@ -103,6 +119,13 @@ fn run(cli: &Cli) -> Result<i32, CliError> {
             }
         }
 
+        #[cfg(feature = "jj")]
+        if config.squash_after_resolve {
+            if let Some(ref backend) = backend {
+                run_jj_squash(backend.as_ref());
+            }
+        }
+
         return Ok(exit_codes::SUCCESS);
     }
 
@@ -147,6 +170,12 @@ fn run(cli: &Cli) -> Result<i32, CliError> {
     if any_unresolved {
         Ok(exit_codes::UNRESOLVED)
     } else {
+        #[cfg(feature = "jj")]
+        if config.squash_after_resolve {
+            if let Some(ref backend) = backend {
+                run_jj_squash(backend.as_ref());
+            }
+        }
         Ok(exit_codes::SUCCESS)
     }
 }
