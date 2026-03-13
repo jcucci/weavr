@@ -124,8 +124,6 @@ impl RawKeybindingsConfig {
 #[derive(Debug, Clone, Default, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct RawJjConfig {
-    /// Override jj's conflict marker style (`"diff"` or `"snapshot"`).
-    pub conflict_marker_style: Option<String>,
     /// Run `jj squash` after all hunks in a file are resolved.
     pub squash_after_resolve: Option<bool>,
 }
@@ -183,7 +181,6 @@ impl RawConfig {
             }),
             #[cfg(feature = "jj")]
             jj: merge_option(self.jj, lower.jj, |hi, lo| RawJjConfig {
-                conflict_marker_style: hi.conflict_marker_style.or(lo.conflict_marker_style),
                 squash_after_resolve: hi.squash_after_resolve.or(lo.squash_after_resolve),
             }),
             #[cfg(feature = "ai")]
@@ -770,14 +767,12 @@ stage_prompt = false
     #[cfg(feature = "jj")]
     #[test]
     fn parse_toml_jj_section() {
-        let toml_str = r#"
+        let toml_str = r"
 [jj]
-conflict_marker_style = "snapshot"
 squash_after_resolve = true
-"#;
+";
         let raw: RawConfig = toml::from_str(toml_str).unwrap();
         let jj = raw.jj.unwrap();
-        assert_eq!(jj.conflict_marker_style.as_deref(), Some("snapshot"));
         assert_eq!(jj.squash_after_resolve, Some(true));
     }
 
@@ -786,14 +781,12 @@ squash_after_resolve = true
     fn merge_jj_config() {
         let higher = RawConfig {
             jj: Some(RawJjConfig {
-                conflict_marker_style: Some("snapshot".into()),
                 squash_after_resolve: None,
             }),
             ..RawConfig::default()
         };
         let lower = RawConfig {
             jj: Some(RawJjConfig {
-                conflict_marker_style: None,
                 squash_after_resolve: Some(true),
             }),
             ..RawConfig::default()
@@ -801,7 +794,6 @@ squash_after_resolve = true
 
         let merged = higher.merge(lower);
         let jj = merged.jj.unwrap();
-        assert_eq!(jj.conflict_marker_style.as_deref(), Some("snapshot"));
         assert_eq!(jj.squash_after_resolve, Some(true));
     }
 
@@ -817,7 +809,6 @@ squash_after_resolve = true
     fn from_raw_jj_squash_enabled() {
         let raw = RawConfig {
             jj: Some(RawJjConfig {
-                conflict_marker_style: None,
                 squash_after_resolve: Some(true),
             }),
             ..RawConfig::default()

@@ -16,20 +16,6 @@ pub enum VcsChoice {
     Jj,
 }
 
-/// Conflict marker format selection.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, ValueEnum)]
-pub enum ConflictFormat {
-    /// Auto-detect from VCS configuration
-    #[default]
-    Auto,
-    /// Standard Git conflict markers
-    Git,
-    /// jj snapshot-style conflict markers
-    JjSnapshot,
-    /// jj diff-style conflict markers
-    JjDiff,
-}
-
 /// Resolution strategy for headless mode.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
 pub enum Strategy {
@@ -52,10 +38,6 @@ pub struct Cli {
     /// VCS backend to use (auto-detects by default)
     #[arg(long, value_enum, default_value_t = VcsChoice::Auto)]
     pub vcs: VcsChoice,
-
-    /// Conflict marker format (auto-detects by default)
-    #[arg(long, value_enum, default_value_t = ConflictFormat::Auto)]
-    pub conflict_format: ConflictFormat,
 
     /// Files to resolve (defaults to all conflicted files)
     #[arg(value_name = "FILE")]
@@ -117,7 +99,6 @@ mod tests {
         assert!(!cli.fail_on_ambiguous);
         assert!(!cli.list);
         assert_eq!(cli.vcs, VcsChoice::Auto);
-        assert_eq!(cli.conflict_format, ConflictFormat::Auto);
     }
 
     #[test]
@@ -235,23 +216,5 @@ mod tests {
     fn cli_parse_vcs_auto() {
         let cli = Cli::parse_from(["weavr", "--vcs", "auto"]);
         assert_eq!(cli.vcs, VcsChoice::Auto);
-    }
-
-    #[test]
-    fn cli_parse_conflict_format_git() {
-        let cli = Cli::parse_from(["weavr", "--conflict-format", "git"]);
-        assert_eq!(cli.conflict_format, ConflictFormat::Git);
-    }
-
-    #[test]
-    fn cli_parse_conflict_format_jj_snapshot() {
-        let cli = Cli::parse_from(["weavr", "--conflict-format", "jj-snapshot"]);
-        assert_eq!(cli.conflict_format, ConflictFormat::JjSnapshot);
-    }
-
-    #[test]
-    fn cli_parse_conflict_format_jj_diff() {
-        let cli = Cli::parse_from(["weavr", "--conflict-format", "jj-diff"]);
-        assert_eq!(cli.conflict_format, ConflictFormat::JjDiff);
     }
 }
