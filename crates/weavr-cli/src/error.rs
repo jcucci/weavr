@@ -53,6 +53,9 @@ pub enum CliError {
     #[error("Ambiguous hunks remain: {0} hunks could not be auto-resolved")]
     #[allow(dead_code)] // Reserved for --fail-on-ambiguous implementation
     AmbiguousHunks(usize),
+
+    #[error("Merge driver error: {0}")]
+    MergeDriver(String),
 }
 
 impl CliError {
