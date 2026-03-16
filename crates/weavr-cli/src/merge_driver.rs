@@ -16,32 +16,47 @@ pub fn run(args: &MergeDriverArgs, config: &WeavrConfig) -> Result<i32, CliError
 
     let marker_size = args.marker_size.unwrap_or(7);
 
+    if marker_size != 7 {
+        return Err(CliError::MergeDriver(format!(
+            "unsupported marker size {marker_size}: weavr currently only supports the default marker size of 7"
+        )));
+    }
+
     // Run git merge-file to produce a 3-way merge
     let output = std::process::Command::new("git")
-        .args([
-            "merge-file",
-            "--stdout",
-            &format!("--marker-size={marker_size}"),
-        ])
+        .args(["merge-file", "--stdout"])
         .arg(&args.ours)
         .arg(&args.base)
         .arg(&args.theirs)
         .output()
         .map_err(|e| CliError::MergeDriver(format!("failed to run git merge-file: {e}")))?;
 
+    let exit_code = output.status.code();
+
     let merged = String::from_utf8(output.stdout).map_err(|e| {
         CliError::MergeDriver(format!("git merge-file produced invalid UTF-8: {e}"))
     })?;
 
-    if output.status.success() {
-        // Clean merge — no conflicts
-        std::fs::write(&args.ours, &merged)?;
-        return Ok(0);
+    match exit_code {
+        Some(0) => {
+            // Clean merge — no conflicts
+            std::fs::write(&args.ours, &merged)?;
+            Ok(0)
+        }
+        Some(1) => {
+            // Exit code 1 means conflicts remain — resolve them
+            let file_path = args.path.as_deref().unwrap_or(args.ours.as_path());
+            resolve_conflicts(&merged, &args.ours, file_path, strategy, config.deduplicate)
+        }
+        other => {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            Err(CliError::MergeDriver(format!(
+                "git merge-file failed (exit code {}): {}",
+                other.map_or("unknown".to_string(), |c| c.to_string()),
+                stderr.trim()
+            )))
+        }
     }
-
-    // Exit code > 0 means conflicts remain in the output — resolve them
-    let file_path = args.path.as_deref().unwrap_or(args.ours.as_path());
-    resolve_conflicts(&merged, &args.ours, file_path, strategy)
 }
 
 /// Determines the strategy to use, in priority order:
@@ -70,6 +85,7 @@ fn resolve_conflicts(
     ours_path: &Path,
     file_path: &Path,
     strategy: Strategy,
+    deduplicate: bool,
 ) -> Result<i32, CliError> {
     let display_path = file_path.to_path_buf();
 
@@ -89,7 +105,7 @@ fn resolve_conflicts(
             Strategy::Both => {
                 let options = weavr_core::AcceptBothOptions {
                     order: weavr_core::BothOrder::LeftThenRight,
-                    deduplicate: false,
+                    deduplicate,
                     trim_whitespace: false,
                 };
                 weavr_core::Resolution::accept_both(hunk, &options)
@@ -131,7 +147,7 @@ after
         let ours = dir.path().join("ours.txt");
         std::fs::write(&ours, "placeholder").unwrap();
 
-        let code = resolve_conflicts(CONFLICTED, &ours, &ours, Strategy::Left).unwrap();
+        let code = resolve_conflicts(CONFLICTED, &ours, &ours, Strategy::Left, false).unwrap();
 
         assert_eq!(code, 0);
         let result = std::fs::read_to_string(&ours).unwrap();
@@ -146,7 +162,7 @@ after
         let ours = dir.path().join("ours.txt");
         std::fs::write(&ours, "placeholder").unwrap();
 
-        let code = resolve_conflicts(CONFLICTED, &ours, &ours, Strategy::Right).unwrap();
+        let code = resolve_conflicts(CONFLICTED, &ours, &ours, Strategy::Right, false).unwrap();
 
         assert_eq!(code, 0);
         let result = std::fs::read_to_string(&ours).unwrap();
@@ -160,7 +176,7 @@ after
         let ours = dir.path().join("ours.txt");
         std::fs::write(&ours, "placeholder").unwrap();
 
-        let code = resolve_conflicts(CONFLICTED, &ours, &ours, Strategy::Both).unwrap();
+        let code = resolve_conflicts(CONFLICTED, &ours, &ours, Strategy::Both, false).unwrap();
 
         assert_eq!(code, 0);
         let result = std::fs::read_to_string(&ours).unwrap();
@@ -175,7 +191,7 @@ after
         std::fs::write(&ours, "placeholder").unwrap();
 
         let clean = "no conflicts here\n";
-        let code = resolve_conflicts(clean, &ours, &ours, Strategy::Left).unwrap();
+        let code = resolve_conflicts(clean, &ours, &ours, Strategy::Left, false).unwrap();
 
         assert_eq!(code, 0);
         let result = std::fs::read_to_string(&ours).unwrap();

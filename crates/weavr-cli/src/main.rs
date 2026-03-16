@@ -54,10 +54,7 @@ fn run(cli: &Cli) -> Result<i32, CliError> {
         match command {
             cli::Command::MergeDriver(args) => {
                 let raw_config = config::load_config(cli.config.as_deref())?;
-                let mut cfg = WeavrConfig::from_raw(&raw_config)?;
-                if let Some(strategy) = cli.strategy {
-                    cfg.default_strategy = strategy;
-                }
+                let cfg = WeavrConfig::from_raw(&raw_config)?;
                 return merge_driver::run(args, &cfg);
             }
         }
