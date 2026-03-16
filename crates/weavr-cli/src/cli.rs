@@ -67,6 +67,14 @@ pub struct Cli {
     #[arg(long)]
     pub list: bool,
 
+    /// Check files for conflicts and exit (no resolution)
+    #[arg(long, conflicts_with_all = ["headless", "list"])]
+    pub check: bool,
+
+    /// Suppress output (exit code only); requires --check
+    #[arg(long, requires = "check")]
+    pub quiet: bool,
+
     /// Configuration file path
     #[arg(long, value_name = "PATH")]
     pub config: Option<PathBuf>,
@@ -98,6 +106,8 @@ mod tests {
         assert!(!cli.dry_run);
         assert!(!cli.fail_on_ambiguous);
         assert!(!cli.list);
+        assert!(!cli.check);
+        assert!(!cli.quiet);
         assert_eq!(cli.vcs, VcsChoice::Auto);
     }
 
@@ -216,5 +226,37 @@ mod tests {
     fn cli_parse_vcs_auto() {
         let cli = Cli::parse_from(["weavr", "--vcs", "auto"]);
         assert_eq!(cli.vcs, VcsChoice::Auto);
+    }
+
+    #[test]
+    fn cli_parse_check() {
+        let cli = Cli::parse_from(["weavr", "--check", "file.rs"]);
+        assert!(cli.check);
+        assert!(!cli.quiet);
+    }
+
+    #[test]
+    fn cli_parse_check_quiet() {
+        let cli = Cli::parse_from(["weavr", "--check", "--quiet", "file.rs"]);
+        assert!(cli.check);
+        assert!(cli.quiet);
+    }
+
+    #[test]
+    fn cli_check_conflicts_with_headless() {
+        let result = Cli::try_parse_from(["weavr", "--check", "--headless"]);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn cli_check_conflicts_with_list() {
+        let result = Cli::try_parse_from(["weavr", "--check", "--list"]);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn cli_quiet_requires_check() {
+        let result = Cli::try_parse_from(["weavr", "--quiet"]);
+        assert!(result.is_err());
     }
 }

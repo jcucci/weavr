@@ -7,6 +7,7 @@
 
 #![forbid(unsafe_code)]
 
+mod check;
 mod cli;
 mod config;
 mod discovery;
@@ -56,6 +57,34 @@ fn run(cli: &Cli) -> Result<i32, CliError> {
             .ok_or(CliError::Vcs(weavr_vcs::VcsError::NotInRepo))?;
         discovery::list_conflicted_files(backend)?;
         return Ok(exit_codes::SUCCESS);
+    }
+
+    // Mode: Check for conflicts
+    if cli.check {
+        let files = if cli.files.is_empty() {
+            let backend = backend
+                .as_deref()
+                .ok_or(CliError::Vcs(weavr_vcs::VcsError::NotInRepo))?;
+            discovery::discover_conflicted_files(backend)?
+        } else {
+            cli.files.clone()
+        };
+
+        let results: Vec<check::CheckResult> = files
+            .iter()
+            .map(|p| check::check_file(p))
+            .collect::<Result<_, _>>()?;
+        let has_conflicts = results.iter().any(|r| r.conflict_count > 0);
+
+        if !cli.quiet {
+            check::print_summary(&results);
+        }
+
+        return Ok(if has_conflicts {
+            exit_codes::UNRESOLVED
+        } else {
+            exit_codes::SUCCESS
+        });
     }
 
     // Load and resolve configuration (layers 1-4)
