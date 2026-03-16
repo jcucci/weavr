@@ -38,8 +38,20 @@ pub enum Command {
     Init(InitArgs),
 }
 
+/// Scope for jj configuration.
+#[cfg(feature = "jj")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, ValueEnum)]
+pub enum JjScope {
+    /// Repository-local config
+    #[default]
+    Repo,
+    /// User-level config
+    User,
+}
+
 /// Arguments for the `init` subcommand.
 #[derive(Debug, Args)]
+#[allow(clippy::struct_excessive_bools)] // CLI flags are naturally boolean
 pub struct InitArgs {
     /// Overwrite existing config files
     #[arg(long)]
@@ -53,6 +65,14 @@ pub struct InitArgs {
     /// File patterns for .gitattributes (comma-separated, e.g. "*.rs,*.ts")
     #[arg(long, default_value = "*.rs", value_delimiter = ',')]
     pub patterns: Vec<String>,
+    /// Skip jj merge tool setup
+    #[cfg(feature = "jj")]
+    #[arg(long)]
+    pub no_jj: bool,
+    /// Scope for jj config (repo or user)
+    #[cfg(feature = "jj")]
+    #[arg(long, value_enum, default_value_t = JjScope::Repo, conflicts_with = "no_jj")]
+    pub jj_scope: JjScope,
 }
 
 /// Arguments for the `merge-driver` subcommand.
@@ -71,6 +91,9 @@ pub struct MergeDriverArgs {
     /// Resolution strategy (overrides config)
     #[arg(long, value_enum)]
     pub strategy: Option<Strategy>,
+    /// Write result to a separate output file instead of overwriting ours
+    #[arg(long)]
+    pub output: Option<PathBuf>,
 }
 
 /// A terminal-first merge conflict resolver
@@ -337,6 +360,80 @@ mod tests {
     #[test]
     fn cli_parse_init_global_conflicts_no_git() {
         let result = Cli::try_parse_from(["weavr", "init", "--global", "--no-git"]);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn cli_parse_merge_driver_output() {
+        let cli = Cli::parse_from([
+            "weavr",
+            "merge-driver",
+            "base.txt",
+            "ours.txt",
+            "theirs.txt",
+            "--output",
+            "out.txt",
+        ]);
+        if let Some(Command::MergeDriver(args)) = cli.command {
+            assert_eq!(args.output, Some(PathBuf::from("out.txt")));
+        } else {
+            panic!("expected MergeDriver command");
+        }
+    }
+
+    #[test]
+    fn cli_parse_merge_driver_no_output() {
+        let cli = Cli::parse_from([
+            "weavr",
+            "merge-driver",
+            "base.txt",
+            "ours.txt",
+            "theirs.txt",
+        ]);
+        if let Some(Command::MergeDriver(args)) = cli.command {
+            assert!(args.output.is_none());
+        } else {
+            panic!("expected MergeDriver command");
+        }
+    }
+
+    #[cfg(feature = "jj")]
+    #[test]
+    fn cli_parse_init_no_jj() {
+        let cli = Cli::parse_from(["weavr", "init", "--no-jj"]);
+        if let Some(Command::Init(args)) = cli.command {
+            assert!(args.no_jj);
+        } else {
+            panic!("expected Init command");
+        }
+    }
+
+    #[cfg(feature = "jj")]
+    #[test]
+    fn cli_parse_init_jj_scope_user() {
+        let cli = Cli::parse_from(["weavr", "init", "--jj-scope", "user"]);
+        if let Some(Command::Init(args)) = cli.command {
+            assert_eq!(args.jj_scope, JjScope::User);
+        } else {
+            panic!("expected Init command");
+        }
+    }
+
+    #[cfg(feature = "jj")]
+    #[test]
+    fn cli_parse_init_jj_scope_defaults_to_repo() {
+        let cli = Cli::parse_from(["weavr", "init"]);
+        if let Some(Command::Init(args)) = cli.command {
+            assert_eq!(args.jj_scope, JjScope::Repo);
+        } else {
+            panic!("expected Init command");
+        }
+    }
+
+    #[cfg(feature = "jj")]
+    #[test]
+    fn cli_parse_init_jj_scope_conflicts_with_no_jj() {
+        let result = Cli::try_parse_from(["weavr", "init", "--no-jj", "--jj-scope", "user"]);
         assert!(result.is_err());
     }
 }

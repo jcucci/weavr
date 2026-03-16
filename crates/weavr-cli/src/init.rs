@@ -38,11 +38,14 @@ const DEFAULT_CONFIG_TEMPLATE: &str = r#"# weavr configuration
 "#;
 
 /// Tracks what actions were performed for the summary output.
+#[allow(clippy::struct_excessive_bools)]
 struct Actions {
     config_created: bool,
     config_overwritten: bool,
     driver_configured: bool,
     patterns_added: Vec<String>,
+    #[cfg(feature = "jj")]
+    jj_configured: bool,
 }
 
 impl Actions {
@@ -52,14 +55,25 @@ impl Actions {
             config_overwritten: false,
             driver_configured: false,
             patterns_added: Vec::new(),
+            #[cfg(feature = "jj")]
+            jj_configured: false,
         }
     }
 
     fn did_something(&self) -> bool {
-        self.config_created
+        let base = self.config_created
             || self.config_overwritten
             || self.driver_configured
-            || !self.patterns_added.is_empty()
+            || !self.patterns_added.is_empty();
+
+        #[cfg(feature = "jj")]
+        {
+            base || self.jj_configured
+        }
+        #[cfg(not(feature = "jj"))]
+        {
+            base
+        }
     }
 }
 
@@ -67,20 +81,26 @@ impl Actions {
 pub fn run(args: &InitArgs) -> Result<i32, CliError> {
     let mut actions = Actions::new();
 
-    // Resolve repo root once so all files are written consistently.
-    // When --no-git, we may not be in a git repo, so fall back to cwd.
+    // Resolve repo root: try git first (unless --no-git), then jj (unless --no-jj), then cwd.
     let repo_root = if args.no_git {
-        std::env::current_dir()
-            .map_err(|e| CliError::Init(format!("failed to get current directory: {e}")))?
+        fallback_repo_root(args)?
     } else {
-        git_repo_root()?
+        match git_repo_root() {
+            Ok(root) => root,
+            Err(_) => fallback_repo_root(args)?,
+        }
     };
 
     write_config_file(&repo_root, args.force, &mut actions)?;
 
-    if !args.no_git {
+    if !args.no_git && git_repo_root().is_ok() {
         setup_git_merge_driver(args.global, &mut actions)?;
         setup_gitattributes(&repo_root, &args.patterns, &mut actions)?;
+    }
+
+    #[cfg(feature = "jj")]
+    if !args.no_jj && jj_repo_root().is_ok() {
+        setup_jj_merge_tool(args.jj_scope, &mut actions)?;
     }
 
     if actions.did_something() {
@@ -101,11 +121,33 @@ pub fn run(args: &InitArgs) -> Result<i32, CliError> {
         for pattern in &actions.patterns_added {
             println!("  added {pattern} merge=weavr to .gitattributes");
         }
+        #[cfg(feature = "jj")]
+        if actions.jj_configured {
+            let scope_label = match args.jj_scope {
+                crate::cli::JjScope::Repo => "repo",
+                crate::cli::JjScope::User => "user",
+            };
+            println!("  configured jj merge tool ({scope_label} scope)");
+        }
     } else {
         println!("weavr: nothing to do (already initialized)");
     }
 
     Ok(exit_codes::SUCCESS)
+}
+
+/// Fallback repo root resolution when git is unavailable or skipped.
+fn fallback_repo_root(args: &InitArgs) -> Result<PathBuf, CliError> {
+    #[cfg(feature = "jj")]
+    {
+        let _ = args;
+        if let Ok(root) = jj_repo_root() {
+            return Ok(root);
+        }
+    }
+    let _ = args;
+    std::env::current_dir()
+        .map_err(|e| CliError::Init(format!("failed to get current directory: {e}")))
 }
 
 /// Writes `.weavr.toml` with documented defaults. Skips if it exists unless `--force`.
@@ -235,6 +277,86 @@ fn setup_gitattributes(
     Ok(())
 }
 
+/// Returns the jj repository root via `jj root`.
+#[cfg(feature = "jj")]
+fn jj_repo_root() -> Result<PathBuf, CliError> {
+    let output = std::process::Command::new("jj")
+        .args(["root"])
+        .output()
+        .map_err(|e| CliError::Init(format!("failed to run jj root: {e}")))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(CliError::Init(format!(
+            "not a jj repository: {}",
+            stderr.trim()
+        )));
+    }
+
+    let root = String::from_utf8(output.stdout)
+        .map_err(|e| CliError::Init(format!("invalid UTF-8 from jj root: {e}")))?;
+
+    Ok(PathBuf::from(root.trim()))
+}
+
+/// Reads the effective jj config value, returning `None` if not set.
+#[cfg(feature = "jj")]
+fn jj_config_get(key: &str) -> Option<String> {
+    let output = std::process::Command::new("jj")
+        .args(["config", "get", key])
+        .output()
+        .ok()?;
+    if output.status.success() {
+        Some(String::from_utf8_lossy(&output.stdout).trim().to_string())
+    } else {
+        None
+    }
+}
+
+/// Configures weavr as a jj merge tool.
+#[cfg(feature = "jj")]
+fn setup_jj_merge_tool(
+    jj_scope: crate::cli::JjScope,
+    actions: &mut Actions,
+) -> Result<(), CliError> {
+    let scope_flag = match jj_scope {
+        crate::cli::JjScope::Repo => "--repo",
+        crate::cli::JjScope::User => "--user",
+    };
+
+    let program_key = "merge-tools.weavr.program";
+    let program_value = "weavr";
+    let args_key = "merge-tools.weavr.merge-args";
+    let args_value = r#"["merge-driver", "$base", "$left", "$right", "$marker_length", "$path", "--output", "$output"]"#;
+
+    let program_set = jj_config_get(program_key).is_some_and(|v| v == program_value);
+    let args_set = jj_config_get(args_key).is_some_and(|v| v == args_value);
+
+    if program_set && args_set {
+        return Ok(());
+    }
+
+    let configs = [(program_key, program_value), (args_key, args_value)];
+
+    for (key, value) in &configs {
+        let output = std::process::Command::new("jj")
+            .args(["config", "set", scope_flag, key, value])
+            .output()
+            .map_err(|e| CliError::Init(format!("failed to run jj config set: {e}")))?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            return Err(CliError::Init(format!(
+                "jj config set {key} failed: {}",
+                stderr.trim()
+            )));
+        }
+    }
+
+    actions.jj_configured = true;
+    Ok(())
+}
+
 /// Returns the git repository root via `git rev-parse --show-toplevel`.
 fn git_repo_root() -> Result<PathBuf, CliError> {
     let output = std::process::Command::new("git")
@@ -340,6 +462,16 @@ mod tests {
         assert!(!actions.did_something());
 
         actions.config_created = true;
+        assert!(actions.did_something());
+    }
+
+    #[cfg(feature = "jj")]
+    #[test]
+    fn actions_did_something_jj() {
+        let mut actions = Actions::new();
+        assert!(!actions.did_something());
+
+        actions.jj_configured = true;
         assert!(actions.did_something());
     }
 }
