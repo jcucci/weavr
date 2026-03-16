@@ -56,6 +56,9 @@ pub enum CliError {
 
     #[error("Merge driver error: {0}")]
     MergeDriver(String),
+
+    #[error("Init error: {0}")]
+    Init(String),
 }
 
 impl CliError {

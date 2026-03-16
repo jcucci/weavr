@@ -13,6 +13,7 @@ mod config;
 mod discovery;
 mod error;
 mod headless;
+mod init;
 mod merge_driver;
 mod tui;
 
@@ -56,6 +57,9 @@ fn run(cli: &Cli) -> Result<i32, CliError> {
                 let raw_config = config::load_config(cli.config.as_deref())?;
                 let cfg = WeavrConfig::from_raw(&raw_config)?;
                 return merge_driver::run(args, &cfg);
+            }
+            cli::Command::Init(args) => {
+                return init::run(args);
             }
         }
     }
