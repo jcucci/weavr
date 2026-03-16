@@ -77,7 +77,11 @@ fn run(cli: &Cli) -> Result<i32, CliError> {
         let has_conflicts = results.iter().any(|r| r.conflict_count > 0);
 
         if !cli.quiet {
-            check::print_summary(&results);
+            if results.is_empty() {
+                println!("No conflicted files found");
+            } else {
+                check::print_summary(&results);
+            }
         }
 
         return Ok(if has_conflicts {

@@ -16,7 +16,9 @@ pub fn check_file(path: &Path) -> Result<CheckResult, CliError> {
         return Err(CliError::FileNotFound(path.to_path_buf()));
     }
     let content = std::fs::read_to_string(path)?;
-    let conflict_count = if content.contains("<<<<<<<") {
+    let has_markers =
+        content.contains("<<<<<<<") && content.contains("=======") && content.contains(">>>>>>>");
+    let conflict_count = if has_markers {
         let parsed = weavr_core::parse_conflict_markers(&content)?;
         parsed.hunks.len()
     } else {
