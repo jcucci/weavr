@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 use crate::{
     parse_conflict_markers, ApplyError, CompletionError, ConflictHunk, FileVersion, HunkId,
     HunkState, LifecycleError, MergeInput, MergeResult, MergeSummary, ParseError, ParsedConflict,
-    Resolution, ResolutionError, Segment, ValidationError,
+    PartialApplyResult, Resolution, ResolutionError, Segment, ValidationError,
 };
 
 /// The state of a merge session.
@@ -455,6 +455,72 @@ impl MergeSession {
             content,
             unresolved_hunks: vec![],
             warnings: vec![],
+            summary: MergeSummary {
+                total_hunks,
+                resolved_hunks,
+            },
+        })
+    }
+
+    /// Generates partially-merged output where resolved hunks are replaced
+    /// with their resolution content and unresolved hunks retain their original
+    /// conflict markers.
+    ///
+    /// This is a **read-only** operation — it does not change session state,
+    /// so the user can continue resolving after a partial save.
+    ///
+    /// Callable from `Parsed`, `Active`, or `FullyResolved` states.
+    ///
+    /// # Errors
+    ///
+    /// Returns `ApplyError::InternalError` if an unresolved hunk is missing
+    /// its `original_text`.
+    pub fn apply_partial(&self) -> Result<PartialApplyResult, ApplyError> {
+        match self.state {
+            MergeState::Parsed | MergeState::Active | MergeState::FullyResolved => {}
+            state => {
+                return Err(ApplyError::InternalError(format!(
+                    "cannot apply partial in state {state:?}"
+                )));
+            }
+        }
+
+        let mut output = String::new();
+        let mut unresolved = Vec::new();
+        let segment_count = self.segments.len();
+
+        for (i, segment) in self.segments.iter().enumerate() {
+            match segment {
+                Segment::Clean(text) => {
+                    output.push_str(text);
+                }
+                Segment::Conflict(hunk_index) => {
+                    let hunk = &self.hunks[*hunk_index];
+                    if let HunkState::Resolved(resolution) = &hunk.state {
+                        output.push_str(&resolution.content);
+                    } else {
+                        // Use original conflict marker text
+                        let original = hunk.original_text.as_ref().ok_or_else(|| {
+                            ApplyError::InternalError(format!(
+                                "hunk {hunk_index} missing original_text for partial apply"
+                            ))
+                        })?;
+                        output.push_str(original);
+                        unresolved.push(hunk.id);
+                    }
+                }
+            }
+            if i < segment_count - 1 {
+                output.push('\n');
+            }
+        }
+
+        let total_hunks = self.hunks.len();
+        let resolved_hunks = total_hunks - unresolved.len();
+
+        Ok(PartialApplyResult {
+            content: output,
+            unresolved_hunks: unresolved,
             summary: MergeSummary {
                 total_hunks,
                 resolved_hunks,
@@ -986,5 +1052,80 @@ after";
             MergeState::Parsed,
             MergeState::Parsed
         ));
+    }
+
+    // --- Partial apply tests ---
+
+    #[test]
+    fn apply_partial_all_resolved() {
+        let mut session = session_with_conflict();
+        let hunk_id = session.hunks()[0].id;
+        let resolution = Resolution::accept_left(&session.hunks()[0]);
+        session.set_resolution(hunk_id, resolution).unwrap();
+
+        let partial = session.apply_partial().unwrap();
+        // Should produce same output as full apply path
+        assert_eq!(partial.content, "before\nleft\nafter");
+        assert!(partial.unresolved_hunks.is_empty());
+        assert_eq!(partial.summary.total_hunks, 1);
+        assert_eq!(partial.summary.resolved_hunks, 1);
+    }
+
+    #[test]
+    fn apply_partial_some_resolved() {
+        let mut session = session_with_multiple_conflicts();
+        let hunk1_id = session.hunks()[0].id;
+        let resolution1 = Resolution::accept_left(&session.hunks()[0]);
+        session.set_resolution(hunk1_id, resolution1).unwrap();
+
+        let partial = session.apply_partial().unwrap();
+        // First hunk resolved, second preserved as markers
+        assert!(partial.content.contains("left1"));
+        assert!(partial.content.contains("<<<<<<<"));
+        assert!(partial.content.contains(">>>>>>>"));
+        assert_eq!(partial.unresolved_hunks.len(), 1);
+        assert_eq!(partial.summary.resolved_hunks, 1);
+        assert_eq!(partial.summary.total_hunks, 2);
+    }
+
+    #[test]
+    fn apply_partial_none_resolved() {
+        let session = session_with_conflict();
+        let partial = session.apply_partial().unwrap();
+        // Output should equal the original input
+        assert!(partial.content.contains("<<<<<<<"));
+        assert!(partial.content.contains(">>>>>>>"));
+        assert_eq!(partial.unresolved_hunks.len(), 1);
+        assert_eq!(partial.summary.resolved_hunks, 0);
+    }
+
+    #[test]
+    fn apply_partial_does_not_change_state() {
+        let mut session = session_with_multiple_conflicts();
+        let hunk1_id = session.hunks()[0].id;
+        let resolution1 = Resolution::accept_left(&session.hunks()[0]);
+        session.set_resolution(hunk1_id, resolution1).unwrap();
+        assert_eq!(session.state(), MergeState::Active);
+
+        let _ = session.apply_partial().unwrap();
+        // State should remain Active
+        assert_eq!(session.state(), MergeState::Active);
+    }
+
+    #[test]
+    fn apply_partial_roundtrip() {
+        let mut session = session_with_multiple_conflicts();
+        let hunk1_id = session.hunks()[0].id;
+        let resolution1 = Resolution::accept_left(&session.hunks()[0]);
+        session.set_resolution(hunk1_id, resolution1).unwrap();
+
+        let partial = session.apply_partial().unwrap();
+
+        // Re-parse the partial output
+        let reparsed =
+            MergeSession::from_conflicted(&partial.content, PathBuf::from("test.rs")).unwrap();
+        // Should have exactly 1 unresolved hunk (the second one)
+        assert_eq!(reparsed.hunks().len(), 1);
+        assert_eq!(reparsed.unresolved_hunks().len(), 1);
     }
 }

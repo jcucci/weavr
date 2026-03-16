@@ -20,6 +20,8 @@ pub struct TuiResult {
     pub total_hunks: usize,
     /// Whether the user requested staging (via `:wa` or staging prompt).
     pub stage_requested: bool,
+    /// Whether this is a partial write (some hunks still have conflict markers).
+    pub is_partial: bool,
 }
 
 /// Runs the TUI for a single file.
@@ -41,6 +43,7 @@ pub fn process_file(
             hunks_resolved: 0,
             total_hunks: 0,
             stage_requested: false,
+            is_partial: false,
         });
     }
 
@@ -86,8 +89,9 @@ pub fn process_file(
     // Run TUI event loop
     weavr_tui::run(&mut app)?;
 
-    // Extract staging preference before taking session
+    // Extract preferences before taking session
     let stage_requested = app.stage_requested();
+    let partial_write = app.partial_write_requested();
 
     // Extract session and check resolution state
     let session = app
@@ -112,6 +116,19 @@ pub fn process_file(
             hunks_resolved: result.summary.resolved_hunks,
             total_hunks,
             stage_requested,
+            is_partial: false,
+        })
+    } else if partial_write {
+        // Partial write — use apply_partial to preserve unresolved markers
+        let result = session.apply_partial()?;
+
+        Ok(TuiResult {
+            path: path.to_path_buf(),
+            content: Some(result.content),
+            hunks_resolved: result.summary.resolved_hunks,
+            total_hunks,
+            stage_requested: false,
+            is_partial: true,
         })
     } else {
         // User quit without resolving all hunks
@@ -121,6 +138,7 @@ pub fn process_file(
             hunks_resolved: resolved_count,
             total_hunks,
             stage_requested: false,
+            is_partial: false,
         })
     }
 }
@@ -130,6 +148,7 @@ pub fn process_file(
 /// Files without conflicts are returned immediately as resolved `TuiResult`s.
 /// If only one file has conflicts, delegates to `process_file`.
 /// Otherwise, creates a multi-file workspace for the TUI.
+#[allow(clippy::too_many_lines)]
 pub fn process_files(
     paths: &[PathBuf],
     config: &WeavrConfig,
@@ -153,6 +172,7 @@ pub fn process_files(
                 hunks_resolved: 0,
                 total_hunks: 0,
                 stage_requested: false,
+                is_partial: false,
             });
         } else {
             conflicted.push((path.clone(), session));
@@ -244,6 +264,19 @@ pub fn process_files(
                     hunks_resolved: merge_result.summary.resolved_hunks,
                     total_hunks,
                     stage_requested: file_state.stage_requested,
+                    is_partial: false,
+                });
+            } else if file_state.written && file_state.partial {
+                // Partial write — use apply_partial
+                let result = file_state.session.apply_partial()?;
+
+                results.push(TuiResult {
+                    path: file_state.path,
+                    content: Some(result.content),
+                    hunks_resolved: result.summary.resolved_hunks,
+                    total_hunks,
+                    stage_requested: false,
+                    is_partial: true,
                 });
             } else {
                 // User didn't complete this file
@@ -253,6 +286,7 @@ pub fn process_files(
                     hunks_resolved: resolved_count,
                     total_hunks,
                     stage_requested: false,
+                    is_partial: false,
                 });
             }
         }

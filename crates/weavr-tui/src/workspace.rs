@@ -41,6 +41,8 @@ pub struct FileState {
     pub focused_pane: FocusedPane,
     /// Whether the file has been marked as saved/completed.
     pub written: bool,
+    /// Whether the file was saved with unresolved hunks (partial write).
+    pub partial: bool,
 }
 
 impl FileState {
@@ -57,6 +59,7 @@ impl FileState {
             stage_requested: false,
             focused_pane: FocusedPane::default(),
             written: false,
+            partial: false,
         }
     }
 

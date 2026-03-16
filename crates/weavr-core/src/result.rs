@@ -37,6 +37,19 @@ pub struct MergeResult {
     pub summary: MergeSummary,
 }
 
+/// Result of a partial apply — resolved hunks are replaced, unresolved hunks
+/// retain their original conflict markers.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PartialApplyResult {
+    /// The file content with resolved hunks replaced and unresolved hunks
+    /// preserved as their original conflict markers.
+    pub content: String,
+    /// IDs of hunks that remain unresolved.
+    pub unresolved_hunks: Vec<HunkId>,
+    /// Statistics summary.
+    pub summary: MergeSummary,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

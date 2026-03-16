@@ -106,6 +106,14 @@ pub fn build_help_sections(map: &KeybindingMap) -> Vec<HelpSection> {
                     description: "Save and quit",
                 },
                 HelpBinding {
+                    key: ":w!".to_string(),
+                    description: "Save with unresolved hunks (markers preserved)",
+                },
+                HelpBinding {
+                    key: ":wq!".to_string(),
+                    description: "Save with unresolved hunks and quit",
+                },
+                HelpBinding {
                     key: ":q!".to_string(),
                     description: "Force quit",
                 },
