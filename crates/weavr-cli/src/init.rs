@@ -3,7 +3,7 @@
 //! Creates `.weavr.toml`, configures the git merge driver, and sets up
 //! `.gitattributes` entries for weavr-managed file patterns.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use crate::cli::InitArgs;
 use crate::error::{exit_codes, CliError};
@@ -67,11 +67,20 @@ impl Actions {
 pub fn run(args: &InitArgs) -> Result<i32, CliError> {
     let mut actions = Actions::new();
 
-    write_config_file(args.force, &mut actions)?;
+    // Resolve repo root once so all files are written consistently.
+    // When --no-git, we may not be in a git repo, so fall back to cwd.
+    let repo_root = if args.no_git {
+        std::env::current_dir()
+            .map_err(|e| CliError::Init(format!("failed to get current directory: {e}")))?
+    } else {
+        git_repo_root()?
+    };
+
+    write_config_file(&repo_root, args.force, &mut actions)?;
 
     if !args.no_git {
         setup_git_merge_driver(args.global, &mut actions)?;
-        setup_gitattributes(&args.patterns, &mut actions)?;
+        setup_gitattributes(&repo_root, &args.patterns, &mut actions)?;
     }
 
     if actions.did_something() {
@@ -100,8 +109,8 @@ pub fn run(args: &InitArgs) -> Result<i32, CliError> {
 }
 
 /// Writes `.weavr.toml` with documented defaults. Skips if it exists unless `--force`.
-fn write_config_file(force: bool, actions: &mut Actions) -> Result<(), CliError> {
-    let config_path = PathBuf::from(".weavr.toml");
+fn write_config_file(repo_root: &Path, force: bool, actions: &mut Actions) -> Result<(), CliError> {
+    let config_path = repo_root.join(".weavr.toml");
 
     if config_path.exists() && !force {
         return Ok(());
@@ -184,9 +193,12 @@ fn git_config_get(key: &str, scope_flags: &[&str]) -> Option<String> {
     }
 }
 
-/// Finds the repo root and appends missing `<pattern> merge=weavr` lines to `.gitattributes`.
-fn setup_gitattributes(patterns: &[String], actions: &mut Actions) -> Result<(), CliError> {
-    let repo_root = git_repo_root()?;
+/// Appends missing `<pattern> merge=weavr` lines to `.gitattributes` in `repo_root`.
+fn setup_gitattributes(
+    repo_root: &Path,
+    patterns: &[String],
+    actions: &mut Actions,
+) -> Result<(), CliError> {
     let gitattributes_path = repo_root.join(".gitattributes");
 
     let existing_content = if gitattributes_path.exists() {
@@ -246,20 +258,14 @@ fn git_repo_root() -> Result<PathBuf, CliError> {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
     use super::*;
 
     #[test]
     fn config_file_created_in_empty_dir() {
         let dir = tempfile::tempdir().unwrap();
-        let prev = std::env::current_dir().unwrap();
-        std::env::set_current_dir(dir.path()).unwrap();
 
         let mut actions = Actions::new();
-        write_config_file(false, &mut actions).unwrap();
-
-        std::env::set_current_dir(&prev).unwrap();
+        write_config_file(dir.path(), false, &mut actions).unwrap();
 
         assert!(actions.config_created);
         assert!(!actions.config_overwritten);
@@ -272,13 +278,9 @@ mod tests {
     fn config_file_skipped_when_exists() {
         let dir = tempfile::tempdir().unwrap();
         std::fs::write(dir.path().join(".weavr.toml"), "existing").unwrap();
-        let prev = std::env::current_dir().unwrap();
-        std::env::set_current_dir(dir.path()).unwrap();
 
         let mut actions = Actions::new();
-        write_config_file(false, &mut actions).unwrap();
-
-        std::env::set_current_dir(&prev).unwrap();
+        write_config_file(dir.path(), false, &mut actions).unwrap();
 
         assert!(!actions.config_created);
         assert!(!actions.config_overwritten);
@@ -290,13 +292,9 @@ mod tests {
     fn config_file_overwritten_with_force() {
         let dir = tempfile::tempdir().unwrap();
         std::fs::write(dir.path().join(".weavr.toml"), "old").unwrap();
-        let prev = std::env::current_dir().unwrap();
-        std::env::set_current_dir(dir.path()).unwrap();
 
         let mut actions = Actions::new();
-        write_config_file(true, &mut actions).unwrap();
-
-        std::env::set_current_dir(&prev).unwrap();
+        write_config_file(dir.path(), true, &mut actions).unwrap();
 
         assert!(!actions.config_created);
         assert!(actions.config_overwritten);
@@ -311,11 +309,12 @@ mod tests {
         std::fs::write(&gitattributes, "*.rs merge=weavr\n").unwrap();
 
         let mut actions = Actions::new();
-        setup_gitattributes_in_dir(
+        setup_gitattributes(
+            dir.path(),
             &["*.rs".to_string(), "*.ts".to_string()],
             &mut actions,
-            dir.path(),
-        );
+        )
+        .unwrap();
 
         assert_eq!(actions.patterns_added, vec!["*.ts"]);
         let content = std::fs::read_to_string(&gitattributes).unwrap();
@@ -328,7 +327,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
 
         let mut actions = Actions::new();
-        setup_gitattributes_in_dir(&["*.rs".to_string()], &mut actions, dir.path());
+        setup_gitattributes(dir.path(), &["*.rs".to_string()], &mut actions).unwrap();
 
         assert_eq!(actions.patterns_added, vec!["*.rs"]);
         let content = std::fs::read_to_string(dir.path().join(".gitattributes")).unwrap();
@@ -342,39 +341,5 @@ mod tests {
 
         actions.config_created = true;
         assert!(actions.did_something());
-    }
-
-    /// Helper that exercises gitattributes logic without requiring a real git repo.
-    fn setup_gitattributes_in_dir(patterns: &[String], actions: &mut Actions, repo_root: &Path) {
-        let gitattributes_path = repo_root.join(".gitattributes");
-
-        let existing_content = if gitattributes_path.exists() {
-            std::fs::read_to_string(&gitattributes_path).unwrap()
-        } else {
-            String::new()
-        };
-
-        let mut lines_to_add = Vec::new();
-        for pattern in patterns {
-            let entry = format!("{pattern} merge=weavr");
-            let already_present = existing_content.lines().any(|line| line.trim() == entry);
-
-            if !already_present {
-                lines_to_add.push(entry);
-                actions.patterns_added.push(pattern.clone());
-            }
-        }
-
-        if !lines_to_add.is_empty() {
-            let mut content = existing_content;
-            if !content.is_empty() && !content.ends_with('\n') {
-                content.push('\n');
-            }
-            for line in &lines_to_add {
-                content.push_str(line);
-                content.push('\n');
-            }
-            std::fs::write(&gitattributes_path, content).unwrap();
-        }
     }
 }
