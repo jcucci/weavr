@@ -82,18 +82,21 @@ pub fn run(args: &InitArgs) -> Result<i32, CliError> {
     let mut actions = Actions::new();
 
     // Resolve repo root: try git first (unless --no-git), then jj (unless --no-jj), then cwd.
-    let repo_root = if args.no_git {
-        fallback_repo_root(args)?
+    let git_root = if args.no_git {
+        None
     } else {
-        match git_repo_root() {
-            Ok(root) => root,
-            Err(_) => fallback_repo_root(args)?,
-        }
+        git_repo_root().ok()
+    };
+
+    let repo_root = if let Some(ref root) = git_root {
+        root.clone()
+    } else {
+        fallback_repo_root(args)?
     };
 
     write_config_file(&repo_root, args.force, &mut actions)?;
 
-    if !args.no_git && git_repo_root().is_ok() {
+    if git_root.is_some() {
         setup_git_merge_driver(args.global, &mut actions)?;
         setup_gitattributes(&repo_root, &args.patterns, &mut actions)?;
     }
@@ -139,8 +142,7 @@ pub fn run(args: &InitArgs) -> Result<i32, CliError> {
 /// Fallback repo root resolution when git is unavailable or skipped.
 fn fallback_repo_root(args: &InitArgs) -> Result<PathBuf, CliError> {
     #[cfg(feature = "jj")]
-    {
-        let _ = args;
+    if !args.no_jj {
         if let Ok(root) = jj_repo_root() {
             return Ok(root);
         }
@@ -300,6 +302,11 @@ fn jj_repo_root() -> Result<PathBuf, CliError> {
 }
 
 /// Reads the effective jj config value, returning `None` if not set.
+///
+/// Note: `jj config get` reads across all scopes (repo, user, default) and
+/// returns the effective value. There is no `--repo`/`--user` flag for `get`,
+/// so the idempotency check in `setup_jj_merge_tool` uses the effective value
+/// rather than a scope-specific one.
 #[cfg(feature = "jj")]
 fn jj_config_get(key: &str) -> Option<String> {
     let output = std::process::Command::new("jj")

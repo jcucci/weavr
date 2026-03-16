@@ -89,7 +89,7 @@ fn resolve_strategy(cli_strategy: Option<Strategy>, config: &WeavrConfig) -> Str
 /// Parses conflicted content, applies the strategy, and writes the result.
 fn resolve_conflicts(
     content: &str,
-    ours_path: &Path,
+    dest_path: &Path,
     file_path: &Path,
     strategy: Strategy,
     deduplicate: bool,
@@ -101,7 +101,7 @@ fn resolve_conflicts(
 
     if hunks.is_empty() {
         // No conflict markers found — write as-is
-        std::fs::write(ours_path, content)?;
+        std::fs::write(dest_path, content)?;
         return Ok(0);
     }
 
@@ -130,7 +130,7 @@ fn resolve_conflicts(
     session.validate()?;
     let result = session.complete()?;
 
-    std::fs::write(ours_path, &result.content)?;
+    std::fs::write(dest_path, &result.content)?;
     Ok(0)
 }
 

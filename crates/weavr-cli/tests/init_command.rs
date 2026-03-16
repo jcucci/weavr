@@ -15,6 +15,7 @@ fn init_git_repo(dir: &TempDir) {
         .expect("failed to init git repo");
 }
 
+#[cfg(feature = "jj")]
 fn jj_available() -> bool {
     std::process::Command::new("jj")
         .arg("version")
@@ -22,6 +23,7 @@ fn jj_available() -> bool {
         .is_ok_and(|o| o.status.success())
 }
 
+#[cfg(feature = "jj")]
 fn init_jj_repo(dir: &TempDir) {
     std::process::Command::new("jj")
         .args(["git", "init"])
@@ -135,6 +137,7 @@ fn init_no_git_skips_driver() {
     assert!(!dir.path().join(".gitattributes").exists());
 }
 
+#[cfg(feature = "jj")]
 #[test]
 fn init_no_jj_skips_jj_setup() {
     let dir = TempDir::new().unwrap();
@@ -147,16 +150,18 @@ fn init_no_jj_skips_jj_setup() {
         .success()
         .stdout(predicates::str::contains("created .weavr.toml"));
 
-    // Should not mention jj in output
+    // Second run should succeed and not mention jj in output
     let output = weavr_cmd()
         .args(["init", "--no-jj"])
         .current_dir(dir.path())
         .output()
         .unwrap();
+    assert!(output.status.success());
     let stdout = String::from_utf8(output.stdout).unwrap();
     assert!(!stdout.contains("jj merge tool"));
 }
 
+#[cfg(feature = "jj")]
 #[test]
 fn init_in_jj_repo_configures_merge_tool() {
     if !jj_available() {
@@ -186,6 +191,7 @@ fn init_in_jj_repo_configures_merge_tool() {
     assert_eq!(value.trim(), "weavr");
 }
 
+#[cfg(feature = "jj")]
 #[test]
 fn init_in_colocated_repo_configures_both() {
     if !jj_available() {
@@ -206,6 +212,7 @@ fn init_in_colocated_repo_configures_both() {
         .stdout(predicates::str::contains("configured jj merge tool"));
 }
 
+#[cfg(feature = "jj")]
 #[test]
 fn init_jj_idempotent() {
     if !jj_available() {
@@ -233,6 +240,7 @@ fn init_jj_idempotent() {
         .stdout(predicates::str::contains("nothing to do"));
 }
 
+#[cfg(feature = "jj")]
 #[test]
 fn init_jj_scope_user() {
     if !jj_available() {

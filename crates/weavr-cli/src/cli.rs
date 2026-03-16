@@ -80,7 +80,7 @@ pub struct InitArgs {
 pub struct MergeDriverArgs {
     /// Base (ancestor) version (%O)
     pub base: PathBuf,
-    /// Current (ours) version (%A) — result is written here
+    /// Current (ours) version (%A) — result is written here unless --output is set
     pub ours: PathBuf,
     /// Other (theirs) version (%B)
     pub theirs: PathBuf,

@@ -164,6 +164,40 @@ fn merge_driver_output_flag_writes_to_separate_file() {
 }
 
 #[test]
+fn merge_driver_output_flag_with_conflict() {
+    let base = temp_file("line1\ncommon\nline3\n");
+    let ours = temp_file("line1\nours-change\nline3\n");
+    let theirs = temp_file("line1\ntheirs-change\nline3\n");
+
+    let output_file = tempfile::NamedTempFile::new().unwrap();
+
+    weavr_cmd()
+        .args([
+            "merge-driver",
+            base.path().to_str().unwrap(),
+            ours.path().to_str().unwrap(),
+            theirs.path().to_str().unwrap(),
+            "7",
+            "test.txt",
+            "--strategy=left",
+            "--output",
+            output_file.path().to_str().unwrap(),
+        ])
+        .assert()
+        .success();
+
+    // Result written to output file with resolved content
+    let result = std::fs::read_to_string(output_file.path()).unwrap();
+    assert!(result.contains("ours-change"));
+    assert!(!result.contains("theirs-change"));
+    assert!(!result.contains("<<<<<<<"));
+
+    // Ours should be untouched
+    let ours_content = std::fs::read_to_string(ours.path()).unwrap();
+    assert_eq!(ours_content, "line1\nours-change\nline3\n");
+}
+
+#[test]
 fn bare_weavr_still_works() {
     // Ensure `weavr` with no subcommand still parses successfully.
     // It may exit 0 ("No conflicted files found") or non-zero depending
