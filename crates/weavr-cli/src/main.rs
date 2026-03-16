@@ -13,6 +13,7 @@ mod config;
 mod discovery;
 mod error;
 mod headless;
+mod merge_driver;
 mod tui;
 
 use clap::Parser;
@@ -48,6 +49,17 @@ fn run_jj_squash(backend: &dyn weavr_vcs::VcsBackend) {
 
 #[allow(clippy::too_many_lines)]
 fn run(cli: &Cli) -> Result<i32, CliError> {
+    // Handle subcommands first
+    if let Some(ref command) = cli.command {
+        match command {
+            cli::Command::MergeDriver(args) => {
+                let raw_config = config::load_config(cli.config.as_deref())?;
+                let cfg = WeavrConfig::from_raw(&raw_config)?;
+                return merge_driver::run(args, &cfg);
+            }
+        }
+    }
+
     let backend = discovery::discover_backend(cli.vcs);
 
     // Mode: List conflicted files

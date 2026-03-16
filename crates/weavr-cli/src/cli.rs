@@ -2,7 +2,7 @@
 
 use std::path::PathBuf;
 
-use clap::{Parser, ValueEnum};
+use clap::{Args, Parser, Subcommand, ValueEnum};
 
 /// VCS backend selection.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, ValueEnum)]
@@ -29,12 +29,40 @@ pub enum Strategy {
     Ast,
 }
 
+/// Subcommands for weavr.
+#[derive(Debug, Subcommand)]
+pub enum Command {
+    /// Run as a git merge driver
+    MergeDriver(MergeDriverArgs),
+}
+
+/// Arguments for the `merge-driver` subcommand.
+#[derive(Debug, Args)]
+pub struct MergeDriverArgs {
+    /// Base (ancestor) version (%O)
+    pub base: PathBuf,
+    /// Current (ours) version (%A) — result is written here
+    pub ours: PathBuf,
+    /// Other (theirs) version (%B)
+    pub theirs: PathBuf,
+    /// Conflict marker size (%L)
+    pub marker_size: Option<usize>,
+    /// Pathname of the merged file (%P)
+    pub path: Option<PathBuf>,
+    /// Resolution strategy (overrides config)
+    #[arg(long, value_enum)]
+    pub strategy: Option<Strategy>,
+}
+
 /// A terminal-first merge conflict resolver
 #[derive(Parser, Debug)]
 #[command(name = "weavr")]
 #[command(author, version, about, long_about = None)]
 #[allow(clippy::struct_excessive_bools)] // CLI flags are naturally boolean
 pub struct Cli {
+    #[command(subcommand)]
+    pub command: Option<Command>,
+
     /// VCS backend to use (auto-detects by default)
     #[arg(long, value_enum, default_value_t = VcsChoice::Auto)]
     pub vcs: VcsChoice,
