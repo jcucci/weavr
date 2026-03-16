@@ -34,6 +34,25 @@ pub enum Strategy {
 pub enum Command {
     /// Run as a git merge driver
     MergeDriver(MergeDriverArgs),
+    /// Initialize weavr in the current repository
+    Init(InitArgs),
+}
+
+/// Arguments for the `init` subcommand.
+#[derive(Debug, Args)]
+pub struct InitArgs {
+    /// Overwrite existing config files
+    #[arg(long)]
+    pub force: bool,
+    /// Skip git merge driver and .gitattributes setup
+    #[arg(long)]
+    pub no_git: bool,
+    /// Configure merge driver globally (~/.gitconfig) instead of repo-local
+    #[arg(long, conflicts_with = "no_git")]
+    pub global: bool,
+    /// File patterns for .gitattributes (comma-separated, e.g. "*.rs,*.ts")
+    #[arg(long, default_value = "*.rs", value_delimiter = ',')]
+    pub patterns: Vec<String>,
 }
 
 /// Arguments for the `merge-driver` subcommand.
@@ -285,6 +304,39 @@ mod tests {
     #[test]
     fn cli_quiet_requires_check() {
         let result = Cli::try_parse_from(["weavr", "--quiet"]);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn cli_parse_init() {
+        let cli = Cli::parse_from(["weavr", "init"]);
+        assert!(matches!(cli.command, Some(Command::Init(ref args))
+            if !args.force && !args.no_git && !args.global && args.patterns == vec!["*.rs"]));
+    }
+
+    #[test]
+    fn cli_parse_init_force() {
+        let cli = Cli::parse_from(["weavr", "init", "--force"]);
+        if let Some(Command::Init(args)) = cli.command {
+            assert!(args.force);
+        } else {
+            panic!("expected Init command");
+        }
+    }
+
+    #[test]
+    fn cli_parse_init_patterns() {
+        let cli = Cli::parse_from(["weavr", "init", "--patterns", "*.rs,*.ts,*.go"]);
+        if let Some(Command::Init(args)) = cli.command {
+            assert_eq!(args.patterns, vec!["*.rs", "*.ts", "*.go"]);
+        } else {
+            panic!("expected Init command");
+        }
+    }
+
+    #[test]
+    fn cli_parse_init_global_conflicts_no_git() {
+        let result = Cli::try_parse_from(["weavr", "init", "--global", "--no-git"]);
         assert!(result.is_err());
     }
 }
