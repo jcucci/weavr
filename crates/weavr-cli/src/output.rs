@@ -49,6 +49,38 @@ pub struct JsonMergeDriverOutput {
     pub written: bool,
 }
 
+/// JSON output for `inspect` subcommand.
+#[derive(Debug, Serialize)]
+pub struct JsonInspectOutput {
+    pub files: Vec<JsonInspectFile>,
+}
+
+/// Per-file entry in inspect JSON output.
+#[derive(Debug, Serialize)]
+pub struct JsonInspectFile {
+    pub file: PathBuf,
+    pub hunks: Vec<JsonInspectHunk>,
+}
+
+/// Per-hunk entry in inspect JSON output.
+#[derive(Debug, Serialize)]
+pub struct JsonInspectHunk {
+    pub id: u32,
+    pub left: String,
+    pub right: String,
+    pub base: Option<String>,
+    pub context: JsonInspectContext,
+}
+
+/// Context surrounding a conflict hunk.
+#[derive(Debug, Serialize)]
+pub struct JsonInspectContext {
+    pub before: Vec<String>,
+    pub after: Vec<String>,
+    pub start_line_left: usize,
+    pub start_line_right: usize,
+}
+
 /// JSON error wrapper.
 #[derive(Debug, Serialize)]
 pub struct JsonError {

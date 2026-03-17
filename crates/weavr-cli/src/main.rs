@@ -14,6 +14,7 @@ mod discovery;
 mod error;
 mod headless;
 mod init;
+mod inspect;
 mod merge_driver;
 mod output;
 mod tui;
@@ -76,6 +77,9 @@ fn run(cli: &Cli) -> Result<i32, CliError> {
             }
             cli::Command::Init(args) => {
                 return init::run(args);
+            }
+            cli::Command::Inspect(args) => {
+                return inspect::run(args);
             }
         }
     }
