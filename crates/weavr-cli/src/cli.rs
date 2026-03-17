@@ -80,10 +80,6 @@ pub struct ResolveArgs {
     #[arg(long)]
     pub auto_stage: bool,
 
-    /// Disable staging
-    #[arg(long, conflicts_with = "auto_stage")]
-    pub no_stage: bool,
-
     /// VCS backend to use
     #[arg(long, value_enum, default_value_t = VcsChoice::Auto)]
     pub vcs: VcsChoice,
@@ -612,20 +608,6 @@ mod tests {
         } else {
             panic!("expected Resolve command");
         }
-    }
-
-    #[test]
-    fn cli_parse_resolve_auto_stage_conflicts_no_stage() {
-        let result = Cli::try_parse_from([
-            "weavr",
-            "resolve",
-            "file.rs",
-            "--resolutions",
-            "r.json",
-            "--auto-stage",
-            "--no-stage",
-        ]);
-        assert!(result.is_err());
     }
 
     #[test]

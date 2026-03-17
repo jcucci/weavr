@@ -1,5 +1,6 @@
 //! Resolve subcommand — applies per-hunk resolutions from a JSON map.
 
+use std::collections::HashSet;
 use std::path::PathBuf;
 
 use serde::Deserialize;
@@ -71,9 +72,10 @@ fn validate_input(
     path: &std::path::Path,
     fail_on_ambiguous: bool,
 ) -> Result<(), CliError> {
+    let valid_ids: HashSet<u32> = hunk_ids.iter().map(|id| id.0).collect();
+
     for entry in &input.resolutions {
-        let hunk_id = HunkId(entry.hunk_id);
-        if !hunk_ids.contains(&hunk_id) {
+        if !valid_ids.contains(&entry.hunk_id) {
             return Err(CliError::InvalidArgs(format!(
                 "hunk_id {} does not exist in {}",
                 entry.hunk_id,
@@ -83,11 +85,8 @@ fn validate_input(
     }
 
     if fail_on_ambiguous {
-        let covered: Vec<u32> = input.resolutions.iter().map(|e| e.hunk_id).collect();
-        let missing_count = hunk_ids
-            .iter()
-            .filter(|id| !covered.contains(&id.0))
-            .count();
+        let covered: HashSet<u32> = input.resolutions.iter().map(|e| e.hunk_id).collect();
+        let missing_count = valid_ids.iter().filter(|id| !covered.contains(id)).count();
         if missing_count > 0 {
             return Err(CliError::AmbiguousHunks(missing_count));
         }
@@ -106,9 +105,10 @@ fn build_resolutions(
     let mut result = Vec::new();
     for entry in &input.resolutions {
         let hunk_id = HunkId(entry.hunk_id);
-        let Some(hunk) = hunks.iter().find(|h| h.id == hunk_id) else {
-            continue;
-        };
+        let hunk = hunks
+            .iter()
+            .find(|h| h.id == hunk_id)
+            .expect("hunk_id should exist after validate_input");
 
         let resolution = match entry.strategy {
             ResolutionStrategy::Left => Resolution::accept_left(hunk),
@@ -187,7 +187,11 @@ pub fn run(args: &ResolveArgs) -> Result<i32, CliError> {
     };
 
     let backend = if args.auto_stage && !args.dry_run {
-        discovery::discover_backend(args.vcs)
+        let b = discovery::discover_backend(args.vcs);
+        if b.is_none() {
+            eprintln!("weavr: VCS backend not found, staging disabled");
+        }
+        b
     } else {
         None
     };
@@ -336,7 +340,7 @@ mod tests {
             fail_on_ambiguous: false,
             dedupe: false,
             auto_stage: false,
-            no_stage: false,
+
             vcs: crate::cli::VcsChoice::Auto,
             format: OutputFormat::Text,
         };
@@ -360,7 +364,7 @@ mod tests {
             fail_on_ambiguous: false,
             dedupe: false,
             auto_stage: false,
-            no_stage: false,
+
             vcs: crate::cli::VcsChoice::Auto,
             format: OutputFormat::Text,
         };
@@ -385,7 +389,7 @@ mod tests {
             fail_on_ambiguous: true,
             dedupe: false,
             auto_stage: false,
-            no_stage: false,
+
             vcs: crate::cli::VcsChoice::Auto,
             format: OutputFormat::Text,
         };
@@ -409,7 +413,7 @@ mod tests {
             fail_on_ambiguous: false,
             dedupe: false,
             auto_stage: false,
-            no_stage: false,
+
             vcs: crate::cli::VcsChoice::Auto,
             format: OutputFormat::Text,
         };
@@ -434,7 +438,7 @@ mod tests {
             fail_on_ambiguous: false,
             dedupe: false,
             auto_stage: false,
-            no_stage: false,
+
             vcs: crate::cli::VcsChoice::Auto,
             format: OutputFormat::Text,
         };
@@ -460,7 +464,7 @@ mod tests {
             fail_on_ambiguous: false,
             dedupe: false,
             auto_stage: false,
-            no_stage: false,
+
             vcs: crate::cli::VcsChoice::Auto,
             format: OutputFormat::Text,
         };
@@ -488,7 +492,7 @@ mod tests {
             fail_on_ambiguous: false,
             dedupe: false,
             auto_stage: false,
-            no_stage: false,
+
             vcs: crate::cli::VcsChoice::Auto,
             format: OutputFormat::Text,
         };
@@ -515,7 +519,7 @@ mod tests {
             fail_on_ambiguous: false,
             dedupe: false,
             auto_stage: false,
-            no_stage: false,
+
             vcs: crate::cli::VcsChoice::Auto,
             format: OutputFormat::Text,
         };
@@ -543,7 +547,7 @@ mod tests {
             fail_on_ambiguous: false,
             dedupe: false,
             auto_stage: false,
-            no_stage: false,
+
             vcs: crate::cli::VcsChoice::Auto,
             format: OutputFormat::Text,
         };
@@ -572,7 +576,7 @@ mod tests {
             fail_on_ambiguous: false,
             dedupe: false,
             auto_stage: false,
-            no_stage: false,
+
             vcs: crate::cli::VcsChoice::Auto,
             format: OutputFormat::Text,
         };
@@ -594,7 +598,7 @@ mod tests {
             fail_on_ambiguous: false,
             dedupe: false,
             auto_stage: false,
-            no_stage: false,
+
             vcs: crate::cli::VcsChoice::Auto,
             format: OutputFormat::Text,
         };
@@ -617,7 +621,7 @@ mod tests {
             fail_on_ambiguous: false,
             dedupe: false,
             auto_stage: false,
-            no_stage: false,
+
             vcs: crate::cli::VcsChoice::Auto,
             format: OutputFormat::Json,
         };
@@ -645,7 +649,7 @@ mod tests {
             fail_on_ambiguous: false,
             dedupe: false,
             auto_stage: false,
-            no_stage: false,
+
             vcs: crate::cli::VcsChoice::Auto,
             format: OutputFormat::Text,
         };
