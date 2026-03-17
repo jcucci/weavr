@@ -81,6 +81,22 @@ pub struct JsonInspectContext {
     pub start_line_right: usize,
 }
 
+/// JSON output for `resolve` subcommand.
+#[derive(Debug, Serialize)]
+pub struct JsonResolveOutput {
+    pub results: Vec<JsonResolveFile>,
+}
+
+/// Per-file entry in resolve JSON output.
+#[derive(Debug, Serialize)]
+pub struct JsonResolveFile {
+    pub path: PathBuf,
+    pub total_hunks: usize,
+    pub resolved_hunks: usize,
+    pub unresolved_hunks: Vec<u32>,
+    pub written: bool,
+}
+
 /// JSON error wrapper.
 #[derive(Debug, Serialize)]
 pub struct JsonError {

@@ -48,6 +48,49 @@ pub enum Command {
     Init(InitArgs),
     /// Dump structured conflict data (JSON)
     Inspect(InspectArgs),
+    /// Apply per-hunk resolutions from a JSON map
+    Resolve(ResolveArgs),
+}
+
+/// Arguments for the `resolve` subcommand.
+#[derive(Debug, Args)]
+#[allow(clippy::struct_excessive_bools)] // CLI flags are naturally boolean
+pub struct ResolveArgs {
+    /// Files to resolve conflicts in
+    #[arg(required = true, value_name = "FILE")]
+    pub files: Vec<PathBuf>,
+
+    /// Path to JSON resolutions file, or `-` for stdin
+    #[arg(long, required = true, value_name = "PATH")]
+    pub resolutions: PathBuf,
+
+    /// Preview resolved output without writing files
+    #[arg(long)]
+    pub dry_run: bool,
+
+    /// Error if any hunk has no resolution in the map
+    #[arg(long)]
+    pub fail_on_ambiguous: bool,
+
+    /// Enable deduplication for `both` strategy entries
+    #[arg(long)]
+    pub dedupe: bool,
+
+    /// Automatically stage resolved files
+    #[arg(long)]
+    pub auto_stage: bool,
+
+    /// Disable staging
+    #[arg(long, conflicts_with = "auto_stage")]
+    pub no_stage: bool,
+
+    /// VCS backend to use
+    #[arg(long, value_enum, default_value_t = VcsChoice::Auto)]
+    pub vcs: VcsChoice,
+
+    /// Output format
+    #[arg(long, value_enum, default_value_t = OutputFormat::Text)]
+    pub format: OutputFormat,
 }
 
 /// Arguments for the `inspect` subcommand.
@@ -503,5 +546,129 @@ mod tests {
     fn cli_parse_format_default_is_text() {
         let cli = Cli::parse_from(["weavr"]);
         assert_eq!(cli.format, OutputFormat::Text);
+    }
+
+    #[test]
+    fn cli_parse_resolve() {
+        let cli = Cli::parse_from([
+            "weavr",
+            "resolve",
+            "file.rs",
+            "--resolutions",
+            "decisions.json",
+        ]);
+        if let Some(Command::Resolve(args)) = cli.command {
+            assert_eq!(args.files, vec![PathBuf::from("file.rs")]);
+            assert_eq!(args.resolutions, PathBuf::from("decisions.json"));
+            assert!(!args.dry_run);
+            assert!(!args.fail_on_ambiguous);
+            assert!(!args.dedupe);
+        } else {
+            panic!("expected Resolve command");
+        }
+    }
+
+    #[test]
+    fn cli_parse_resolve_requires_resolutions() {
+        let result = Cli::try_parse_from(["weavr", "resolve", "file.rs"]);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn cli_parse_resolve_requires_file() {
+        let result = Cli::try_parse_from(["weavr", "resolve", "--resolutions", "r.json"]);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn cli_parse_resolve_dry_run() {
+        let cli = Cli::parse_from([
+            "weavr",
+            "resolve",
+            "file.rs",
+            "--resolutions",
+            "r.json",
+            "--dry-run",
+        ]);
+        if let Some(Command::Resolve(args)) = cli.command {
+            assert!(args.dry_run);
+        } else {
+            panic!("expected Resolve command");
+        }
+    }
+
+    #[test]
+    fn cli_parse_resolve_fail_on_ambiguous() {
+        let cli = Cli::parse_from([
+            "weavr",
+            "resolve",
+            "file.rs",
+            "--resolutions",
+            "r.json",
+            "--fail-on-ambiguous",
+        ]);
+        if let Some(Command::Resolve(args)) = cli.command {
+            assert!(args.fail_on_ambiguous);
+        } else {
+            panic!("expected Resolve command");
+        }
+    }
+
+    #[test]
+    fn cli_parse_resolve_auto_stage_conflicts_no_stage() {
+        let result = Cli::try_parse_from([
+            "weavr",
+            "resolve",
+            "file.rs",
+            "--resolutions",
+            "r.json",
+            "--auto-stage",
+            "--no-stage",
+        ]);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn cli_parse_resolve_format_json() {
+        let cli = Cli::parse_from([
+            "weavr",
+            "resolve",
+            "file.rs",
+            "--resolutions",
+            "r.json",
+            "--format=json",
+        ]);
+        if let Some(Command::Resolve(args)) = cli.command {
+            assert_eq!(args.format, OutputFormat::Json);
+        } else {
+            panic!("expected Resolve command");
+        }
+    }
+
+    #[test]
+    fn cli_parse_resolve_stdin() {
+        let cli = Cli::parse_from(["weavr", "resolve", "file.rs", "--resolutions", "-"]);
+        if let Some(Command::Resolve(args)) = cli.command {
+            assert_eq!(args.resolutions, PathBuf::from("-"));
+        } else {
+            panic!("expected Resolve command");
+        }
+    }
+
+    #[test]
+    fn cli_parse_resolve_multiple_files() {
+        let cli = Cli::parse_from([
+            "weavr",
+            "resolve",
+            "a.rs",
+            "b.rs",
+            "--resolutions",
+            "r.json",
+        ]);
+        if let Some(Command::Resolve(args)) = cli.command {
+            assert_eq!(args.files.len(), 2);
+        } else {
+            panic!("expected Resolve command");
+        }
     }
 }
