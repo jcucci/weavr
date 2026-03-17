@@ -1,5 +1,6 @@
 //! JSON output types for `--format=json` mode.
 
+use std::io::Write;
 use std::path::PathBuf;
 
 use serde::Serialize;
@@ -56,8 +57,10 @@ pub struct JsonError {
 
 /// Serializes the given value as JSON to stdout.
 pub fn print_json<T: Serialize>(value: &T) -> Result<(), std::io::Error> {
-    let json = serde_json::to_string_pretty(value).map_err(std::io::Error::other)?;
-    println!("{json}");
+    let stdout = std::io::stdout();
+    let mut handle = stdout.lock();
+    serde_json::to_writer_pretty(&mut handle, value).map_err(std::io::Error::other)?;
+    writeln!(handle)?;
     Ok(())
 }
 
@@ -66,7 +69,9 @@ pub fn print_json_error(message: &str) {
     let err = JsonError {
         error: message.to_string(),
     };
-    if let Ok(json) = serde_json::to_string_pretty(&err) {
-        eprintln!("{json}");
+    let stderr = std::io::stderr();
+    let mut handle = stderr.lock();
+    if serde_json::to_writer_pretty(&mut handle, &err).is_ok() {
+        let _ = writeln!(handle);
     }
 }

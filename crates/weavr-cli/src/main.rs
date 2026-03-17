@@ -82,7 +82,7 @@ fn run(cli: &Cli) -> Result<i32, CliError> {
 
     // Reject --format=json in TUI mode (no --list, --check, or --headless)
     if format == OutputFormat::Json && !cli.list && !cli.check && !cli.headless {
-        return Err(CliError::MergeDriver(
+        return Err(CliError::InvalidArgs(
             "--format=json is not supported in TUI mode; use --list, --check, or --headless"
                 .to_string(),
         ));
