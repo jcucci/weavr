@@ -3,6 +3,7 @@
 use std::io::Write;
 
 use assert_cmd::Command;
+use serde_json::Value;
 use tempfile::NamedTempFile;
 
 const CONFLICTED_CONTENT: &str = "\
@@ -84,4 +85,50 @@ fn check_multiple_files_mixed() {
         .assert()
         .code(1)
         .stdout(predicates::str::contains("1 conflict(s) in 1 file(s)"));
+}
+
+#[test]
+fn check_json_output_with_conflicts() {
+    let f = temp_file(CONFLICTED_CONTENT);
+
+    let output = weavr_cmd()
+        .args(["--check", "--format=json", f.path().to_str().unwrap()])
+        .output()
+        .unwrap();
+
+    assert_eq!(output.status.code(), Some(1));
+    let json: Value = serde_json::from_slice(&output.stdout).expect("valid JSON");
+    assert_eq!(json["total_conflicts"], 1);
+    assert_eq!(json["files"].as_array().unwrap().len(), 1);
+    assert_eq!(json["files"][0]["conflict_count"], 1);
+}
+
+#[test]
+fn check_json_output_clean() {
+    let f = temp_file(CLEAN_CONTENT);
+
+    let output = weavr_cmd()
+        .args(["--check", "--format=json", f.path().to_str().unwrap()])
+        .output()
+        .unwrap();
+
+    assert_eq!(output.status.code(), Some(0));
+    let json: Value = serde_json::from_slice(&output.stdout).expect("valid JSON");
+    assert_eq!(json["total_conflicts"], 0);
+}
+
+#[test]
+fn check_json_quiet_still_suppresses() {
+    let f = temp_file(CONFLICTED_CONTENT);
+
+    weavr_cmd()
+        .args([
+            "--check",
+            "--quiet",
+            "--format=json",
+            f.path().to_str().unwrap(),
+        ])
+        .assert()
+        .code(1)
+        .stdout(predicates::str::is_empty());
 }
