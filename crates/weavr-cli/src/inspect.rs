@@ -13,8 +13,13 @@ pub fn run(args: &InspectArgs) -> Result<i32, CliError> {
     let mut files = Vec::new();
 
     for path in &args.files {
-        let content =
-            std::fs::read_to_string(path).map_err(|_| CliError::FileNotFound(path.clone()))?;
+        let content = std::fs::read_to_string(path).map_err(|e| {
+            if e.kind() == std::io::ErrorKind::NotFound {
+                CliError::FileNotFound(path.clone())
+            } else {
+                CliError::Io(e)
+            }
+        })?;
         let session = MergeSession::from_conflicted(&content, path.clone())?;
 
         let hunks: Vec<JsonInspectHunk> = session
