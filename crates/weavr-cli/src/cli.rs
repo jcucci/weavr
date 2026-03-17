@@ -46,6 +46,16 @@ pub enum Command {
     MergeDriver(MergeDriverArgs),
     /// Initialize weavr in the current repository
     Init(InitArgs),
+    /// Dump structured conflict data (JSON)
+    Inspect(InspectArgs),
+}
+
+/// Arguments for the `inspect` subcommand.
+#[derive(Debug, Args)]
+pub struct InspectArgs {
+    /// Files to inspect for conflicts
+    #[arg(required = true, value_name = "FILE")]
+    pub files: Vec<PathBuf>,
 }
 
 /// Scope for jj configuration.
@@ -448,6 +458,32 @@ mod tests {
     #[test]
     fn cli_parse_init_jj_scope_conflicts_with_no_jj() {
         let result = Cli::try_parse_from(["weavr", "init", "--no-jj", "--jj-scope", "user"]);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn cli_parse_inspect() {
+        let cli = Cli::parse_from(["weavr", "inspect", "file.rs"]);
+        if let Some(Command::Inspect(args)) = cli.command {
+            assert_eq!(args.files, vec![PathBuf::from("file.rs")]);
+        } else {
+            panic!("expected Inspect command");
+        }
+    }
+
+    #[test]
+    fn cli_parse_inspect_multiple_files() {
+        let cli = Cli::parse_from(["weavr", "inspect", "a.rs", "b.rs"]);
+        if let Some(Command::Inspect(args)) = cli.command {
+            assert_eq!(args.files.len(), 2);
+        } else {
+            panic!("expected Inspect command");
+        }
+    }
+
+    #[test]
+    fn cli_parse_inspect_requires_file() {
+        let result = Cli::try_parse_from(["weavr", "inspect"]);
         assert!(result.is_err());
     }
 
