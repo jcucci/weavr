@@ -79,6 +79,7 @@ pub struct OpenAiProvider {
     api_key: String,
     model: String,
     max_tokens: u32,
+    timeout: std::time::Duration,
     client: reqwest::Client,
 }
 
@@ -119,6 +120,7 @@ impl OpenAiProvider {
             api_key,
             model: config.model.clone(),
             max_tokens: config.max_tokens,
+            timeout,
             client,
         })
     }
@@ -220,8 +222,10 @@ Keep the explanation brief and technical.",
 
         // Parse the raw JSON (with f32 confidence)
         let raw: RawAiResponse = serde_json::from_str(cleaned).map_err(|e| {
+            let truncated: String = text.chars().take(200).collect();
+            let suffix = if text.len() > 200 { "..." } else { "" };
             AiError::ParseError(format!(
-                "failed to parse AI response JSON: {e}\nRaw text: {text}"
+                "failed to parse AI response JSON: {e}\nRaw text: {truncated}{suffix}"
             ))
         })?;
 
@@ -234,6 +238,20 @@ Keep the explanation brief and technical.",
             suggestion: raw.suggestion,
             confidence,
             explanation: raw.explanation,
+        })
+    }
+
+    /// Sends a request and maps timeout errors to `AiError::Timeout`.
+    async fn send_request(
+        &self,
+        request: reqwest::RequestBuilder,
+    ) -> Result<reqwest::Response, AiError> {
+        request.send().await.map_err(|e| {
+            if e.is_timeout() {
+                AiError::Timeout(self.timeout)
+            } else {
+                AiError::NetworkError(e)
+            }
         })
     }
 
@@ -264,7 +282,7 @@ impl AiProvider for OpenAiProvider {
         let request = AiRequest::from_hunk(hunk, None);
         let prompt = Self::build_merge_prompt(&request);
 
-        let response = self
+        let request = self
             .client
             .post("https://api.openai.com/v1/chat/completions")
             .header("Authorization", format!("Bearer {}", self.api_key))
@@ -276,10 +294,9 @@ impl AiProvider for OpenAiProvider {
                     "role": "user",
                     "content": prompt
                 }]
-            }))
-            .send()
-            .await?;
+            }));
 
+        let response = self.send_request(request).await?;
         let status = response.status();
         if !status.is_success() {
             let status_code = status.as_u16();
@@ -319,7 +336,7 @@ impl AiProvider for OpenAiProvider {
         let request = AiRequest::from_hunk(hunk, None);
         let prompt = Self::build_explain_prompt(&request);
 
-        let response = self
+        let request = self
             .client
             .post("https://api.openai.com/v1/chat/completions")
             .header("Authorization", format!("Bearer {}", self.api_key))
@@ -331,14 +348,21 @@ impl AiProvider for OpenAiProvider {
                     "role": "user",
                     "content": prompt
                 }]
-            }))
-            .send()
-            .await?;
+            }));
 
+        let response = self.send_request(request).await?;
         let status = response.status();
         if !status.is_success() {
             let status_code = status.as_u16();
             let message = response.text().await.unwrap_or_default();
+
+            if status_code == 429 {
+                return Err(AiError::RateLimited {
+                    provider: "openai".into(),
+                    retry_after_secs: None,
+                });
+            }
+
             return Err(AiError::ProviderError {
                 provider: "openai".into(),
                 status: status_code,
