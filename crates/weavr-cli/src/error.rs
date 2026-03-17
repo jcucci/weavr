@@ -62,6 +62,10 @@ pub enum CliError {
 
     #[error("Init error: {0}")]
     Init(String),
+
+    #[cfg(feature = "ai")]
+    #[error("AI error: {0}")]
+    Ai(#[from] weavr_ai::AiError),
 }
 
 impl CliError {

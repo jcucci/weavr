@@ -242,7 +242,7 @@ impl WeavrConfig {
             Some(name) => parse_strategy(name).ok_or_else(|| ConfigError::InvalidValue {
                 key: "strategies.default".into(),
                 value: name.into(),
-                hint: "valid strategies: left, right, both, ast".into(),
+                hint: "valid strategies: left, right, both, ast, ai".into(),
             })?,
             None => Strategy::Left,
         };
@@ -313,6 +313,7 @@ fn parse_strategy(s: &str) -> Option<Strategy> {
         "right" => Some(Strategy::Right),
         "both" => Some(Strategy::Both),
         "ast" => Some(Strategy::Ast),
+        "ai" => Some(Strategy::Ai),
         _ => None,
     }
 }

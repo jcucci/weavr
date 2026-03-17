@@ -83,7 +83,9 @@ fn run(cli: &Cli) -> Result<i32, CliError> {
                 return inspect::run(args);
             }
             cli::Command::Resolve(args) => {
-                return resolve::run(args);
+                let raw_config = config::load_config(cli.config.as_deref())?;
+                let cfg = WeavrConfig::from_raw(&raw_config)?;
+                return resolve::run(args, &cfg);
             }
         }
     }
@@ -195,6 +197,29 @@ fn run(cli: &Cli) -> Result<i32, CliError> {
         #[cfg(not(feature = "ast"))]
         let ast_handle = headless::AstHandle::none();
 
+        // Build AI handle for headless mode
+        #[cfg(feature = "ai")]
+        let ai_runtime;
+        #[cfg(feature = "ai")]
+        let ai_strategy_obj;
+        #[cfg(feature = "ai")]
+        let ai_handle = if strategy == cli::Strategy::Ai {
+            if !config.ai.enabled {
+                return Err(CliError::InvalidArgs(
+                    "--strategy=ai requires [ai] enabled=true in config".into(),
+                ));
+            }
+            ai_runtime = tokio::runtime::Runtime::new().map_err(|e| {
+                CliError::InvalidArgs(format!("failed to create async runtime: {e}"))
+            })?;
+            ai_strategy_obj = build_ai_provider(&config.ai)?;
+            headless::AiHandle::some(&ai_strategy_obj, &ai_runtime)
+        } else {
+            headless::AiHandle::none()
+        };
+        #[cfg(not(feature = "ai"))]
+        let ai_handle = headless::AiHandle::none();
+
         let is_json = format == OutputFormat::Json;
         let mut json_results: Vec<output::JsonHeadlessFile> = Vec::new();
 
@@ -203,18 +228,51 @@ fn run(cli: &Cli) -> Result<i32, CliError> {
             cli::Strategy::Right => "right",
             cli::Strategy::Both => "both",
             cli::Strategy::Ast => "ast",
+            cli::Strategy::Ai => "ai",
         };
 
         for path in &files {
-            let result = headless::process_file(path, strategy, config.deduplicate, &ast_handle)?;
+            let result = headless::process_file(
+                path,
+                strategy,
+                config.deduplicate,
+                &ast_handle,
+                &ai_handle,
+                cli.fallback_strategy,
+                config.fail_on_ambiguous,
+            )?;
             let written = !cli.dry_run;
 
             if is_json {
+                let ai_details = if result.ai_metadata.is_empty() {
+                    None
+                } else {
+                    let provider = result
+                        .ai_metadata
+                        .first()
+                        .map(|m| m.provider.clone())
+                        .unwrap_or_default();
+                    Some(output::JsonAiDetails {
+                        provider,
+                        hunks: result
+                            .ai_metadata
+                            .iter()
+                            .map(|m| output::JsonAiHunkResult {
+                                hunk_id: m.hunk_id,
+                                provider: m.provider.clone(),
+                                confidence: m.confidence,
+                                explanation: m.explanation.clone(),
+                                used_fallback: m.used_fallback,
+                            })
+                            .collect(),
+                    })
+                };
                 json_results.push(output::JsonHeadlessFile {
                     path: path.clone(),
                     hunks_resolved: result.hunks_resolved,
                     strategy: strategy_name.to_string(),
                     written,
+                    ai: ai_details,
                 });
                 // Still write the file (or print for dry-run), just suppress text output
                 if written {
@@ -321,6 +379,31 @@ fn run(cli: &Cli) -> Result<i32, CliError> {
         }
         Ok(exit_codes::SUCCESS)
     }
+}
+
+/// Builds an `AiStrategy` from the AI configuration.
+#[cfg(feature = "ai")]
+fn build_ai_provider(ai_config: &weavr_ai::AiConfig) -> Result<weavr_ai::AiStrategy, CliError> {
+    let provider_name = ai_config.provider.as_deref().unwrap_or("claude");
+
+    let provider: Box<dyn weavr_ai::AiProvider> = match provider_name {
+        #[cfg(feature = "ai-claude")]
+        "claude" => Box::new(weavr_ai::providers::ClaudeProvider::with_timeout(
+            &ai_config.claude,
+            ai_config.timeout,
+        )?),
+        #[cfg(feature = "ai-openai")]
+        "openai" => Box::new(weavr_ai::providers::OpenAiProvider::new(&ai_config.openai)?),
+        #[cfg(feature = "ai-local")]
+        "local" => Box::new(weavr_ai::providers::LocalProvider::new(&ai_config.local)?),
+        other => {
+            return Err(CliError::InvalidArgs(format!(
+                "unknown AI provider '{other}' (available providers depend on compiled features)"
+            )));
+        }
+    };
+
+    Ok(weavr_ai::AiStrategy::new(provider, ai_config.clone()))
 }
 
 fn main() {

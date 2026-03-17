@@ -101,6 +101,7 @@ fn resolve_strategy(cli_strategy: Option<Strategy>, config: &WeavrConfig) -> Str
             "right" => return Strategy::Right,
             "both" => return Strategy::Both,
             "ast" => return Strategy::Ast,
+            "ai" => return Strategy::Ai,
             _ => {} // fall through to config default
         }
     }
@@ -140,8 +141,8 @@ fn resolve_conflicts(
                 };
                 weavr_core::Resolution::accept_both(hunk, &options)
             }
-            Strategy::Ast => {
-                // AST not available in merge driver context — fall back to left
+            Strategy::Ast | Strategy::Ai => {
+                // AST/AI not available in merge driver context — fall back to left
                 weavr_core::Resolution::accept_left(hunk)
             }
         };
@@ -259,6 +260,7 @@ after
                         Strategy::Right => "right",
                         Strategy::Both => "both",
                         Strategy::Ast => "ast",
+                        Strategy::Ai => "ai",
                     }
                     .into(),
                 ),

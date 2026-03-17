@@ -6,9 +6,11 @@ use std::path::PathBuf;
 use serde::Deserialize;
 
 use crate::cli::{OutputFormat, ResolveArgs};
+use crate::config::WeavrConfig;
 use crate::discovery;
 use crate::error::{exit_codes, CliError};
-use crate::output::{self, JsonResolveFile, JsonResolveOutput};
+use crate::headless::AiHandle;
+use crate::output::{self, JsonAiDetails, JsonAiHunkResult, JsonResolveFile, JsonResolveOutput};
 
 use weavr_core::{AcceptBothOptions, HunkId, MergeSession, Resolution};
 
@@ -35,6 +37,7 @@ enum ResolutionStrategy {
     Right,
     Both,
     Manual,
+    Ai,
 }
 
 /// Reads the resolutions JSON from a file path or stdin (`-`).
@@ -63,6 +66,7 @@ struct FileResolveResult {
     resolved_hunks: usize,
     unresolved: Vec<u32>,
     is_fully_resolved: bool,
+    ai_hunks: Vec<JsonAiHunkResult>,
 }
 
 /// Validates the resolution input against a file's hunks.
@@ -95,14 +99,23 @@ fn validate_input(
     Ok(())
 }
 
+/// Result of building resolutions, including any AI metadata.
+struct BuildResult {
+    resolutions: Vec<(HunkId, Resolution)>,
+    ai_hunks: Vec<JsonAiHunkResult>,
+}
+
 /// Builds Resolution objects from the input entries, borrowing hunks immutably.
 fn build_resolutions(
     input: &ResolveInput,
     session: &MergeSession,
     both_options: &AcceptBothOptions,
-) -> Result<Vec<(HunkId, Resolution)>, CliError> {
+    ai: &AiHandle<'_>,
+) -> Result<BuildResult, CliError> {
     let hunks = session.hunks();
     let mut result = Vec::new();
+    let mut ai_hunks = Vec::new();
+
     for entry in &input.resolutions {
         let hunk_id = HunkId(entry.hunk_id);
         let hunk = hunks
@@ -123,10 +136,53 @@ fn build_resolutions(
                 })?;
                 Resolution::manual(text.clone())
             }
+            ResolutionStrategy::Ai => resolve_ai_hunk(hunk, entry.hunk_id, ai, &mut ai_hunks)?,
         };
         result.push((hunk_id, resolution));
     }
-    Ok(result)
+    Ok(BuildResult {
+        resolutions: result,
+        ai_hunks,
+    })
+}
+
+/// Attempts AI resolution for a single hunk in the resolve subcommand.
+#[cfg(feature = "ai")]
+fn resolve_ai_hunk(
+    hunk: &weavr_core::ConflictHunk,
+    hunk_id: u32,
+    ai: &AiHandle<'_>,
+    ai_hunks: &mut Vec<JsonAiHunkResult>,
+) -> Result<Resolution, CliError> {
+    match ai.suggest_blocking(hunk) {
+        Ok(Some(resolution)) => {
+            ai_hunks.push(JsonAiHunkResult {
+                hunk_id,
+                provider: ai.provider_name().to_string(),
+                confidence: resolution.metadata.confidence,
+                explanation: resolution.metadata.notes.clone(),
+                used_fallback: false,
+            });
+            Ok(resolution)
+        }
+        Ok(None) => Err(CliError::InvalidArgs(format!(
+            "hunk_id {hunk_id}: AI declined resolution (confidence below threshold)"
+        ))),
+        Err(e) => Err(CliError::Ai(e)),
+    }
+}
+
+/// Stub when `ai` feature is disabled — returns a clear error.
+#[cfg(not(feature = "ai"))]
+fn resolve_ai_hunk(
+    _hunk: &weavr_core::ConflictHunk,
+    _hunk_id: u32,
+    _ai: &AiHandle<'_>,
+    _ai_hunks: &mut Vec<JsonAiHunkResult>,
+) -> Result<Resolution, CliError> {
+    Err(CliError::InvalidArgs(
+        "\"strategy\": \"ai\" requires the 'ai' feature (compile with --features ai-claude)".into(),
+    ))
 }
 
 /// Processes a single file: validates, applies resolutions, and produces output.
@@ -135,6 +191,7 @@ fn resolve_file(
     input: &ResolveInput,
     both_options: &AcceptBothOptions,
     fail_on_ambiguous: bool,
+    ai: &AiHandle<'_>,
 ) -> Result<FileResolveResult, CliError> {
     let content = std::fs::read_to_string(path).map_err(|e| {
         if e.kind() == std::io::ErrorKind::NotFound {
@@ -150,8 +207,8 @@ fn resolve_file(
 
     validate_input(input, &hunk_ids, path, fail_on_ambiguous)?;
 
-    let resolutions_to_apply = build_resolutions(input, &session, both_options)?;
-    for (hunk_id, resolution) in resolutions_to_apply {
+    let build_result = build_resolutions(input, &session, both_options, ai)?;
+    for (hunk_id, resolution) in build_result.resolutions {
         session.set_resolution(hunk_id, resolution)?;
     }
 
@@ -173,11 +230,13 @@ fn resolve_file(
         resolved_hunks,
         unresolved,
         is_fully_resolved,
+        ai_hunks: build_result.ai_hunks,
     })
 }
 
 /// Runs the `resolve` subcommand.
-pub fn run(args: &ResolveArgs) -> Result<i32, CliError> {
+#[allow(clippy::too_many_lines)]
+pub fn run(args: &ResolveArgs, config: &WeavrConfig) -> Result<i32, CliError> {
     let input = read_resolutions(&args.resolutions)?;
     let is_json = args.format == OutputFormat::Json;
 
@@ -185,6 +244,36 @@ pub fn run(args: &ResolveArgs) -> Result<i32, CliError> {
         deduplicate: args.dedupe,
         ..AcceptBothOptions::default()
     };
+
+    // Check if any resolution uses the AI strategy
+    let uses_ai = input
+        .resolutions
+        .iter()
+        .any(|e| matches!(e.strategy, ResolutionStrategy::Ai));
+
+    // Build AI handle if needed
+    #[cfg(feature = "ai")]
+    let ai_runtime;
+    #[cfg(feature = "ai")]
+    let ai_strategy_obj;
+    #[cfg(feature = "ai")]
+    let ai_handle = if uses_ai {
+        if !config.ai.enabled {
+            return Err(CliError::InvalidArgs(
+                "\"strategy\": \"ai\" requires [ai] enabled=true in config".into(),
+            ));
+        }
+        ai_runtime = tokio::runtime::Runtime::new()
+            .map_err(|e| CliError::InvalidArgs(format!("failed to create async runtime: {e}")))?;
+        ai_strategy_obj = crate::build_ai_provider(&config.ai)?;
+        AiHandle::some(&ai_strategy_obj, &ai_runtime)
+    } else {
+        AiHandle::none()
+    };
+    #[cfg(not(feature = "ai"))]
+    let ai_handle = AiHandle::none();
+    #[cfg(not(feature = "ai"))]
+    let _ = (uses_ai, config);
 
     let backend = if args.auto_stage && !args.dry_run {
         let b = discovery::discover_backend(args.vcs);
@@ -200,7 +289,13 @@ pub fn run(args: &ResolveArgs) -> Result<i32, CliError> {
     let mut any_unresolved = false;
 
     for path in &args.files {
-        let result = resolve_file(path, &input, &both_options, args.fail_on_ambiguous)?;
+        let result = resolve_file(
+            path,
+            &input,
+            &both_options,
+            args.fail_on_ambiguous,
+            &ai_handle,
+        )?;
 
         if !result.is_fully_resolved {
             any_unresolved = true;
@@ -246,12 +341,26 @@ pub fn run(args: &ResolveArgs) -> Result<i32, CliError> {
         }
 
         if is_json {
+            let ai_details = if result.ai_hunks.is_empty() {
+                None
+            } else {
+                let provider = result
+                    .ai_hunks
+                    .first()
+                    .map(|h| h.provider.clone())
+                    .unwrap_or_default();
+                Some(JsonAiDetails {
+                    provider,
+                    hunks: result.ai_hunks,
+                })
+            };
             json_results.push(JsonResolveFile {
                 path: path.clone(),
                 total_hunks: result.total_hunks,
                 resolved_hunks: result.resolved_hunks,
                 unresolved_hunks: result.unresolved,
                 written,
+                ai: ai_details,
             });
         }
     }
@@ -274,6 +383,10 @@ mod tests {
     use super::*;
     use std::io::Write as _;
     use tempfile::NamedTempFile;
+
+    fn default_config() -> WeavrConfig {
+        WeavrConfig::from_raw(&crate::config::RawConfig::default()).unwrap()
+    }
 
     fn conflict_content() -> &'static str {
         "before\n<<<<<<< HEAD\nfn foo() { 1 }\n=======\nfn foo() { 2 }\n>>>>>>> branch\nafter\n"
@@ -327,6 +440,21 @@ mod tests {
     }
 
     #[test]
+    fn parse_ai_strategy_json() {
+        let json = r#"{
+            "resolutions": [
+                {"hunk_id": 0, "strategy": "ai"}
+            ]
+        }"#;
+        let input: ResolveInput = serde_json::from_str(json).unwrap();
+        assert_eq!(input.resolutions.len(), 1);
+        assert!(matches!(
+            input.resolutions[0].strategy,
+            ResolutionStrategy::Ai
+        ));
+    }
+
+    #[test]
     fn manual_without_content_errors() {
         let mut conflict = NamedTempFile::new().unwrap();
         write!(conflict, "{}", conflict_content()).unwrap();
@@ -344,7 +472,7 @@ mod tests {
             vcs: crate::cli::VcsChoice::Auto,
             format: OutputFormat::Text,
         };
-        let result = run(&args);
+        let result = run(&args, &default_config());
         assert!(result.is_err());
         let err = result.unwrap_err().to_string();
         assert!(err.contains("manual strategy requires"), "{err}");
@@ -368,7 +496,7 @@ mod tests {
             vcs: crate::cli::VcsChoice::Auto,
             format: OutputFormat::Text,
         };
-        let result = run(&args);
+        let result = run(&args, &default_config());
         assert!(result.is_err());
         let err = result.unwrap_err().to_string();
         assert!(err.contains("hunk_id 99 does not exist"), "{err}");
@@ -393,7 +521,7 @@ mod tests {
             vcs: crate::cli::VcsChoice::Auto,
             format: OutputFormat::Text,
         };
-        let result = run(&args);
+        let result = run(&args, &default_config());
         assert!(result.is_err());
         assert!(matches!(result.unwrap_err(), CliError::AmbiguousHunks(1)));
     }
@@ -417,7 +545,7 @@ mod tests {
             vcs: crate::cli::VcsChoice::Auto,
             format: OutputFormat::Text,
         };
-        let code = run(&args).unwrap();
+        let code = run(&args, &default_config()).unwrap();
         assert_eq!(code, exit_codes::SUCCESS);
 
         let after = std::fs::read_to_string(conflict.path()).unwrap();
@@ -442,7 +570,7 @@ mod tests {
             vcs: crate::cli::VcsChoice::Auto,
             format: OutputFormat::Text,
         };
-        let code = run(&args).unwrap();
+        let code = run(&args, &default_config()).unwrap();
         assert_eq!(code, exit_codes::SUCCESS);
 
         let result = std::fs::read_to_string(conflict.path()).unwrap();
@@ -468,7 +596,7 @@ mod tests {
             vcs: crate::cli::VcsChoice::Auto,
             format: OutputFormat::Text,
         };
-        let code = run(&args).unwrap();
+        let code = run(&args, &default_config()).unwrap();
         assert_eq!(code, exit_codes::SUCCESS);
 
         let result = std::fs::read_to_string(conflict.path()).unwrap();
@@ -496,7 +624,7 @@ mod tests {
             vcs: crate::cli::VcsChoice::Auto,
             format: OutputFormat::Text,
         };
-        let code = run(&args).unwrap();
+        let code = run(&args, &default_config()).unwrap();
         assert_eq!(code, exit_codes::SUCCESS);
 
         let result = std::fs::read_to_string(conflict.path()).unwrap();
@@ -523,7 +651,7 @@ mod tests {
             vcs: crate::cli::VcsChoice::Auto,
             format: OutputFormat::Text,
         };
-        let code = run(&args).unwrap();
+        let code = run(&args, &default_config()).unwrap();
         assert_eq!(code, exit_codes::SUCCESS);
 
         let result = std::fs::read_to_string(conflict.path()).unwrap();
@@ -551,7 +679,7 @@ mod tests {
             vcs: crate::cli::VcsChoice::Auto,
             format: OutputFormat::Text,
         };
-        let code = run(&args).unwrap();
+        let code = run(&args, &default_config()).unwrap();
         assert_eq!(code, exit_codes::SUCCESS);
 
         let result = std::fs::read_to_string(conflict.path()).unwrap();
@@ -580,7 +708,7 @@ mod tests {
             vcs: crate::cli::VcsChoice::Auto,
             format: OutputFormat::Text,
         };
-        let result = run(&args);
+        let result = run(&args, &default_config());
         assert!(result.is_err());
         let err = result.unwrap_err().to_string();
         assert!(err.contains("invalid resolutions JSON"), "{err}");
@@ -602,7 +730,7 @@ mod tests {
             vcs: crate::cli::VcsChoice::Auto,
             format: OutputFormat::Text,
         };
-        let result = run(&args);
+        let result = run(&args, &default_config());
         assert!(result.is_err());
         assert!(matches!(result.unwrap_err(), CliError::FileNotFound(_)));
     }
@@ -625,7 +753,7 @@ mod tests {
             vcs: crate::cli::VcsChoice::Auto,
             format: OutputFormat::Json,
         };
-        let code = run(&args).unwrap();
+        let code = run(&args, &default_config()).unwrap();
         assert_eq!(code, exit_codes::SUCCESS);
     }
 
@@ -653,7 +781,7 @@ mod tests {
             vcs: crate::cli::VcsChoice::Auto,
             format: OutputFormat::Text,
         };
-        let code = run(&args).unwrap();
+        let code = run(&args, &default_config()).unwrap();
         assert_eq!(code, exit_codes::SUCCESS);
 
         for path in [conflict1.path(), conflict2.path()] {
