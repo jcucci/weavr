@@ -15,17 +15,29 @@ mod error;
 mod headless;
 mod init;
 mod merge_driver;
+mod output;
 mod tui;
 
 use clap::Parser;
 
-use cli::Cli;
+use cli::{Cli, OutputFormat};
 use config::WeavrConfig;
 use error::{exit_codes, CliError};
 
 /// Runs `jj squash` in the repo root when squash-after-resolve is enabled.
 #[cfg(feature = "jj")]
 fn run_jj_squash(backend: &dyn weavr_vcs::VcsBackend) {
+    run_jj_squash_impl(backend, false);
+}
+
+/// Runs `jj squash` without printing success messages (for JSON mode).
+#[cfg(feature = "jj")]
+fn run_jj_squash_quiet(backend: &dyn weavr_vcs::VcsBackend) {
+    run_jj_squash_impl(backend, true);
+}
+
+#[cfg(feature = "jj")]
+fn run_jj_squash_impl(backend: &dyn weavr_vcs::VcsBackend, quiet: bool) {
     if backend.name() != "jj" {
         return;
     }
@@ -36,7 +48,9 @@ fn run_jj_squash(backend: &dyn weavr_vcs::VcsBackend) {
         .output()
     {
         Ok(output) if output.status.success() => {
-            println!("jj: squashed resolved changes");
+            if !quiet {
+                println!("jj: squashed resolved changes");
+            }
         }
         Ok(output) => {
             let stderr = String::from_utf8_lossy(&output.stderr);
@@ -50,18 +64,28 @@ fn run_jj_squash(backend: &dyn weavr_vcs::VcsBackend) {
 
 #[allow(clippy::too_many_lines)]
 fn run(cli: &Cli) -> Result<i32, CliError> {
+    let format = cli.format;
+
     // Handle subcommands first
     if let Some(ref command) = cli.command {
         match command {
             cli::Command::MergeDriver(args) => {
                 let raw_config = config::load_config(cli.config.as_deref())?;
                 let cfg = WeavrConfig::from_raw(&raw_config)?;
-                return merge_driver::run(args, &cfg);
+                return merge_driver::run(args, &cfg, format);
             }
             cli::Command::Init(args) => {
                 return init::run(args);
             }
         }
+    }
+
+    // Reject --format=json in TUI mode (no --list, --check, or --headless)
+    if format == OutputFormat::Json && !cli.list && !cli.check && !cli.headless {
+        return Err(CliError::InvalidArgs(
+            "--format=json is not supported in TUI mode; use --list, --check, or --headless"
+                .to_string(),
+        ));
     }
 
     let backend = discovery::discover_backend(cli.vcs);
@@ -71,7 +95,7 @@ fn run(cli: &Cli) -> Result<i32, CliError> {
         let backend = backend
             .as_deref()
             .ok_or(CliError::Vcs(weavr_vcs::VcsError::NotInRepo))?;
-        discovery::list_conflicted_files(backend)?;
+        discovery::list_conflicted_files(backend, format)?;
         return Ok(exit_codes::SUCCESS);
     }
 
@@ -94,9 +118,18 @@ fn run(cli: &Cli) -> Result<i32, CliError> {
 
         if !cli.quiet {
             if results.is_empty() {
-                println!("No conflicted files found");
+                match format {
+                    OutputFormat::Json => {
+                        let json = output::JsonCheckOutput {
+                            files: vec![],
+                            total_conflicts: 0,
+                        };
+                        output::print_json(&json)?;
+                    }
+                    OutputFormat::Text => println!("No conflicted files found"),
+                }
             } else {
-                check::print_summary(&results);
+                check::print_summary(&results, format)?;
             }
         }
 
@@ -154,24 +187,64 @@ fn run(cli: &Cli) -> Result<i32, CliError> {
         #[cfg(not(feature = "ast"))]
         let ast_handle = headless::AstHandle::none();
 
+        let is_json = format == OutputFormat::Json;
+        let mut json_results: Vec<output::JsonHeadlessFile> = Vec::new();
+
+        let strategy_name = match strategy {
+            cli::Strategy::Left => "left",
+            cli::Strategy::Right => "right",
+            cli::Strategy::Both => "both",
+            cli::Strategy::Ast => "ast",
+        };
+
         for path in &files {
             let result = headless::process_file(path, strategy, config.deduplicate, &ast_handle)?;
-            headless::write_or_print(&result, cli.dry_run)?;
+            let written = !cli.dry_run;
+
+            if is_json {
+                json_results.push(output::JsonHeadlessFile {
+                    path: path.clone(),
+                    hunks_resolved: result.hunks_resolved,
+                    strategy: strategy_name.to_string(),
+                    written,
+                });
+                // Still write the file (or print for dry-run), just suppress text output
+                if written {
+                    std::fs::write(&result.path, &result.output)?;
+                }
+            } else {
+                headless::write_or_print(&result, cli.dry_run)?;
+            }
 
             if config.auto_stage && !cli.dry_run {
                 if let Some(ref backend) = backend {
                     match backend.stage_file(path) {
-                        Ok(()) => println!("{}: staged", path.display()),
+                        Ok(()) => {
+                            if !is_json {
+                                println!("{}: staged", path.display());
+                            }
+                        }
                         Err(e) => eprintln!("{}: staging failed: {e}", path.display()),
                     }
                 }
             }
         }
 
+        if is_json {
+            output::print_json(&output::JsonHeadlessOutput {
+                results: json_results,
+            })?;
+        }
+
         #[cfg(feature = "jj")]
         if config.squash_after_resolve {
             if let Some(ref backend) = backend {
-                run_jj_squash(backend.as_ref());
+                if is_json {
+                    // Still squash, but suppress stdout message
+                    run_jj_squash_quiet(backend.as_ref());
+                } else {
+                    run_jj_squash(backend.as_ref());
+                }
             }
         }
 
@@ -248,7 +321,11 @@ fn main() {
     let exit_code = match run(&cli) {
         Ok(code) => code,
         Err(e) => {
-            eprintln!("weavr: {e}");
+            if cli.format == OutputFormat::Json {
+                output::print_json_error(&e.to_string());
+            } else {
+                eprintln!("weavr: {e}");
+            }
             e.exit_code()
         }
     };

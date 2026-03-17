@@ -4,8 +4,9 @@ use std::path::{Path, PathBuf};
 
 use weavr_vcs::VcsBackend;
 
-use crate::cli::VcsChoice;
+use crate::cli::{OutputFormat, VcsChoice};
 use crate::error::CliError;
+use crate::output;
 
 /// Discovers the VCS backend based on the user's choice.
 ///
@@ -86,14 +87,27 @@ pub fn resolve_files(
 }
 
 /// Lists conflicted files to stdout.
-pub fn list_conflicted_files(backend: &dyn VcsBackend) -> Result<(), CliError> {
+pub fn list_conflicted_files(
+    backend: &dyn VcsBackend,
+    format: OutputFormat,
+) -> Result<(), CliError> {
     let files = discover_conflicted_files(backend)?;
 
-    if files.is_empty() {
-        println!("No conflicted files found");
-    } else {
-        for file in files {
-            println!("{}", file.display());
+    match format {
+        OutputFormat::Json => {
+            let json = output::JsonListOutput {
+                conflicted_files: files,
+            };
+            output::print_json(&json)?;
+        }
+        OutputFormat::Text => {
+            if files.is_empty() {
+                println!("No conflicted files found");
+            } else {
+                for file in files {
+                    println!("{}", file.display());
+                }
+            }
         }
     }
 

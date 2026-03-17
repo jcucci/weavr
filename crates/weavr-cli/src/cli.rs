@@ -4,6 +4,16 @@ use std::path::PathBuf;
 
 use clap::{Args, Parser, Subcommand, ValueEnum};
 
+/// Output format selection.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, ValueEnum)]
+pub enum OutputFormat {
+    /// Human-readable text output
+    #[default]
+    Text,
+    /// Machine-readable JSON output
+    Json,
+}
+
 /// VCS backend selection.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, ValueEnum)]
 pub enum VcsChoice {
@@ -160,6 +170,10 @@ pub struct Cli {
     /// Disable staging (no auto-stage, no prompt)
     #[arg(long, conflicts_with = "auto_stage")]
     pub no_stage: bool,
+
+    /// Output format (text or json)
+    #[arg(long, value_enum, default_value_t = OutputFormat::Text)]
+    pub format: OutputFormat,
 }
 
 #[cfg(test)]
@@ -435,5 +449,23 @@ mod tests {
     fn cli_parse_init_jj_scope_conflicts_with_no_jj() {
         let result = Cli::try_parse_from(["weavr", "init", "--no-jj", "--jj-scope", "user"]);
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn cli_parse_format_json() {
+        let cli = Cli::parse_from(["weavr", "--format=json", "--check", "file.rs"]);
+        assert_eq!(cli.format, OutputFormat::Json);
+    }
+
+    #[test]
+    fn cli_parse_format_text() {
+        let cli = Cli::parse_from(["weavr", "--format=text", "--check", "file.rs"]);
+        assert_eq!(cli.format, OutputFormat::Text);
+    }
+
+    #[test]
+    fn cli_parse_format_default_is_text() {
+        let cli = Cli::parse_from(["weavr"]);
+        assert_eq!(cli.format, OutputFormat::Text);
     }
 }

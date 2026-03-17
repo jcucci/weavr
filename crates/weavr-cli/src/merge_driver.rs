@@ -6,14 +6,20 @@
 
 use std::path::Path;
 
-use crate::cli::{MergeDriverArgs, Strategy};
+use crate::cli::{MergeDriverArgs, OutputFormat, Strategy};
 use crate::config::WeavrConfig;
 use crate::error::CliError;
+use crate::output;
 
 /// Runs the merge driver with the given arguments and configuration.
-pub fn run(args: &MergeDriverArgs, config: &WeavrConfig) -> Result<i32, CliError> {
+pub fn run(
+    args: &MergeDriverArgs,
+    config: &WeavrConfig,
+    format: OutputFormat,
+) -> Result<i32, CliError> {
     let strategy = resolve_strategy(args.strategy, config);
     let output_path = args.output.as_ref().unwrap_or(&args.ours);
+    let file_path = args.path.as_deref().unwrap_or(args.ours.as_path());
 
     let marker_size = args.marker_size.unwrap_or(7);
 
@@ -42,18 +48,34 @@ pub fn run(args: &MergeDriverArgs, config: &WeavrConfig) -> Result<i32, CliError
         Some(0) => {
             // Clean merge — no conflicts
             std::fs::write(output_path, &merged)?;
+            if format == OutputFormat::Json {
+                output::print_json(&output::JsonMergeDriverOutput {
+                    path: file_path.to_path_buf(),
+                    hunks_resolved: 0,
+                    clean_merge: true,
+                    written: true,
+                })?;
+            }
             Ok(0)
         }
         Some(1) => {
             // Exit code 1 means conflicts remain — resolve them
-            let file_path = args.path.as_deref().unwrap_or(args.ours.as_path());
-            resolve_conflicts(
+            let (code, hunks_resolved) = resolve_conflicts(
                 &merged,
                 output_path,
                 file_path,
                 strategy,
                 config.deduplicate,
-            )
+            )?;
+            if format == OutputFormat::Json {
+                output::print_json(&output::JsonMergeDriverOutput {
+                    path: file_path.to_path_buf(),
+                    hunks_resolved,
+                    clean_merge: false,
+                    written: true,
+                })?;
+            }
+            Ok(code)
         }
         other => {
             let stderr = String::from_utf8_lossy(&output.stderr);
@@ -87,13 +109,14 @@ fn resolve_strategy(cli_strategy: Option<Strategy>, config: &WeavrConfig) -> Str
 }
 
 /// Parses conflicted content, applies the strategy, and writes the result.
+/// Returns `(exit_code, hunks_resolved)`.
 fn resolve_conflicts(
     content: &str,
     dest_path: &Path,
     file_path: &Path,
     strategy: Strategy,
     deduplicate: bool,
-) -> Result<i32, CliError> {
+) -> Result<(i32, usize), CliError> {
     let display_path = file_path.to_path_buf();
 
     let mut session = weavr_core::MergeSession::from_conflicted(content, display_path)?;
@@ -102,7 +125,7 @@ fn resolve_conflicts(
     if hunks.is_empty() {
         // No conflict markers found — write as-is
         std::fs::write(dest_path, content)?;
-        return Ok(0);
+        return Ok((0, 0));
     }
 
     for hunk in &hunks {
@@ -130,8 +153,9 @@ fn resolve_conflicts(
     session.validate()?;
     let result = session.complete()?;
 
+    let hunks_resolved = result.summary.resolved_hunks;
     std::fs::write(dest_path, &result.content)?;
-    Ok(0)
+    Ok((0, hunks_resolved))
 }
 
 #[cfg(test)]
@@ -154,9 +178,11 @@ after
         let ours = dir.path().join("ours.txt");
         std::fs::write(&ours, "placeholder").unwrap();
 
-        let code = resolve_conflicts(CONFLICTED, &ours, &ours, Strategy::Left, false).unwrap();
+        let (code, hunks) =
+            resolve_conflicts(CONFLICTED, &ours, &ours, Strategy::Left, false).unwrap();
 
         assert_eq!(code, 0);
+        assert_eq!(hunks, 1);
         let result = std::fs::read_to_string(&ours).unwrap();
         assert!(result.contains("left content"));
         assert!(!result.contains("right content"));
@@ -169,7 +195,8 @@ after
         let ours = dir.path().join("ours.txt");
         std::fs::write(&ours, "placeholder").unwrap();
 
-        let code = resolve_conflicts(CONFLICTED, &ours, &ours, Strategy::Right, false).unwrap();
+        let (code, _hunks) =
+            resolve_conflicts(CONFLICTED, &ours, &ours, Strategy::Right, false).unwrap();
 
         assert_eq!(code, 0);
         let result = std::fs::read_to_string(&ours).unwrap();
@@ -183,7 +210,8 @@ after
         let ours = dir.path().join("ours.txt");
         std::fs::write(&ours, "placeholder").unwrap();
 
-        let code = resolve_conflicts(CONFLICTED, &ours, &ours, Strategy::Both, false).unwrap();
+        let (code, _hunks) =
+            resolve_conflicts(CONFLICTED, &ours, &ours, Strategy::Both, false).unwrap();
 
         assert_eq!(code, 0);
         let result = std::fs::read_to_string(&ours).unwrap();
@@ -198,9 +226,10 @@ after
         std::fs::write(&ours, "placeholder").unwrap();
 
         let clean = "no conflicts here\n";
-        let code = resolve_conflicts(clean, &ours, &ours, Strategy::Left, false).unwrap();
+        let (code, hunks) = resolve_conflicts(clean, &ours, &ours, Strategy::Left, false).unwrap();
 
         assert_eq!(code, 0);
+        assert_eq!(hunks, 0);
         let result = std::fs::read_to_string(&ours).unwrap();
         assert_eq!(result, clean);
     }
