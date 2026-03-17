@@ -17,6 +17,7 @@ mod init;
 mod inspect;
 mod merge_driver;
 mod output;
+mod resolve;
 mod tui;
 
 use clap::Parser;
@@ -80,6 +81,9 @@ fn run(cli: &Cli) -> Result<i32, CliError> {
             }
             cli::Command::Inspect(args) => {
                 return inspect::run(args);
+            }
+            cli::Command::Resolve(args) => {
+                return resolve::run(args);
             }
         }
     }
