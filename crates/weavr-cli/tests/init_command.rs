@@ -15,6 +15,23 @@ fn init_git_repo(dir: &TempDir) {
         .expect("failed to init git repo");
 }
 
+#[cfg(feature = "jj")]
+fn jj_available() -> bool {
+    std::process::Command::new("jj")
+        .arg("version")
+        .output()
+        .is_ok_and(|o| o.status.success())
+}
+
+#[cfg(feature = "jj")]
+fn init_jj_repo(dir: &TempDir) {
+    std::process::Command::new("jj")
+        .args(["git", "init"])
+        .current_dir(dir.path())
+        .output()
+        .expect("failed to init jj repo");
+}
+
 #[test]
 fn init_creates_all_files() {
     let dir = TempDir::new().unwrap();
@@ -118,4 +135,133 @@ fn init_no_git_skips_driver() {
 
     assert!(dir.path().join(".weavr.toml").exists());
     assert!(!dir.path().join(".gitattributes").exists());
+}
+
+#[cfg(feature = "jj")]
+#[test]
+fn init_no_jj_skips_jj_setup() {
+    let dir = TempDir::new().unwrap();
+    init_git_repo(&dir);
+
+    weavr_cmd()
+        .args(["init", "--no-jj"])
+        .current_dir(dir.path())
+        .assert()
+        .success()
+        .stdout(predicates::str::contains("created .weavr.toml"));
+
+    // Second run should succeed and not mention jj in output
+    let output = weavr_cmd()
+        .args(["init", "--no-jj"])
+        .current_dir(dir.path())
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    assert!(!stdout.contains("jj merge tool"));
+}
+
+#[cfg(feature = "jj")]
+#[test]
+fn init_in_jj_repo_configures_merge_tool() {
+    if !jj_available() {
+        eprintln!("skipping: jj not available");
+        return;
+    }
+
+    let dir = TempDir::new().unwrap();
+    init_jj_repo(&dir);
+
+    weavr_cmd()
+        .arg("init")
+        .current_dir(dir.path())
+        .assert()
+        .success()
+        .stdout(predicates::str::contains(
+            "configured jj merge tool (repo scope)",
+        ));
+
+    // Verify via jj config get
+    let output = std::process::Command::new("jj")
+        .args(["config", "get", "merge-tools.weavr.program"])
+        .current_dir(dir.path())
+        .output()
+        .unwrap();
+    let value = String::from_utf8(output.stdout).unwrap();
+    assert_eq!(value.trim(), "weavr");
+}
+
+#[cfg(feature = "jj")]
+#[test]
+fn init_in_colocated_repo_configures_both() {
+    if !jj_available() {
+        eprintln!("skipping: jj not available");
+        return;
+    }
+
+    let dir = TempDir::new().unwrap();
+    // jj git init creates a colocated git+jj repo
+    init_jj_repo(&dir);
+
+    weavr_cmd()
+        .arg("init")
+        .current_dir(dir.path())
+        .assert()
+        .success()
+        .stdout(predicates::str::contains("configured merge driver"))
+        .stdout(predicates::str::contains("configured jj merge tool"));
+}
+
+#[cfg(feature = "jj")]
+#[test]
+fn init_jj_idempotent() {
+    if !jj_available() {
+        eprintln!("skipping: jj not available");
+        return;
+    }
+
+    let dir = TempDir::new().unwrap();
+    init_jj_repo(&dir);
+
+    // First run
+    weavr_cmd()
+        .arg("init")
+        .current_dir(dir.path())
+        .assert()
+        .success()
+        .stdout(predicates::str::contains("configured jj merge tool"));
+
+    // Second run — nothing to do
+    weavr_cmd()
+        .arg("init")
+        .current_dir(dir.path())
+        .assert()
+        .success()
+        .stdout(predicates::str::contains("nothing to do"));
+}
+
+#[cfg(feature = "jj")]
+#[test]
+fn init_jj_scope_user() {
+    if !jj_available() {
+        eprintln!("skipping: jj not available");
+        return;
+    }
+
+    let dir = TempDir::new().unwrap();
+    init_jj_repo(&dir);
+
+    // Use JJ_CONFIG to isolate user-scope config
+    let jj_config = dir.path().join("jj-user-config.toml");
+    std::fs::write(&jj_config, "").unwrap();
+
+    weavr_cmd()
+        .args(["init", "--jj-scope", "user"])
+        .current_dir(dir.path())
+        .env("JJ_CONFIG", &jj_config)
+        .assert()
+        .success()
+        .stdout(predicates::str::contains(
+            "configured jj merge tool (user scope)",
+        ));
 }

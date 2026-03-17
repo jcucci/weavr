@@ -13,6 +13,7 @@ use crate::error::CliError;
 /// Runs the merge driver with the given arguments and configuration.
 pub fn run(args: &MergeDriverArgs, config: &WeavrConfig) -> Result<i32, CliError> {
     let strategy = resolve_strategy(args.strategy, config);
+    let output_path = args.output.as_ref().unwrap_or(&args.ours);
 
     let marker_size = args.marker_size.unwrap_or(7);
 
@@ -40,13 +41,19 @@ pub fn run(args: &MergeDriverArgs, config: &WeavrConfig) -> Result<i32, CliError
     match exit_code {
         Some(0) => {
             // Clean merge — no conflicts
-            std::fs::write(&args.ours, &merged)?;
+            std::fs::write(output_path, &merged)?;
             Ok(0)
         }
         Some(1) => {
             // Exit code 1 means conflicts remain — resolve them
             let file_path = args.path.as_deref().unwrap_or(args.ours.as_path());
-            resolve_conflicts(&merged, &args.ours, file_path, strategy, config.deduplicate)
+            resolve_conflicts(
+                &merged,
+                output_path,
+                file_path,
+                strategy,
+                config.deduplicate,
+            )
         }
         other => {
             let stderr = String::from_utf8_lossy(&output.stderr);
@@ -82,7 +89,7 @@ fn resolve_strategy(cli_strategy: Option<Strategy>, config: &WeavrConfig) -> Str
 /// Parses conflicted content, applies the strategy, and writes the result.
 fn resolve_conflicts(
     content: &str,
-    ours_path: &Path,
+    dest_path: &Path,
     file_path: &Path,
     strategy: Strategy,
     deduplicate: bool,
@@ -94,7 +101,7 @@ fn resolve_conflicts(
 
     if hunks.is_empty() {
         // No conflict markers found — write as-is
-        std::fs::write(ours_path, content)?;
+        std::fs::write(dest_path, content)?;
         return Ok(0);
     }
 
@@ -123,7 +130,7 @@ fn resolve_conflicts(
     session.validate()?;
     let result = session.complete()?;
 
-    std::fs::write(ours_path, &result.content)?;
+    std::fs::write(dest_path, &result.content)?;
     Ok(0)
 }
 
