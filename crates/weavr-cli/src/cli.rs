@@ -37,6 +37,23 @@ pub enum Strategy {
     Both,
     /// AST-based structural merge (falls back to left when unavailable)
     Ast,
+    /// AI-assisted resolution (requires the `ai` feature)
+    Ai,
+}
+
+/// Fallback strategy for AI resolution failures.
+///
+/// Unlike [`Strategy`], this only includes strategies that make sense as
+/// fallbacks — `ast` and `ai` are excluded because falling back to the
+/// primary strategy (or another non-deterministic strategy) is not useful.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub enum FallbackStrategy {
+    /// Accept left (`ours/HEAD`) content
+    Left,
+    /// Accept right (`theirs/MERGE_HEAD`) content
+    Right,
+    /// Accept both sides (combine left then right)
+    Both,
 }
 
 /// Subcommands for weavr.
@@ -188,6 +205,10 @@ pub struct Cli {
     #[arg(long, requires = "headless")]
     pub dry_run: bool,
 
+    /// Fallback strategy when AI declines or errors (requires --headless)
+    #[arg(long, value_enum, requires = "headless")]
+    pub fallback_strategy: Option<FallbackStrategy>,
+
     /// Exit with code 1 if any hunk cannot be auto-resolved
     #[arg(long, requires = "headless")]
     pub fail_on_ambiguous: bool,
@@ -235,6 +256,7 @@ mod tests {
         assert!(cli.files.is_empty());
         assert!(!cli.headless);
         assert!(cli.strategy.is_none());
+        assert!(cli.fallback_strategy.is_none());
         assert!(!cli.dedupe);
         assert!(!cli.dry_run);
         assert!(!cli.fail_on_ambiguous);
@@ -290,6 +312,31 @@ mod tests {
         let cli = Cli::parse_from(["weavr", "--headless", "--strategy=right"]);
         assert!(cli.headless);
         assert_eq!(cli.strategy, Some(Strategy::Right));
+    }
+
+    #[test]
+    fn cli_parse_strategy_ai() {
+        let cli = Cli::parse_from(["weavr", "--headless", "--strategy=ai"]);
+        assert!(cli.headless);
+        assert_eq!(cli.strategy, Some(Strategy::Ai));
+    }
+
+    #[test]
+    fn cli_parse_fallback_strategy() {
+        let cli = Cli::parse_from([
+            "weavr",
+            "--headless",
+            "--strategy=ai",
+            "--fallback-strategy=left",
+        ]);
+        assert_eq!(cli.strategy, Some(Strategy::Ai));
+        assert_eq!(cli.fallback_strategy, Some(FallbackStrategy::Left));
+    }
+
+    #[test]
+    fn cli_fallback_strategy_requires_headless() {
+        let result = Cli::try_parse_from(["weavr", "--fallback-strategy=left"]);
+        assert!(result.is_err());
     }
 
     #[test]
