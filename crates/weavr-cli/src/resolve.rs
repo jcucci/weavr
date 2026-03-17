@@ -181,7 +181,7 @@ fn resolve_ai_hunk(
     _ai_hunks: &mut Vec<JsonAiHunkResult>,
 ) -> Result<Resolution, CliError> {
     Err(CliError::InvalidArgs(
-        "\"strategy\": \"ai\" requires the 'ai' feature (compile with --features ai-claude)".into(),
+        "\"strategy\": \"ai\" requires the 'ai' feature (compile with --features ai-claude, ai-openai, or ai-local)".into(),
     ))
 }
 

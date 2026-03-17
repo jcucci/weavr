@@ -2,7 +2,7 @@
 
 use std::path::{Path, PathBuf};
 
-use crate::cli::Strategy;
+use crate::cli::{FallbackStrategy, Strategy};
 use crate::error::CliError;
 
 /// Metadata for a single hunk resolved (or attempted) by the AI strategy.
@@ -127,7 +127,7 @@ pub fn process_file(
     dedupe: bool,
     ast: &AstHandle<'_>,
     ai: &AiHandle<'_>,
-    fallback_strategy: Option<Strategy>,
+    fallback_strategy: Option<FallbackStrategy>,
     fail_on_ambiguous: bool,
 ) -> Result<HeadlessResult, CliError> {
     let content = std::fs::read_to_string(path)?;
@@ -190,7 +190,7 @@ pub fn process_file(
 fn try_ai_resolve(
     hunk: &weavr_core::ConflictHunk,
     ai: &AiHandle<'_>,
-    fallback_strategy: Option<Strategy>,
+    fallback_strategy: Option<FallbackStrategy>,
     dedupe: bool,
     fail_on_ambiguous: bool,
     metadata: &mut Vec<AiHunkMeta>,
@@ -243,7 +243,7 @@ fn try_ai_resolve(
 fn apply_fallback(
     hunk: &weavr_core::ConflictHunk,
     provider_name: &str,
-    fallback_strategy: Option<Strategy>,
+    fallback_strategy: Option<FallbackStrategy>,
     dedupe: bool,
     fail_on_ambiguous: bool,
     metadata: &mut Vec<AiHunkMeta>,
@@ -251,9 +251,9 @@ fn apply_fallback(
     match fallback_strategy {
         Some(fallback) => {
             let resolution = match fallback {
-                Strategy::Left => weavr_core::Resolution::accept_left(hunk),
-                Strategy::Right => weavr_core::Resolution::accept_right(hunk),
-                Strategy::Both => {
+                FallbackStrategy::Left => weavr_core::Resolution::accept_left(hunk),
+                FallbackStrategy::Right => weavr_core::Resolution::accept_right(hunk),
+                FallbackStrategy::Both => {
                     let options = weavr_core::AcceptBothOptions {
                         order: weavr_core::BothOrder::LeftThenRight,
                         deduplicate: dedupe,
@@ -261,8 +261,6 @@ fn apply_fallback(
                     };
                     weavr_core::Resolution::accept_both(hunk, &options)
                 }
-                // Fallback to AI or AST doesn't make sense; treat as left
-                Strategy::Ast | Strategy::Ai => weavr_core::Resolution::accept_left(hunk),
             };
             metadata.push(AiHunkMeta {
                 hunk_id: hunk.id.0,
@@ -296,13 +294,13 @@ fn apply_fallback(
 fn try_ai_resolve(
     _hunk: &weavr_core::ConflictHunk,
     _ai: &AiHandle<'_>,
-    _fallback_strategy: Option<Strategy>,
+    _fallback_strategy: Option<FallbackStrategy>,
     _dedupe: bool,
     _fail_on_ambiguous: bool,
     _metadata: &mut Vec<AiHunkMeta>,
 ) -> Result<weavr_core::Resolution, CliError> {
     Err(CliError::InvalidArgs(
-        "--strategy=ai requires the 'ai' feature (compile with --features ai-claude)".into(),
+        "--strategy=ai requires the 'ai' feature (compile with --features ai-claude, ai-openai, or ai-local)".into(),
     ))
 }
 

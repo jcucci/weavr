@@ -41,6 +41,21 @@ pub enum Strategy {
     Ai,
 }
 
+/// Fallback strategy for AI resolution failures.
+///
+/// Unlike [`Strategy`], this only includes strategies that make sense as
+/// fallbacks — `ast` and `ai` are excluded because falling back to the
+/// primary strategy (or another non-deterministic strategy) is not useful.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub enum FallbackStrategy {
+    /// Accept left (`ours/HEAD`) content
+    Left,
+    /// Accept right (`theirs/MERGE_HEAD`) content
+    Right,
+    /// Accept both sides (combine left then right)
+    Both,
+}
+
 /// Subcommands for weavr.
 #[derive(Debug, Subcommand)]
 pub enum Command {
@@ -192,7 +207,7 @@ pub struct Cli {
 
     /// Fallback strategy when AI declines or errors (requires --headless)
     #[arg(long, value_enum, requires = "headless")]
-    pub fallback_strategy: Option<Strategy>,
+    pub fallback_strategy: Option<FallbackStrategy>,
 
     /// Exit with code 1 if any hunk cannot be auto-resolved
     #[arg(long, requires = "headless")]
@@ -315,7 +330,7 @@ mod tests {
             "--fallback-strategy=left",
         ]);
         assert_eq!(cli.strategy, Some(Strategy::Ai));
-        assert_eq!(cli.fallback_strategy, Some(Strategy::Left));
+        assert_eq!(cli.fallback_strategy, Some(FallbackStrategy::Left));
     }
 
     #[test]
