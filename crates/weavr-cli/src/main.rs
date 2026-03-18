@@ -393,7 +393,10 @@ fn build_ai_provider(ai_config: &weavr_ai::AiConfig) -> Result<weavr_ai::AiStrat
             ai_config.timeout,
         )?),
         #[cfg(feature = "ai-openai")]
-        "openai" => Box::new(weavr_ai::providers::OpenAiProvider::new(&ai_config.openai)?),
+        "openai" => Box::new(weavr_ai::providers::OpenAiProvider::with_timeout(
+            &ai_config.openai,
+            ai_config.timeout,
+        )?),
         #[cfg(feature = "ai-local")]
         "local" => Box::new(weavr_ai::providers::LocalProvider::new(&ai_config.local)?),
         other => {
