@@ -5,13 +5,14 @@ use std::path::{Path, PathBuf};
 use crate::cli::{FallbackStrategy, Strategy};
 use crate::error::CliError;
 
-/// Metadata for a single hunk resolved (or attempted) by the AI strategy.
-pub struct AiHunkMeta {
+/// Metadata for a single hunk resolution, regardless of strategy.
+pub struct HunkMeta {
     pub hunk_id: u32,
-    pub provider: String,
+    pub strategy: String,
+    pub provider: Option<String>,
     pub confidence: Option<u8>,
     pub explanation: Option<String>,
-    pub used_fallback: bool,
+    pub note: Option<String>,
 }
 
 /// Result of headless processing for a single file.
@@ -22,8 +23,8 @@ pub struct HeadlessResult {
     pub hunks_resolved: usize,
     /// The merged output content.
     pub output: String,
-    /// AI metadata for hunks processed with the AI strategy.
-    pub ai_metadata: Vec<AiHunkMeta>,
+    /// Per-hunk resolution metadata.
+    pub hunk_metadata: Vec<HunkMeta>,
 }
 
 /// Optional AST strategy handle for headless mode.
@@ -141,17 +142,45 @@ pub fn process_file(
             path: path.to_path_buf(),
             hunks_resolved: 0,
             output: content,
-            ai_metadata: Vec::new(),
+            hunk_metadata: Vec::new(),
         });
     }
 
-    let mut ai_metadata = Vec::new();
+    let mut hunk_metadata = Vec::new();
 
     for hunk in &hunks {
         let resolution = match strategy {
-            Strategy::Left => weavr_core::Resolution::accept_left(hunk),
-            Strategy::Right => weavr_core::Resolution::accept_right(hunk),
+            Strategy::Left => {
+                hunk_metadata.push(HunkMeta {
+                    hunk_id: hunk.id.0,
+                    strategy: "left".into(),
+                    provider: None,
+                    confidence: None,
+                    explanation: None,
+                    note: None,
+                });
+                weavr_core::Resolution::accept_left(hunk)
+            }
+            Strategy::Right => {
+                hunk_metadata.push(HunkMeta {
+                    hunk_id: hunk.id.0,
+                    strategy: "right".into(),
+                    provider: None,
+                    confidence: None,
+                    explanation: None,
+                    note: None,
+                });
+                weavr_core::Resolution::accept_right(hunk)
+            }
             Strategy::Both => {
+                hunk_metadata.push(HunkMeta {
+                    hunk_id: hunk.id.0,
+                    strategy: "both".into(),
+                    provider: None,
+                    confidence: None,
+                    explanation: None,
+                    note: None,
+                });
                 let options = weavr_core::AcceptBothOptions {
                     order: weavr_core::BothOrder::LeftThenRight,
                     deduplicate: dedupe,
@@ -159,14 +188,18 @@ pub fn process_file(
                 };
                 weavr_core::Resolution::accept_both(hunk, &options)
             }
-            Strategy::Ast => try_ast_resolve(path, hunk, ast),
+            Strategy::Ast => {
+                let (resolution, meta) = try_ast_resolve(path, hunk, ast);
+                hunk_metadata.push(meta);
+                resolution
+            }
             Strategy::Ai => try_ai_resolve(
                 hunk,
                 ai,
                 fallback_strategy,
                 dedupe,
                 fail_on_ambiguous,
-                &mut ai_metadata,
+                &mut hunk_metadata,
             )?,
         };
 
@@ -181,7 +214,7 @@ pub fn process_file(
         path: path.to_path_buf(),
         hunks_resolved: result.summary.resolved_hunks,
         output: result.content,
-        ai_metadata,
+        hunk_metadata,
     })
 }
 
@@ -193,18 +226,19 @@ pub(crate) fn try_ai_resolve(
     fallback_strategy: Option<FallbackStrategy>,
     dedupe: bool,
     fail_on_ambiguous: bool,
-    metadata: &mut Vec<AiHunkMeta>,
+    metadata: &mut Vec<HunkMeta>,
 ) -> Result<weavr_core::Resolution, CliError> {
     let provider_name = ai.provider_name().to_string();
 
     match ai.suggest_blocking(hunk) {
         Ok(Some(resolution)) => {
-            metadata.push(AiHunkMeta {
+            metadata.push(HunkMeta {
                 hunk_id: hunk.id.0,
-                provider: provider_name,
+                strategy: "ai_suggested".into(),
+                provider: Some(provider_name),
                 confidence: resolution.metadata.confidence,
                 explanation: resolution.metadata.notes.clone(),
-                used_fallback: false,
+                note: None,
             });
             Ok(resolution)
         }
@@ -246,28 +280,32 @@ fn apply_fallback(
     fallback_strategy: Option<FallbackStrategy>,
     dedupe: bool,
     fail_on_ambiguous: bool,
-    metadata: &mut Vec<AiHunkMeta>,
+    metadata: &mut Vec<HunkMeta>,
 ) -> Result<weavr_core::Resolution, CliError> {
     match fallback_strategy {
         Some(fallback) => {
-            let resolution = match fallback {
-                FallbackStrategy::Left => weavr_core::Resolution::accept_left(hunk),
-                FallbackStrategy::Right => weavr_core::Resolution::accept_right(hunk),
+            let (resolution, fallback_name) = match fallback {
+                FallbackStrategy::Left => (weavr_core::Resolution::accept_left(hunk), "left"),
+                FallbackStrategy::Right => (weavr_core::Resolution::accept_right(hunk), "right"),
                 FallbackStrategy::Both => {
                     let options = weavr_core::AcceptBothOptions {
                         order: weavr_core::BothOrder::LeftThenRight,
                         deduplicate: dedupe,
                         trim_whitespace: false,
                     };
-                    weavr_core::Resolution::accept_both(hunk, &options)
+                    (
+                        weavr_core::Resolution::accept_both(hunk, &options),
+                        "both",
+                    )
                 }
             };
-            metadata.push(AiHunkMeta {
+            metadata.push(HunkMeta {
                 hunk_id: hunk.id.0,
-                provider: provider_name.to_string(),
+                strategy: fallback_name.into(),
+                provider: Some(provider_name.to_string()),
                 confidence: None,
                 explanation: None,
-                used_fallback: true,
+                note: Some("AI declined, used fallback".into()),
             });
             Ok(resolution)
         }
@@ -276,12 +314,13 @@ fn apply_fallback(
                 Err(CliError::AmbiguousHunks(1))
             } else {
                 // Default fallback: accept left
-                metadata.push(AiHunkMeta {
+                metadata.push(HunkMeta {
                     hunk_id: hunk.id.0,
-                    provider: provider_name.to_string(),
+                    strategy: "left".into(),
+                    provider: Some(provider_name.to_string()),
                     confidence: None,
                     explanation: None,
-                    used_fallback: true,
+                    note: Some("AI declined, used fallback".into()),
                 });
                 Ok(weavr_core::Resolution::accept_left(hunk))
             }
@@ -297,7 +336,7 @@ pub(crate) fn try_ai_resolve(
     _fallback_strategy: Option<FallbackStrategy>,
     _dedupe: bool,
     _fail_on_ambiguous: bool,
-    _metadata: &mut Vec<AiHunkMeta>,
+    _metadata: &mut Vec<HunkMeta>,
 ) -> Result<weavr_core::Resolution, CliError> {
     Err(CliError::InvalidArgs(
         "--strategy=ai requires the 'ai' feature (compile with --features ai-claude, ai-openai, or ai-local)".into(),
@@ -310,15 +349,31 @@ fn try_ast_resolve(
     path: &Path,
     hunk: &weavr_core::ConflictHunk,
     ast: &AstHandle<'_>,
-) -> weavr_core::Resolution {
+) -> (weavr_core::Resolution, HunkMeta) {
     if let Some(strategy) = ast.inner {
         let language = weavr_core::detect_language(path);
         if let Ok(Some(resolution)) = strategy.try_resolve(hunk, path, language) {
-            return resolution;
+            let meta = HunkMeta {
+                hunk_id: hunk.id.0,
+                strategy: "ast_merged".into(),
+                provider: None,
+                confidence: resolution.metadata.confidence,
+                explanation: resolution.metadata.notes.clone(),
+                note: None,
+            };
+            return (resolution, meta);
         }
     }
     // Fallback: accept left
-    weavr_core::Resolution::accept_left(hunk)
+    let meta = HunkMeta {
+        hunk_id: hunk.id.0,
+        strategy: "left".into(),
+        provider: None,
+        confidence: None,
+        explanation: None,
+        note: Some("AST unavailable, used fallback".into()),
+    };
+    (weavr_core::Resolution::accept_left(hunk), meta)
 }
 
 /// Stub when `ast` feature is disabled — always falls back to accept-left.
@@ -327,8 +382,29 @@ fn try_ast_resolve(
     _path: &Path,
     hunk: &weavr_core::ConflictHunk,
     _ast: &AstHandle<'_>,
-) -> weavr_core::Resolution {
-    weavr_core::Resolution::accept_left(hunk)
+) -> (weavr_core::Resolution, HunkMeta) {
+    let meta = HunkMeta {
+        hunk_id: hunk.id.0,
+        strategy: "left".into(),
+        provider: None,
+        confidence: None,
+        explanation: None,
+        note: Some("AST unavailable, used fallback".into()),
+    };
+    (weavr_core::Resolution::accept_left(hunk), meta)
+}
+
+impl From<&HunkMeta> for crate::output::JsonHunkResult {
+    fn from(m: &HunkMeta) -> Self {
+        Self {
+            hunk_id: m.hunk_id,
+            strategy: m.strategy.clone(),
+            provider: m.provider.clone(),
+            confidence: m.confidence,
+            explanation: m.explanation.clone(),
+            note: m.note.clone(),
+        }
+    }
 }
 
 /// Writes the result to the file or prints it for dry-run.

@@ -38,27 +38,22 @@ pub struct JsonHeadlessFile {
     pub hunks_resolved: usize,
     pub strategy: String,
     pub written: bool,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub ai: Option<JsonAiDetails>,
+    pub hunks: Vec<JsonHunkResult>,
 }
 
-/// AI-specific details for a file processed with the AI strategy.
+/// Per-hunk resolution metadata for JSON output.
 #[derive(Debug, Serialize)]
-pub struct JsonAiDetails {
-    pub provider: String,
-    pub hunks: Vec<JsonAiHunkResult>,
-}
-
-/// AI result metadata for a single hunk.
-#[derive(Debug, Serialize)]
-pub struct JsonAiHunkResult {
+pub struct JsonHunkResult {
     pub hunk_id: u32,
-    pub provider: String,
+    pub strategy: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub provider: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub confidence: Option<u8>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub explanation: Option<String>,
-    pub used_fallback: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub note: Option<String>,
 }
 
 /// JSON output for `merge-driver --format=json`.
@@ -68,6 +63,7 @@ pub struct JsonMergeDriverOutput {
     pub hunks_resolved: usize,
     pub clean_merge: bool,
     pub written: bool,
+    pub hunks: Vec<JsonHunkResult>,
 }
 
 /// JSON output for `inspect` subcommand.
@@ -116,8 +112,7 @@ pub struct JsonResolveFile {
     pub resolved_hunks: usize,
     pub unresolved_hunks: Vec<u32>,
     pub written: bool,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub ai: Option<JsonAiDetails>,
+    pub hunks: Vec<JsonHunkResult>,
 }
 
 /// JSON error wrapper.

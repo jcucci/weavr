@@ -56,6 +56,7 @@ pub fn run(
                     hunks_resolved: 0,
                     clean_merge: true,
                     written: true,
+                    hunks: Vec::new(),
                 })?;
             }
             Ok(0)
@@ -63,7 +64,7 @@ pub fn run(
         Some(1) => {
             // Exit code 1 means conflicts remain — resolve them
             let fallback = args.fallback_strategy.or(Some(FallbackStrategy::Left));
-            let (code, hunks_resolved) = resolve_conflicts(
+            let (code, hunks_resolved, hunk_metadata) = resolve_conflicts(
                 &merged,
                 output_path,
                 file_path,
@@ -78,6 +79,10 @@ pub fn run(
                     hunks_resolved,
                     clean_merge: false,
                     written: true,
+                    hunks: hunk_metadata
+                        .iter()
+                        .map(output::JsonHunkResult::from)
+                        .collect(),
                 })?;
             }
             Ok(code)
@@ -115,7 +120,7 @@ pub(crate) fn resolve_strategy(cli_strategy: Option<Strategy>, config: &WeavrCon
 }
 
 /// Parses conflicted content, applies the strategy, and writes the result.
-/// Returns `(exit_code, hunks_resolved)`.
+/// Returns `(exit_code, hunks_resolved, hunk_metadata)`.
 fn resolve_conflicts(
     content: &str,
     dest_path: &Path,
@@ -124,7 +129,7 @@ fn resolve_conflicts(
     deduplicate: bool,
     ai: &headless::AiHandle<'_>,
     fallback_strategy: Option<FallbackStrategy>,
-) -> Result<(i32, usize), CliError> {
+) -> Result<(i32, usize, Vec<headless::HunkMeta>), CliError> {
     let display_path = file_path.to_path_buf();
 
     let mut session = weavr_core::MergeSession::from_conflicted(content, display_path)?;
@@ -133,16 +138,44 @@ fn resolve_conflicts(
     if hunks.is_empty() {
         // No conflict markers found — write as-is
         std::fs::write(dest_path, content)?;
-        return Ok((0, 0));
+        return Ok((0, 0, Vec::new()));
     }
 
-    let mut ai_meta = Vec::new();
+    let mut hunk_metadata = Vec::new();
 
     for hunk in &hunks {
         let resolution = match strategy {
-            Strategy::Left => weavr_core::Resolution::accept_left(hunk),
-            Strategy::Right => weavr_core::Resolution::accept_right(hunk),
+            Strategy::Left => {
+                hunk_metadata.push(headless::HunkMeta {
+                    hunk_id: hunk.id.0,
+                    strategy: "left".into(),
+                    provider: None,
+                    confidence: None,
+                    explanation: None,
+                    note: None,
+                });
+                weavr_core::Resolution::accept_left(hunk)
+            }
+            Strategy::Right => {
+                hunk_metadata.push(headless::HunkMeta {
+                    hunk_id: hunk.id.0,
+                    strategy: "right".into(),
+                    provider: None,
+                    confidence: None,
+                    explanation: None,
+                    note: None,
+                });
+                weavr_core::Resolution::accept_right(hunk)
+            }
             Strategy::Both => {
+                hunk_metadata.push(headless::HunkMeta {
+                    hunk_id: hunk.id.0,
+                    strategy: "both".into(),
+                    provider: None,
+                    confidence: None,
+                    explanation: None,
+                    note: None,
+                });
                 let options = weavr_core::AcceptBothOptions {
                     order: weavr_core::BothOrder::LeftThenRight,
                     deduplicate,
@@ -152,6 +185,14 @@ fn resolve_conflicts(
             }
             Strategy::Ast => {
                 // AST not available in merge driver context — fall back to left
+                hunk_metadata.push(headless::HunkMeta {
+                    hunk_id: hunk.id.0,
+                    strategy: "left".into(),
+                    provider: None,
+                    confidence: None,
+                    explanation: None,
+                    note: Some("AST unavailable in merge driver, used fallback".into()),
+                });
                 weavr_core::Resolution::accept_left(hunk)
             }
             Strategy::Ai => headless::try_ai_resolve(
@@ -160,7 +201,7 @@ fn resolve_conflicts(
                 fallback_strategy,
                 deduplicate,
                 false, // fail_on_ambiguous: merge driver should always produce output
-                &mut ai_meta,
+                &mut hunk_metadata,
             )?,
         };
 
@@ -173,7 +214,7 @@ fn resolve_conflicts(
 
     let hunks_resolved = result.summary.resolved_hunks;
     std::fs::write(dest_path, &result.content)?;
-    Ok((0, hunks_resolved))
+    Ok((0, hunks_resolved, hunk_metadata))
 }
 
 #[cfg(test)]
@@ -196,7 +237,7 @@ after
         let ours = dir.path().join("ours.txt");
         std::fs::write(&ours, "placeholder").unwrap();
 
-        let (code, hunks) = resolve_conflicts(
+        let (code, hunks, metadata) = resolve_conflicts(
             CONFLICTED,
             &ours,
             &ours,
@@ -209,6 +250,9 @@ after
 
         assert_eq!(code, 0);
         assert_eq!(hunks, 1);
+        assert_eq!(metadata.len(), 1);
+        assert_eq!(metadata[0].strategy, "left");
+        assert!(metadata[0].provider.is_none());
         let result = std::fs::read_to_string(&ours).unwrap();
         assert!(result.contains("left content"));
         assert!(!result.contains("right content"));
@@ -221,7 +265,7 @@ after
         let ours = dir.path().join("ours.txt");
         std::fs::write(&ours, "placeholder").unwrap();
 
-        let (code, _hunks) = resolve_conflicts(
+        let (code, _hunks, metadata) = resolve_conflicts(
             CONFLICTED,
             &ours,
             &ours,
@@ -233,6 +277,8 @@ after
         .unwrap();
 
         assert_eq!(code, 0);
+        assert_eq!(metadata.len(), 1);
+        assert_eq!(metadata[0].strategy, "right");
         let result = std::fs::read_to_string(&ours).unwrap();
         assert!(result.contains("right content"));
         assert!(!result.contains("left content"));
@@ -244,7 +290,7 @@ after
         let ours = dir.path().join("ours.txt");
         std::fs::write(&ours, "placeholder").unwrap();
 
-        let (code, _hunks) = resolve_conflicts(
+        let (code, _hunks, metadata) = resolve_conflicts(
             CONFLICTED,
             &ours,
             &ours,
@@ -256,6 +302,8 @@ after
         .unwrap();
 
         assert_eq!(code, 0);
+        assert_eq!(metadata.len(), 1);
+        assert_eq!(metadata[0].strategy, "both");
         let result = std::fs::read_to_string(&ours).unwrap();
         assert!(result.contains("left content"));
         assert!(result.contains("right content"));
@@ -268,7 +316,7 @@ after
         std::fs::write(&ours, "placeholder").unwrap();
 
         let clean = "no conflicts here\n";
-        let (code, hunks) = resolve_conflicts(
+        let (code, hunks, metadata) = resolve_conflicts(
             clean,
             &ours,
             &ours,
@@ -281,6 +329,7 @@ after
 
         assert_eq!(code, 0);
         assert_eq!(hunks, 0);
+        assert!(metadata.is_empty());
         let result = std::fs::read_to_string(&ours).unwrap();
         assert_eq!(result, clean);
     }
@@ -308,7 +357,7 @@ after
         let ours = dir.path().join("ours.txt");
         std::fs::write(&ours, "placeholder").unwrap();
 
-        let (code, hunks) = resolve_conflicts(
+        let (code, hunks, metadata) = resolve_conflicts(
             CONFLICTED,
             &ours,
             &ours,
@@ -321,6 +370,8 @@ after
 
         assert_eq!(code, 0);
         assert_eq!(hunks, 1);
+        assert_eq!(metadata.len(), 1);
+        assert!(metadata[0].note.is_some());
         let result = std::fs::read_to_string(&ours).unwrap();
         assert!(result.contains("left content"));
         assert!(!result.contains("right content"));
