@@ -136,6 +136,8 @@ fn resolve_conflicts(
         return Ok((0, 0));
     }
 
+    let mut ai_meta = Vec::new();
+
     for hunk in &hunks {
         let resolution = match strategy {
             Strategy::Left => weavr_core::Resolution::accept_left(hunk),
@@ -152,17 +154,14 @@ fn resolve_conflicts(
                 // AST not available in merge driver context — fall back to left
                 weavr_core::Resolution::accept_left(hunk)
             }
-            Strategy::Ai => {
-                let mut ai_meta = Vec::new();
-                headless::try_ai_resolve(
-                    hunk,
-                    ai,
-                    fallback_strategy,
-                    deduplicate,
-                    false, // fail_on_ambiguous: merge driver should always produce output
-                    &mut ai_meta,
-                )?
-            }
+            Strategy::Ai => headless::try_ai_resolve(
+                hunk,
+                ai,
+                fallback_strategy,
+                deduplicate,
+                false, // fail_on_ambiguous: merge driver should always produce output
+                &mut ai_meta,
+            )?,
         };
 
         session.set_resolution(hunk.id, resolution)?;

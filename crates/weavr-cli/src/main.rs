@@ -76,22 +76,12 @@ fn run(cli: &Cli) -> Result<i32, CliError> {
                 let cfg = WeavrConfig::from_raw(&raw_config)?;
 
                 #[cfg(feature = "ai")]
-                let ai_runtime;
-                #[cfg(feature = "ai")]
-                let ai_strategy_obj;
+                let ai_built;
                 #[cfg(feature = "ai")]
                 let ai_handle =
                     if merge_driver::resolve_strategy(args.strategy, &cfg) == cli::Strategy::Ai {
-                        if !cfg.ai.enabled {
-                            return Err(CliError::InvalidArgs(
-                                "--strategy=ai requires [ai] enabled=true in config".into(),
-                            ));
-                        }
-                        ai_runtime = tokio::runtime::Runtime::new().map_err(|e| {
-                            CliError::InvalidArgs(format!("failed to create async runtime: {e}"))
-                        })?;
-                        ai_strategy_obj = build_ai_provider(&cfg.ai)?;
-                        headless::AiHandle::some(&ai_strategy_obj, &ai_runtime)
+                        ai_built = validate_and_build_ai(&cfg.ai)?;
+                        headless::AiHandle::some(&ai_built.1, &ai_built.0)
                     } else {
                         headless::AiHandle::none()
                     };
@@ -223,21 +213,11 @@ fn run(cli: &Cli) -> Result<i32, CliError> {
 
         // Build AI handle for headless mode
         #[cfg(feature = "ai")]
-        let ai_runtime;
-        #[cfg(feature = "ai")]
-        let ai_strategy_obj;
+        let ai_built;
         #[cfg(feature = "ai")]
         let ai_handle = if strategy == cli::Strategy::Ai {
-            if !config.ai.enabled {
-                return Err(CliError::InvalidArgs(
-                    "--strategy=ai requires [ai] enabled=true in config".into(),
-                ));
-            }
-            ai_runtime = tokio::runtime::Runtime::new().map_err(|e| {
-                CliError::InvalidArgs(format!("failed to create async runtime: {e}"))
-            })?;
-            ai_strategy_obj = build_ai_provider(&config.ai)?;
-            headless::AiHandle::some(&ai_strategy_obj, &ai_runtime)
+            ai_built = validate_and_build_ai(&config.ai)?;
+            headless::AiHandle::some(&ai_built.1, &ai_built.0)
         } else {
             headless::AiHandle::none()
         };
@@ -403,6 +383,22 @@ fn run(cli: &Cli) -> Result<i32, CliError> {
         }
         Ok(exit_codes::SUCCESS)
     }
+}
+
+/// Validates AI config and builds the async runtime + AI provider.
+#[cfg(feature = "ai")]
+fn validate_and_build_ai(
+    ai_config: &weavr_ai::AiConfig,
+) -> Result<(tokio::runtime::Runtime, weavr_ai::AiStrategy), CliError> {
+    if !ai_config.enabled {
+        return Err(CliError::InvalidArgs(
+            "--strategy=ai requires [ai] enabled=true in config".into(),
+        ));
+    }
+    let runtime = tokio::runtime::Runtime::new()
+        .map_err(|e| CliError::InvalidArgs(format!("failed to create async runtime: {e}")))?;
+    let strategy = build_ai_provider(ai_config)?;
+    Ok((runtime, strategy))
 }
 
 /// Builds an `AiStrategy` from the AI configuration.
