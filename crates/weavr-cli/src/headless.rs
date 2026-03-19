@@ -187,7 +187,7 @@ pub fn process_file(
 
 /// Attempts AI resolution with fallback support.
 #[cfg(feature = "ai")]
-fn try_ai_resolve(
+pub(crate) fn try_ai_resolve(
     hunk: &weavr_core::ConflictHunk,
     ai: &AiHandle<'_>,
     fallback_strategy: Option<FallbackStrategy>,
@@ -291,7 +291,7 @@ fn apply_fallback(
 
 /// Stub when `ai` feature is disabled — returns a clear error.
 #[cfg(not(feature = "ai"))]
-fn try_ai_resolve(
+pub(crate) fn try_ai_resolve(
     _hunk: &weavr_core::ConflictHunk,
     _ai: &AiHandle<'_>,
     _fallback_strategy: Option<FallbackStrategy>,

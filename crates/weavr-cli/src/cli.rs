@@ -170,6 +170,9 @@ pub struct MergeDriverArgs {
     /// Write result to a separate output file instead of overwriting ours
     #[arg(long)]
     pub output: Option<PathBuf>,
+    /// Fallback strategy when AI declines or errors (default: left)
+    #[arg(long, value_enum)]
+    pub fallback_strategy: Option<FallbackStrategy>,
 }
 
 /// A terminal-first merge conflict resolver

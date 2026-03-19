@@ -74,7 +74,31 @@ fn run(cli: &Cli) -> Result<i32, CliError> {
             cli::Command::MergeDriver(args) => {
                 let raw_config = config::load_config(cli.config.as_deref())?;
                 let cfg = WeavrConfig::from_raw(&raw_config)?;
-                return merge_driver::run(args, &cfg, format);
+
+                #[cfg(feature = "ai")]
+                let ai_runtime;
+                #[cfg(feature = "ai")]
+                let ai_strategy_obj;
+                #[cfg(feature = "ai")]
+                let ai_handle =
+                    if merge_driver::resolve_strategy(args.strategy, &cfg) == cli::Strategy::Ai {
+                        if !cfg.ai.enabled {
+                            return Err(CliError::InvalidArgs(
+                                "--strategy=ai requires [ai] enabled=true in config".into(),
+                            ));
+                        }
+                        ai_runtime = tokio::runtime::Runtime::new().map_err(|e| {
+                            CliError::InvalidArgs(format!("failed to create async runtime: {e}"))
+                        })?;
+                        ai_strategy_obj = build_ai_provider(&cfg.ai)?;
+                        headless::AiHandle::some(&ai_strategy_obj, &ai_runtime)
+                    } else {
+                        headless::AiHandle::none()
+                    };
+                #[cfg(not(feature = "ai"))]
+                let ai_handle = headless::AiHandle::none();
+
+                return merge_driver::run(args, &cfg, format, &ai_handle);
             }
             cli::Command::Init(args) => {
                 return init::run(args);
