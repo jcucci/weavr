@@ -9,8 +9,8 @@ use crate::cli::{OutputFormat, ResolveArgs};
 use crate::config::WeavrConfig;
 use crate::discovery;
 use crate::error::{exit_codes, CliError};
-use crate::headless::AiHandle;
-use crate::output::{self, JsonAiDetails, JsonAiHunkResult, JsonResolveFile, JsonResolveOutput};
+use crate::headless::{AiHandle, HunkMeta};
+use crate::output::{self, JsonHunkResult, JsonResolveFile, JsonResolveOutput};
 
 use weavr_core::{AcceptBothOptions, HunkId, MergeSession, Resolution};
 
@@ -66,7 +66,7 @@ struct FileResolveResult {
     resolved_hunks: usize,
     unresolved: Vec<u32>,
     is_fully_resolved: bool,
-    ai_hunks: Vec<JsonAiHunkResult>,
+    hunk_metadata: Vec<HunkMeta>,
 }
 
 /// Validates the resolution input against a file's hunks.
@@ -99,10 +99,10 @@ fn validate_input(
     Ok(())
 }
 
-/// Result of building resolutions, including any AI metadata.
+/// Result of building resolutions, including per-hunk metadata.
 struct BuildResult {
     resolutions: Vec<(HunkId, Resolution)>,
-    ai_hunks: Vec<JsonAiHunkResult>,
+    hunk_metadata: Vec<HunkMeta>,
 }
 
 /// Builds Resolution objects from the input entries, borrowing hunks immutably.
@@ -114,7 +114,7 @@ fn build_resolutions(
 ) -> Result<BuildResult, CliError> {
     let hunks = session.hunks();
     let mut result = Vec::new();
-    let mut ai_hunks = Vec::new();
+    let mut hunk_metadata = Vec::new();
 
     for entry in &input.resolutions {
         let hunk_id = HunkId(entry.hunk_id);
@@ -122,6 +122,14 @@ fn build_resolutions(
             .iter()
             .find(|h| h.id == hunk_id)
             .expect("hunk_id should exist after validate_input");
+
+        let strategy_name = match entry.strategy {
+            ResolutionStrategy::Left => "left",
+            ResolutionStrategy::Right => "right",
+            ResolutionStrategy::Both => "both",
+            ResolutionStrategy::Manual => "manual",
+            ResolutionStrategy::Ai => "ai",
+        };
 
         let resolution = match entry.strategy {
             ResolutionStrategy::Left => Resolution::accept_left(hunk),
@@ -136,13 +144,28 @@ fn build_resolutions(
                 })?;
                 Resolution::manual(text.clone())
             }
-            ResolutionStrategy::Ai => resolve_ai_hunk(hunk, entry.hunk_id, ai, &mut ai_hunks)?,
+            ResolutionStrategy::Ai => resolve_ai_hunk(hunk, entry.hunk_id, ai, &mut hunk_metadata)?,
         };
+
+        // AI strategy pushes its own metadata inside resolve_ai_hunk
+        if !matches!(entry.strategy, ResolutionStrategy::Ai) {
+            hunk_metadata.push(HunkMeta {
+                hunk_id: entry.hunk_id,
+                strategy: strategy_name.into(),
+                provider: None,
+                confidence: None,
+                explanation: None,
+                note: None,
+            });
+        }
+
         result.push((hunk_id, resolution));
     }
+    // Sort metadata by hunk_id for consistent output regardless of input order
+    hunk_metadata.sort_by_key(|m| m.hunk_id);
     Ok(BuildResult {
         resolutions: result,
-        ai_hunks,
+        hunk_metadata,
     })
 }
 
@@ -152,16 +175,17 @@ fn resolve_ai_hunk(
     hunk: &weavr_core::ConflictHunk,
     hunk_id: u32,
     ai: &AiHandle<'_>,
-    ai_hunks: &mut Vec<JsonAiHunkResult>,
+    metadata: &mut Vec<HunkMeta>,
 ) -> Result<Resolution, CliError> {
     match ai.suggest_blocking(hunk) {
         Ok(Some(resolution)) => {
-            ai_hunks.push(JsonAiHunkResult {
+            metadata.push(HunkMeta {
                 hunk_id,
-                provider: ai.provider_name().to_string(),
+                strategy: "ai_suggested".into(),
+                provider: Some(ai.provider_name().to_string()),
                 confidence: resolution.metadata.confidence,
                 explanation: resolution.metadata.notes.clone(),
-                used_fallback: false,
+                note: None,
             });
             Ok(resolution)
         }
@@ -178,7 +202,7 @@ fn resolve_ai_hunk(
     _hunk: &weavr_core::ConflictHunk,
     _hunk_id: u32,
     _ai: &AiHandle<'_>,
-    _ai_hunks: &mut Vec<JsonAiHunkResult>,
+    _metadata: &mut Vec<HunkMeta>,
 ) -> Result<Resolution, CliError> {
     Err(CliError::InvalidArgs(
         "\"strategy\": \"ai\" requires the 'ai' feature (compile with --features ai-claude, ai-openai, or ai-local)".into(),
@@ -230,7 +254,7 @@ fn resolve_file(
         resolved_hunks,
         unresolved,
         is_fully_resolved,
-        ai_hunks: build_result.ai_hunks,
+        hunk_metadata: build_result.hunk_metadata,
     })
 }
 
@@ -341,26 +365,17 @@ pub fn run(args: &ResolveArgs, config: &WeavrConfig) -> Result<i32, CliError> {
         }
 
         if is_json {
-            let ai_details = if result.ai_hunks.is_empty() {
-                None
-            } else {
-                let provider = result
-                    .ai_hunks
-                    .first()
-                    .map(|h| h.provider.clone())
-                    .unwrap_or_default();
-                Some(JsonAiDetails {
-                    provider,
-                    hunks: result.ai_hunks,
-                })
-            };
             json_results.push(JsonResolveFile {
                 path: path.clone(),
                 total_hunks: result.total_hunks,
                 resolved_hunks: result.resolved_hunks,
                 unresolved_hunks: result.unresolved,
                 written,
-                ai: ai_details,
+                hunks: result
+                    .hunk_metadata
+                    .iter()
+                    .map(JsonHunkResult::from)
+                    .collect(),
             });
         }
     }

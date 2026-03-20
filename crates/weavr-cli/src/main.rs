@@ -248,35 +248,16 @@ fn run(cli: &Cli) -> Result<i32, CliError> {
             let written = !cli.dry_run;
 
             if is_json {
-                let ai_details = if result.ai_metadata.is_empty() {
-                    None
-                } else {
-                    let provider = result
-                        .ai_metadata
-                        .first()
-                        .map(|m| m.provider.clone())
-                        .unwrap_or_default();
-                    Some(output::JsonAiDetails {
-                        provider,
-                        hunks: result
-                            .ai_metadata
-                            .iter()
-                            .map(|m| output::JsonAiHunkResult {
-                                hunk_id: m.hunk_id,
-                                provider: m.provider.clone(),
-                                confidence: m.confidence,
-                                explanation: m.explanation.clone(),
-                                used_fallback: m.used_fallback,
-                            })
-                            .collect(),
-                    })
-                };
                 json_results.push(output::JsonHeadlessFile {
                     path: path.clone(),
                     hunks_resolved: result.hunks_resolved,
                     strategy: strategy_name.to_string(),
                     written,
-                    ai: ai_details,
+                    hunks: result
+                        .hunk_metadata
+                        .iter()
+                        .map(output::JsonHunkResult::from)
+                        .collect(),
                 });
                 // Still write the file (or print for dry-run), just suppress text output
                 if written {
