@@ -16,9 +16,16 @@ use crate::output;
 pub fn run(
     args: &MergeDriverArgs,
     config: &WeavrConfig,
-    format: OutputFormat,
     ai: &headless::AiHandle<'_>,
 ) -> Result<i32, CliError> {
+    let format = args.format;
+
+    if args.log_file.is_some() && format != OutputFormat::Json {
+        return Err(CliError::InvalidArgs(
+            "--log-file requires --format=json".to_string(),
+        ));
+    }
+
     let strategy = resolve_strategy(args.strategy, config);
     let output_path = args.output.as_ref().unwrap_or(&args.ours);
     let file_path = args.path.as_deref().unwrap_or(args.ours.as_path());
@@ -46,18 +53,38 @@ pub fn run(
         CliError::MergeDriver(format!("git merge-file produced invalid UTF-8: {e}"))
     })?;
 
+    let emit_json = |json: &output::JsonMergeDriverOutput| {
+        if let Err(e) = output::print_json_stderr(json) {
+            eprintln!("weavr: failed to write JSON to stderr: {e}");
+        }
+        if let Some(ref log_path) = args.log_file {
+            if let Err(e) = output::print_json_file(log_path, json) {
+                eprintln!("weavr: failed to write JSON to log file: {e}");
+            }
+        }
+    };
+
+    let strategy_name = |s: Strategy| match s {
+        Strategy::Left => "left",
+        Strategy::Right => "right",
+        Strategy::Both => "both",
+        Strategy::Ast => "ast",
+        Strategy::Ai => "ai",
+    };
+
     match exit_code {
         Some(0) => {
             // Clean merge — no conflicts
             std::fs::write(output_path, &merged)?;
             if format == OutputFormat::Json {
-                output::print_json(&output::JsonMergeDriverOutput {
+                emit_json(&output::JsonMergeDriverOutput {
                     path: file_path.to_path_buf(),
                     hunks_resolved: 0,
                     clean_merge: true,
                     written: true,
+                    strategy: None,
                     hunks: Vec::new(),
-                })?;
+                });
             }
             Ok(0)
         }
@@ -74,16 +101,17 @@ pub fn run(
                 fallback,
             )?;
             if format == OutputFormat::Json {
-                output::print_json(&output::JsonMergeDriverOutput {
+                emit_json(&output::JsonMergeDriverOutput {
                     path: file_path.to_path_buf(),
                     hunks_resolved,
                     clean_merge: false,
                     written: true,
+                    strategy: Some(strategy_name(strategy).to_string()),
                     hunks: hunk_metadata
                         .iter()
                         .map(output::JsonHunkResult::from)
                         .collect(),
-                })?;
+                });
             }
             Ok(code)
         }
@@ -395,6 +423,55 @@ after
         );
 
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn json_merge_driver_output_strategy_field_present() {
+        let output = output::JsonMergeDriverOutput {
+            path: std::path::PathBuf::from("test.rs"),
+            hunks_resolved: 1,
+            clean_merge: false,
+            written: true,
+            strategy: Some("left".to_string()),
+            hunks: vec![],
+        };
+        let json = serde_json::to_value(&output).unwrap();
+        assert_eq!(json["strategy"], "left");
+    }
+
+    #[test]
+    fn json_merge_driver_output_strategy_omitted_for_clean() {
+        let output = output::JsonMergeDriverOutput {
+            path: std::path::PathBuf::from("test.rs"),
+            hunks_resolved: 0,
+            clean_merge: true,
+            written: true,
+            strategy: None,
+            hunks: vec![],
+        };
+        let json = serde_json::to_value(&output).unwrap();
+        assert!(json.get("strategy").is_none());
+    }
+
+    #[test]
+    fn log_file_without_json_format_is_rejected() {
+        let args = MergeDriverArgs {
+            base: std::path::PathBuf::from("base"),
+            ours: std::path::PathBuf::from("ours"),
+            theirs: std::path::PathBuf::from("theirs"),
+            marker_size: None,
+            path: None,
+            strategy: None,
+            output: None,
+            fallback_strategy: None,
+            format: crate::cli::OutputFormat::Text,
+            log_file: Some(std::path::PathBuf::from("/tmp/weavr.log")),
+        };
+        let config = test_config(Strategy::Left);
+        let result = run(&args, &config, &headless::AiHandle::none());
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("--log-file requires --format=json"));
     }
 
     fn test_config(strategy: Strategy) -> WeavrConfig {

@@ -63,6 +63,8 @@ pub struct JsonMergeDriverOutput {
     pub hunks_resolved: usize,
     pub clean_merge: bool,
     pub written: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub strategy: Option<String>,
     pub hunks: Vec<JsonHunkResult>,
 }
 
@@ -121,13 +123,37 @@ pub struct JsonError {
     pub error: String,
 }
 
+/// Serializes the given value as pretty-printed JSON to the given writer.
+fn print_json_to<T: Serialize>(writer: &mut impl Write, value: &T) -> Result<(), std::io::Error> {
+    serde_json::to_writer_pretty(&mut *writer, value).map_err(std::io::Error::other)?;
+    writeln!(writer)?;
+    Ok(())
+}
+
 /// Serializes the given value as JSON to stdout.
 pub fn print_json<T: Serialize>(value: &T) -> Result<(), std::io::Error> {
     let stdout = std::io::stdout();
     let mut handle = stdout.lock();
-    serde_json::to_writer_pretty(&mut handle, value).map_err(std::io::Error::other)?;
-    writeln!(handle)?;
-    Ok(())
+    print_json_to(&mut handle, value)
+}
+
+/// Serializes the given value as JSON to stderr.
+pub fn print_json_stderr<T: Serialize>(value: &T) -> Result<(), std::io::Error> {
+    let stderr = std::io::stderr();
+    let mut handle = stderr.lock();
+    print_json_to(&mut handle, value)
+}
+
+/// Appends the given value as JSON to the specified file.
+pub fn print_json_file<T: Serialize>(
+    path: &std::path::Path,
+    value: &T,
+) -> Result<(), std::io::Error> {
+    let mut file = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(path)?;
+    print_json_to(&mut file, value)
 }
 
 /// Prints a JSON error object to stderr.

@@ -88,7 +88,7 @@ fn run(cli: &Cli) -> Result<i32, CliError> {
                 #[cfg(not(feature = "ai"))]
                 let ai_handle = headless::AiHandle::none();
 
-                return merge_driver::run(args, &cfg, format, &ai_handle);
+                return merge_driver::run(args, &cfg, &ai_handle);
             }
             cli::Command::Init(args) => {
                 return init::run(args);
@@ -413,10 +413,16 @@ fn build_ai_provider(ai_config: &weavr_ai::AiConfig) -> Result<weavr_ai::AiStrat
 fn main() {
     let cli = Cli::parse();
 
+    // Determine the effective format — merge-driver has its own --format flag
+    let effective_format = match cli.command {
+        Some(cli::Command::MergeDriver(ref args)) => args.format,
+        _ => cli.format,
+    };
+
     let exit_code = match run(&cli) {
         Ok(code) => code,
         Err(e) => {
-            if cli.format == OutputFormat::Json {
+            if effective_format == OutputFormat::Json {
                 output::print_json_error(&e.to_string());
             } else {
                 eprintln!("weavr: {e}");

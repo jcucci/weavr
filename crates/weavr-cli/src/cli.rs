@@ -173,6 +173,12 @@ pub struct MergeDriverArgs {
     /// Fallback strategy when AI declines or errors (defaults to left when omitted)
     #[arg(long, value_enum)]
     pub fallback_strategy: Option<FallbackStrategy>,
+    /// Output format (JSON is written to stderr, not stdout)
+    #[arg(long, value_enum, default_value_t = OutputFormat::Text)]
+    pub format: OutputFormat,
+    /// Path to append JSON log output (requires --format=json)
+    #[arg(long, value_name = "PATH")]
+    pub log_file: Option<PathBuf>,
 }
 
 /// A terminal-first merge conflict resolver
@@ -505,6 +511,60 @@ mod tests {
         ]);
         if let Some(Command::MergeDriver(args)) = cli.command {
             assert!(args.output.is_none());
+        } else {
+            panic!("expected MergeDriver command");
+        }
+    }
+
+    #[test]
+    fn cli_parse_merge_driver_format_json() {
+        let cli = Cli::parse_from([
+            "weavr",
+            "merge-driver",
+            "--format=json",
+            "base.txt",
+            "ours.txt",
+            "theirs.txt",
+        ]);
+        if let Some(Command::MergeDriver(args)) = cli.command {
+            assert_eq!(args.format, OutputFormat::Json);
+        } else {
+            panic!("expected MergeDriver command");
+        }
+    }
+
+    #[test]
+    fn cli_parse_merge_driver_format_default_is_text() {
+        let cli = Cli::parse_from([
+            "weavr",
+            "merge-driver",
+            "base.txt",
+            "ours.txt",
+            "theirs.txt",
+        ]);
+        if let Some(Command::MergeDriver(args)) = cli.command {
+            assert_eq!(args.format, OutputFormat::Text);
+            assert!(args.log_file.is_none());
+        } else {
+            panic!("expected MergeDriver command");
+        }
+    }
+
+    #[test]
+    fn cli_parse_merge_driver_log_file() {
+        let cli = Cli::parse_from([
+            "weavr",
+            "merge-driver",
+            "--format=json",
+            "--log-file",
+            "/tmp/weavr.log",
+            "base.txt",
+            "ours.txt",
+            "theirs.txt",
+        ]);
+        if let Some(Command::MergeDriver(args)) = cli.command {
+            assert_eq!(args.format, OutputFormat::Json);
+            assert_eq!(args.log_file, Some(PathBuf::from("/tmp/weavr.log")));
         } else {
             panic!("expected MergeDriver command");
         }

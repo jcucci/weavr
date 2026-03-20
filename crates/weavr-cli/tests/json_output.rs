@@ -184,3 +184,93 @@ fn format_json_rejected_in_tui_mode() {
         .failure()
         .stderr(predicates::str::contains("not supported in TUI mode"));
 }
+
+// --- Merge driver JSON integration tests ---
+
+#[test]
+fn merge_driver_json_on_stderr_not_stdout() {
+    let base = temp_file("line one\nline two\n");
+    let ours = temp_file("line one\nline two\n");
+    let theirs = temp_file("line one\nline two\n");
+
+    let output = weavr_cmd()
+        .args([
+            "merge-driver",
+            "--format=json",
+            base.path().to_str().unwrap(),
+            ours.path().to_str().unwrap(),
+            theirs.path().to_str().unwrap(),
+        ])
+        .output()
+        .unwrap();
+
+    assert!(output.status.success(), "exit code was not 0");
+    // stdout should be empty — git owns stdout for merge drivers
+    assert!(
+        output.stdout.is_empty(),
+        "merge driver JSON should not appear on stdout"
+    );
+    // stderr should contain valid JSON
+    let json: Value =
+        serde_json::from_slice(&output.stderr).expect("stderr should contain valid JSON");
+    assert_eq!(json["clean_merge"], true);
+    assert_eq!(json["written"], true);
+    // Clean merge should not have a strategy field
+    assert!(json.get("strategy").is_none());
+}
+
+#[test]
+fn merge_driver_json_log_file() {
+    let base = temp_file("line one\nline two\n");
+    let ours = temp_file("line one\nline two\n");
+    let theirs = temp_file("line one\nline two\n");
+    let log_file = NamedTempFile::new().unwrap();
+    let log_path = log_file.path().to_path_buf();
+    // Close the temp file so the merge driver can write to it
+    drop(log_file);
+
+    let output = weavr_cmd()
+        .args([
+            "merge-driver",
+            "--format=json",
+            "--log-file",
+            log_path.to_str().unwrap(),
+            base.path().to_str().unwrap(),
+            ours.path().to_str().unwrap(),
+            theirs.path().to_str().unwrap(),
+        ])
+        .output()
+        .unwrap();
+
+    assert!(output.status.success(), "exit code was not 0");
+    // Log file should contain valid JSON
+    let log_content = std::fs::read_to_string(&log_path).unwrap();
+    let json: Value =
+        serde_json::from_str(&log_content).expect("log file should contain valid JSON");
+    assert_eq!(json["clean_merge"], true);
+
+    // Clean up
+    let _ = std::fs::remove_file(&log_path);
+}
+
+#[test]
+fn merge_driver_log_file_without_json_format_fails() {
+    let base = temp_file("base\n");
+    let ours = temp_file("ours\n");
+    let theirs = temp_file("theirs\n");
+
+    weavr_cmd()
+        .args([
+            "merge-driver",
+            "--log-file",
+            "/tmp/weavr-test.log",
+            base.path().to_str().unwrap(),
+            ours.path().to_str().unwrap(),
+            theirs.path().to_str().unwrap(),
+        ])
+        .assert()
+        .failure()
+        .stderr(predicates::str::contains(
+            "--log-file requires --format=json",
+        ));
+}
