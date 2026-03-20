@@ -251,6 +251,7 @@ pub(crate) fn try_ai_resolve(
                 dedupe,
                 fail_on_ambiguous,
                 metadata,
+                "AI declined (below confidence threshold), used fallback",
             )
         }
         Err(e) => {
@@ -264,6 +265,7 @@ pub(crate) fn try_ai_resolve(
                     dedupe,
                     fail_on_ambiguous,
                     metadata,
+                    &format!("AI error: {e}, used fallback"),
                 )
             } else {
                 Err(CliError::Ai(e))
@@ -281,6 +283,7 @@ fn apply_fallback(
     dedupe: bool,
     fail_on_ambiguous: bool,
     metadata: &mut Vec<HunkMeta>,
+    reason: &str,
 ) -> Result<weavr_core::Resolution, CliError> {
     match fallback_strategy {
         Some(fallback) => {
@@ -293,19 +296,16 @@ fn apply_fallback(
                         deduplicate: dedupe,
                         trim_whitespace: false,
                     };
-                    (
-                        weavr_core::Resolution::accept_both(hunk, &options),
-                        "both",
-                    )
+                    (weavr_core::Resolution::accept_both(hunk, &options), "both")
                 }
             };
             metadata.push(HunkMeta {
                 hunk_id: hunk.id.0,
                 strategy: fallback_name.into(),
-                provider: Some(provider_name.to_string()),
+                provider: None,
                 confidence: None,
                 explanation: None,
-                note: Some("AI declined, used fallback".into()),
+                note: Some(reason.into()),
             });
             Ok(resolution)
         }
@@ -317,10 +317,10 @@ fn apply_fallback(
                 metadata.push(HunkMeta {
                     hunk_id: hunk.id.0,
                     strategy: "left".into(),
-                    provider: Some(provider_name.to_string()),
+                    provider: None,
                     confidence: None,
                     explanation: None,
-                    note: Some("AI declined, used fallback".into()),
+                    note: Some(reason.into()),
                 });
                 Ok(weavr_core::Resolution::accept_left(hunk))
             }

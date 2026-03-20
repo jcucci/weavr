@@ -133,6 +133,48 @@ fn headless_json_multi_hunk_left_strategy() {
 }
 
 #[test]
+fn resolve_json_output_has_hunks_array() {
+    let f = temp_file(CONFLICTED_CONTENT);
+
+    // Write resolutions JSON to a temp file
+    let mut res = NamedTempFile::new().unwrap();
+    write!(
+        res,
+        r#"{{"resolutions": [{{"hunk_id": 0, "strategy": "left"}}]}}"#
+    )
+    .unwrap();
+    res.flush().unwrap();
+
+    let output = weavr_cmd()
+        .args([
+            "resolve",
+            "--format=json",
+            "--dry-run",
+            "--resolutions",
+            res.path().to_str().unwrap(),
+            f.path().to_str().unwrap(),
+        ])
+        .output()
+        .unwrap();
+
+    assert!(output.status.success(), "exit code was not 0");
+    let json: Value = serde_json::from_slice(&output.stdout).expect("valid JSON");
+    let results = json["results"].as_array().expect("results array");
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0]["resolved_hunks"], 1);
+    assert_eq!(results[0]["written"], false);
+
+    // Verify hunks array is present
+    let hunks = results[0]["hunks"].as_array().expect("hunks array");
+    assert_eq!(hunks.len(), 1);
+    assert_eq!(hunks[0]["hunk_id"], 0);
+    assert_eq!(hunks[0]["strategy"], "left");
+
+    // No legacy ai field
+    assert!(results[0].get("ai").is_none());
+}
+
+#[test]
 fn format_json_rejected_in_tui_mode() {
     let f = temp_file(CONFLICTED_CONTENT);
 

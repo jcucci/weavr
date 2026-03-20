@@ -144,9 +144,7 @@ fn build_resolutions(
                 })?;
                 Resolution::manual(text.clone())
             }
-            ResolutionStrategy::Ai => {
-                resolve_ai_hunk(hunk, entry.hunk_id, ai, &mut hunk_metadata)?
-            }
+            ResolutionStrategy::Ai => resolve_ai_hunk(hunk, entry.hunk_id, ai, &mut hunk_metadata)?,
         };
 
         // AI strategy pushes its own metadata inside resolve_ai_hunk
@@ -163,6 +161,8 @@ fn build_resolutions(
 
         result.push((hunk_id, resolution));
     }
+    // Sort metadata by hunk_id for consistent output regardless of input order
+    hunk_metadata.sort_by_key(|m| m.hunk_id);
     Ok(BuildResult {
         resolutions: result,
         hunk_metadata,
