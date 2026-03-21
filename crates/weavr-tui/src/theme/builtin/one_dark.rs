@@ -14,7 +14,6 @@ const FG: Color = Color::Rgb(171, 178, 191);
 const COMMENT: Color = Color::Rgb(92, 99, 112);
 const CYAN: Color = Color::Rgb(86, 182, 194);
 const BLUE: Color = Color::Rgb(97, 175, 239);
-#[allow(dead_code)]
 const PURPLE: Color = Color::Rgb(198, 120, 221);
 const GREEN: Color = Color::Rgb(152, 195, 121);
 const RED: Color = Color::Rgb(224, 108, 117);
@@ -30,6 +29,7 @@ pub fn theme() -> Theme {
         Style::default().fg(BLUE),
         Style::default().fg(ORANGE),
         Style::default().fg(GREEN),
+        Style::default().fg(PURPLE), // base (ancestor)
         Style::default().fg(RED),
         Style::default().fg(GREEN),
     );

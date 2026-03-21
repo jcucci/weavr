@@ -22,6 +22,7 @@ pub enum FileStatus {
 }
 
 /// Per-file state saved/restored when switching between files.
+#[allow(clippy::struct_excessive_bools)]
 pub struct FileState {
     /// Path to the conflicted file.
     pub path: PathBuf,
@@ -43,6 +44,8 @@ pub struct FileState {
     pub written: bool,
     /// Whether the file was saved with unresolved hunks (partial write).
     pub partial: bool,
+    /// Whether the base (ancestor) pane is shown for this file.
+    pub show_base_pane: bool,
 }
 
 impl FileState {
@@ -60,6 +63,7 @@ impl FileState {
             focused_pane: FocusedPane::default(),
             written: false,
             partial: false,
+            show_base_pane: false,
         }
     }
 

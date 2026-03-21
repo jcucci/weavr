@@ -69,6 +69,13 @@ pub fn build_help_sections(map: &KeybindingMap) -> Vec<HelpSection> {
             ],
         },
         HelpSection {
+            title: "Display",
+            bindings: vec![
+                binding(map, Action::ToggleWordDiff, "Toggle word diff"),
+                binding(map, Action::ToggleBasePane, "Toggle base pane (diff3)"),
+            ],
+        },
+        HelpSection {
             title: "AI (when configured)",
             bindings: vec![
                 binding(map, Action::AiSuggest, "AI suggest (current hunk)"),

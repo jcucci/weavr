@@ -97,6 +97,43 @@ fn render_side_pane(frame: &mut Frame, area: Rect, app: &App, side: PaneSide) {
     frame.render_widget(paragraph, area);
 }
 
+/// Renders the base pane showing the common ancestor content for diff3 conflicts.
+pub fn render_base_pane(frame: &mut Frame, area: Rect, app: &App) {
+    let theme = app.theme();
+    let is_focused = app.focused_pane() == FocusedPane::Base;
+
+    let border_style = if is_focused {
+        Style::default().fg(theme.ui.border_focused)
+    } else {
+        Style::default().fg(theme.ui.border_unfocused)
+    };
+
+    let content = match app.session() {
+        Some(session) => build_base_document(
+            session.segments(),
+            session.hunks(),
+            app.current_hunk_index(),
+            theme,
+        ),
+        None => vec![Line::from(Span::styled(
+            "No file loaded",
+            Style::default().fg(theme.base.muted),
+        ))],
+    };
+
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_type(BorderType::Rounded)
+        .border_style(border_style)
+        .title(" Base (Ancestor) ");
+
+    let paragraph = Paragraph::new(content)
+        .block(block)
+        .scroll((app.left_right_scroll(), 0));
+
+    frame.render_widget(paragraph, area);
+}
+
 /// Renders the result pane showing the merged output.
 pub fn render_result_pane(frame: &mut Frame, area: Rect, app: &App) {
     let theme = app.theme();
@@ -188,6 +225,7 @@ pub fn render_title_bar(frame: &mut Frame, area: Rect, app: &App) {
 const STATUS_MESSAGE_DURATION: Duration = Duration::from_secs(3);
 
 /// Renders the status bar with context-sensitive help.
+#[allow(clippy::too_many_lines)]
 pub fn render_status_bar(frame: &mut Frame, area: Rect, app: &App) {
     let theme = app.theme();
 
@@ -227,6 +265,7 @@ pub fn render_status_bar(frame: &mut Frame, area: Rect, app: &App) {
     // Build pane indicator
     let pane_name = match app.focused_pane() {
         FocusedPane::Left => "Left",
+        FocusedPane::Base => "Base",
         FocusedPane::Right => "Right",
         FocusedPane::Result => "Result",
     };
@@ -302,7 +341,10 @@ pub fn render_status_bar(frame: &mut Frame, area: Rect, app: &App) {
         }
     };
 
-    let full_status = format!("{status_text}{undo_redo_indicator}{ai_indicator}{ast_indicator}");
+    let diff3_indicator = if app.show_base_pane() { " | diff3" } else { "" };
+
+    let full_status =
+        format!("{status_text}{undo_redo_indicator}{diff3_indicator}{ai_indicator}{ast_indicator}");
     let status = Paragraph::new(full_status).style(theme.ui.status.bg(theme.base.background));
     frame.render_widget(status, area);
 }
@@ -385,6 +427,75 @@ fn build_side_document<'a>(
                     lines.push(Line::from(Span::styled(
                         "────────────────────",
                         side_style.add_modifier(Modifier::BOLD),
+                    )));
+                }
+            }
+        }
+    }
+
+    if lines.is_empty() {
+        lines.push(Line::from(Span::styled(
+            "(empty file)",
+            Style::default().fg(theme.base.muted),
+        )));
+    }
+
+    lines
+}
+
+/// Builds the full document content for the base (ancestor) pane.
+fn build_base_document<'a>(
+    segments: &[Segment],
+    hunks: &[weavr_core::ConflictHunk],
+    current_hunk_idx: usize,
+    theme: &'a crate::theme::Theme,
+) -> Vec<Line<'a>> {
+    let mut lines = Vec::new();
+    let mut line_number = 1;
+
+    for segment in segments {
+        match segment {
+            Segment::Clean(text) => {
+                for line_text in text.lines() {
+                    lines.push(build_line(
+                        line_number,
+                        line_text,
+                        Style::default().fg(theme.base.foreground),
+                        false,
+                    ));
+                    line_number += 1;
+                }
+            }
+            Segment::Conflict(hunk_idx) => {
+                let hunk = &hunks[*hunk_idx];
+                let is_current = *hunk_idx == current_hunk_idx;
+                let base_style = theme.conflict.base;
+
+                if is_current {
+                    lines.push(Line::from(Span::styled(
+                        format!("──── Conflict {} ────", hunk_idx + 1),
+                        base_style.add_modifier(Modifier::BOLD),
+                    )));
+                }
+
+                if let Some(base_content) = &hunk.base {
+                    for line_text in base_content.text.lines() {
+                        lines.push(build_line(line_number, line_text, base_style, is_current));
+                        line_number += 1;
+                    }
+                } else {
+                    lines.push(Line::from(Span::styled(
+                        "(no base — 2-way conflict)".to_string(),
+                        Style::default()
+                            .fg(theme.base.muted)
+                            .add_modifier(Modifier::ITALIC),
+                    )));
+                }
+
+                if is_current {
+                    lines.push(Line::from(Span::styled(
+                        "────────────────────",
+                        base_style.add_modifier(Modifier::BOLD),
                     )));
                 }
             }

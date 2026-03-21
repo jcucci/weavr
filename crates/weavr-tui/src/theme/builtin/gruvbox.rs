@@ -55,6 +55,7 @@ pub fn dark() -> Theme {
         Style::default().fg(BLUE),
         Style::default().fg(ORANGE),
         Style::default().fg(GREEN),
+        Style::default().fg(PURPLE), // base (ancestor)
         Style::default().fg(RED),
         Style::default().fg(GREEN),
     );
@@ -89,6 +90,7 @@ pub fn light() -> Theme {
         Style::default().fg(BLUE),
         Style::default().fg(ORANGE),
         Style::default().fg(GREEN),
+        Style::default().fg(PURPLE), // base (ancestor)
         Style::default().fg(RED),
         Style::default().fg(GREEN),
     );

@@ -23,7 +23,6 @@ const ORANGE: Color = Color::Rgb(203, 75, 22);
 const RED: Color = Color::Rgb(220, 50, 47);
 #[allow(dead_code)]
 const MAGENTA: Color = Color::Rgb(211, 54, 130);
-#[allow(dead_code)]
 const VIOLET: Color = Color::Rgb(108, 113, 196);
 const BLUE: Color = Color::Rgb(38, 139, 210);
 const CYAN: Color = Color::Rgb(42, 161, 152);
@@ -44,6 +43,7 @@ pub fn dark() -> Theme {
         Style::default().fg(BLUE),
         Style::default().fg(ORANGE),
         Style::default().fg(GREEN),
+        Style::default().fg(VIOLET), // base (ancestor)
         Style::default().fg(RED),
         Style::default().fg(GREEN),
     );
@@ -81,6 +81,7 @@ pub fn light() -> Theme {
         Style::default().fg(BLUE),
         Style::default().fg(ORANGE),
         Style::default().fg(GREEN),
+        Style::default().fg(VIOLET), // base (ancestor)
         Style::default().fg(RED),
         Style::default().fg(GREEN),
     );

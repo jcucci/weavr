@@ -29,6 +29,7 @@ pub fn theme() -> Theme {
         Style::default().fg(CYAN),
         Style::default().fg(ORANGE),
         Style::default().fg(GREEN),
+        Style::default().fg(PURPLE), // base (ancestor)
         Style::default().fg(RED),
         Style::default().fg(GREEN),
     );
