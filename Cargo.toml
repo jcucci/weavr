@@ -51,6 +51,9 @@ thiserror = "2.0"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 
+# Syntax highlighting
+syntect = "5"
+
 # Theme dependencies
 catppuccin = { version = "2", features = ["ratatui"] }
 

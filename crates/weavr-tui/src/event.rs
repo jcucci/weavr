@@ -175,6 +175,7 @@ fn dispatch_action(app: &mut App, action: Action) {
         // Display
         Action::ToggleWordDiff => app.toggle_word_diff(),
         Action::ToggleBasePane => app.toggle_base_pane(),
+        Action::ToggleSyntaxHighlight => app.toggle_syntax_highlight(),
 
         // AI
         Action::AiSuggest => ai::request_suggestion(app),
@@ -553,6 +554,21 @@ mod tests {
         // Toggle back
         handle_event(&mut app, &event);
         assert!(app.diff_config().word_diff);
+    }
+
+    #[test]
+    fn h_key_toggles_syntax_highlight() {
+        let mut app = App::new();
+        assert!(app.syntax_highlight());
+
+        let event = Event::Key(make_key_event(KeyCode::Char('h'), KeyModifiers::NONE));
+        handle_event(&mut app, &event);
+
+        assert!(!app.syntax_highlight());
+
+        // Toggle back
+        handle_event(&mut app, &event);
+        assert!(app.syntax_highlight());
     }
 
     #[test]

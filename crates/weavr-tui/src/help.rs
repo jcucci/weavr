@@ -73,6 +73,11 @@ pub fn build_help_sections(map: &KeybindingMap) -> Vec<HelpSection> {
             bindings: vec![
                 binding(map, Action::ToggleWordDiff, "Toggle word diff"),
                 binding(map, Action::ToggleBasePane, "Toggle base pane (diff3)"),
+                binding(
+                    map,
+                    Action::ToggleSyntaxHighlight,
+                    "Toggle syntax highlighting",
+                ),
             ],
         },
         HelpSection {

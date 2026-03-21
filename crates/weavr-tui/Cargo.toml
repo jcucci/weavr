@@ -28,6 +28,7 @@ catppuccin.workspace = true
 tempfile = "3"
 shell-words = "1"
 similar = { version = "2", features = ["inline"] }
+syntect.workspace = true
 
 [[bin]]
 name = "weavr-tui-dev"
