@@ -79,6 +79,8 @@ pub enum Action {
     ToggleWordDiff,
     /// Toggle base (ancestor) pane visibility.
     ToggleBasePane,
+    /// Toggle syntax highlighting in panes.
+    ToggleSyntaxHighlight,
 
     // AI
     /// Request an AI suggestion for the current hunk.
@@ -127,6 +129,7 @@ const ALL_ACTIONS: &[Action] = &[
     Action::EditInEditor,
     Action::ToggleWordDiff,
     Action::ToggleBasePane,
+    Action::ToggleSyntaxHighlight,
     Action::AiSuggest,
     Action::AiSuggestAll,
     Action::AiExplainOrHelp,
@@ -181,6 +184,7 @@ impl Action {
             Self::EditInEditor => "edit_in_editor",
             Self::ToggleWordDiff => "toggle_word_diff",
             Self::ToggleBasePane => "toggle_base_pane",
+            Self::ToggleSyntaxHighlight => "toggle_syntax_highlight",
             Self::AiSuggest => "ai_suggest",
             Self::AiSuggestAll => "ai_suggest_all",
             Self::AiExplainOrHelp => "ai_explain_or_help",
@@ -607,6 +611,7 @@ impl KeybindingMap {
             Action::ToggleBasePane,
             KeyInput::Single(KeyCode::Char('b'), KeyModifiers::CONTROL),
         );
+        map.bind(Action::ToggleSyntaxHighlight, single_char('h'));
 
         // AI
         map.bind(Action::AiSuggest, single_char('s'));
@@ -1067,6 +1072,15 @@ mod tests {
         assert_eq!(
             map.lookup_single(KeyCode::Char('w'), KeyModifiers::NONE),
             Some(Action::ToggleWordDiff)
+        );
+    }
+
+    #[test]
+    fn h_key_bound_to_toggle_syntax_highlight() {
+        let map = KeybindingMap::defaults();
+        assert_eq!(
+            map.lookup_single(KeyCode::Char('h'), KeyModifiers::NONE),
+            Some(Action::ToggleSyntaxHighlight)
         );
     }
 

@@ -18,6 +18,7 @@ use weavr_core::{HunkState, Segment};
 use crate::ai::AiState;
 use crate::ast::AstState;
 use crate::diff::{compute_line_diffs, compute_word_diffs, DiffConfig, DiffLine};
+use crate::highlight::{self, HighlightedDocument};
 use crate::input::InputMode;
 use crate::{App, FocusedPane};
 
@@ -69,6 +70,15 @@ fn render_side_pane(frame: &mut Frame, area: Rect, app: &App, side: PaneSide) {
         Style::default().fg(theme.ui.border_unfocused)
     };
 
+    let highlight_doc = if app.syntax_highlight() {
+        app.highlight_cache().and_then(|cache| match side {
+            PaneSide::Left => cache.left.as_ref(),
+            PaneSide::Right => cache.right.as_ref(),
+        })
+    } else {
+        None
+    };
+
     let content = match app.session() {
         Some(session) => build_side_document(
             session.segments(),
@@ -77,6 +87,7 @@ fn render_side_pane(frame: &mut Frame, area: Rect, app: &App, side: PaneSide) {
             app.current_hunk_index(),
             theme,
             *app.diff_config(),
+            highlight_doc,
         ),
         None => vec![Line::from(Span::styled(
             "No file loaded",
@@ -108,12 +119,19 @@ pub fn render_base_pane(frame: &mut Frame, area: Rect, app: &App) {
         Style::default().fg(theme.ui.border_unfocused)
     };
 
+    let highlight_doc = if app.syntax_highlight() {
+        app.highlight_cache().and_then(|cache| cache.base.as_ref())
+    } else {
+        None
+    };
+
     let content = match app.session() {
         Some(session) => build_base_document(
             session.segments(),
             session.hunks(),
             app.current_hunk_index(),
             theme,
+            highlight_doc,
         ),
         None => vec![Line::from(Span::styled(
             "No file loaded",
@@ -145,6 +163,13 @@ pub fn render_result_pane(frame: &mut Frame, area: Rect, app: &App) {
         Style::default().fg(theme.ui.border_unfocused)
     };
 
+    let highlight_doc = if app.syntax_highlight() {
+        app.highlight_cache()
+            .and_then(|cache| cache.result.as_ref())
+    } else {
+        None
+    };
+
     let content = match app.session() {
         Some(session) => build_result_document(
             session.segments(),
@@ -153,6 +178,7 @@ pub fn render_result_pane(frame: &mut Frame, area: Rect, app: &App) {
             theme,
             app.ai_state(),
             app.ast_state(),
+            highlight_doc,
         ),
         None => vec![Line::from(Span::styled(
             "No file loaded",
@@ -357,6 +383,7 @@ fn build_side_document<'a>(
     current_hunk_idx: usize,
     theme: &'a crate::theme::Theme,
     diff_config: DiffConfig,
+    highlight_doc: Option<&HighlightedDocument>,
 ) -> Vec<Line<'a>> {
     let mut lines = Vec::new();
     let mut line_number = 1;
@@ -365,11 +392,12 @@ fn build_side_document<'a>(
         match segment {
             Segment::Clean(text) => {
                 for line_text in text.lines() {
-                    lines.push(build_line(
+                    lines.push(build_highlighted_or_plain_line(
                         line_number,
                         line_text,
                         Style::default().fg(theme.base.foreground),
                         false,
+                        highlight_doc,
                     ));
                     line_number += 1;
                 }
@@ -449,6 +477,7 @@ fn build_base_document<'a>(
     hunks: &[weavr_core::ConflictHunk],
     current_hunk_idx: usize,
     theme: &'a crate::theme::Theme,
+    highlight_doc: Option<&HighlightedDocument>,
 ) -> Vec<Line<'a>> {
     let mut lines = Vec::new();
     let mut line_number = 1;
@@ -457,11 +486,12 @@ fn build_base_document<'a>(
         match segment {
             Segment::Clean(text) => {
                 for line_text in text.lines() {
-                    lines.push(build_line(
+                    lines.push(build_highlighted_or_plain_line(
                         line_number,
                         line_text,
                         Style::default().fg(theme.base.foreground),
                         false,
+                        highlight_doc,
                     ));
                     line_number += 1;
                 }
@@ -521,6 +551,7 @@ fn build_result_document<'a>(
     theme: &'a crate::theme::Theme,
     ai_state: &AiState,
     ast_state: &AstState,
+    highlight_doc: Option<&HighlightedDocument>,
 ) -> Vec<Line<'a>> {
     let mut lines = Vec::new();
     let mut line_number = 1;
@@ -529,11 +560,12 @@ fn build_result_document<'a>(
         match segment {
             Segment::Clean(text) => {
                 for line_text in text.lines() {
-                    lines.push(build_line(
+                    lines.push(build_highlighted_or_plain_line(
                         line_number,
                         line_text,
                         Style::default().fg(theme.base.foreground),
                         false,
+                        highlight_doc,
                     ));
                     line_number += 1;
                 }
@@ -703,6 +735,57 @@ fn build_line(line_number: usize, text: &str, style: Style, highlight: bool) -> 
         Span::styled(format!("{line_number:4} "), line_num_style),
         Span::styled(text.to_string(), style),
     ])
+}
+
+/// Builds a line using syntax highlighting if available, otherwise plain.
+///
+/// `line_number` is 1-based; the highlighted document is indexed 0-based.
+/// Falls back to plain rendering if the cached span text doesn't match the
+/// source `text`, guarding against stale cache misalignment.
+fn build_highlighted_or_plain_line(
+    line_number: usize,
+    text: &str,
+    fallback_style: Style,
+    is_highlighted: bool,
+    highlight_doc: Option<&HighlightedDocument>,
+) -> Line<'static> {
+    if let Some(doc) = highlight_doc {
+        if let Some(spans_data) = doc.get_line_spans(line_number - 1) {
+            if !spans_data.is_empty() {
+                // Validate cached span text matches source to avoid rendering
+                // wrong content from a stale or misaligned cache.
+                let cached_text: String = spans_data.iter().map(|(_, s)| s.as_str()).collect();
+                if cached_text == text {
+                    return build_highlighted_line(line_number, spans_data, is_highlighted);
+                }
+            }
+        }
+    }
+    build_line(line_number, text, fallback_style, is_highlighted)
+}
+
+/// Builds a line from syntax-highlighted spans.
+fn build_highlighted_line(
+    line_number: usize,
+    hl_spans: &[(syntect::highlighting::Style, String)],
+    is_highlighted: bool,
+) -> Line<'static> {
+    let line_num_style = if is_highlighted {
+        Style::default()
+            .fg(ratatui::style::Color::Yellow)
+            .add_modifier(Modifier::BOLD)
+    } else {
+        Style::default().add_modifier(Modifier::DIM)
+    };
+
+    let mut spans = vec![Span::styled(format!("{line_number:4} "), line_num_style)];
+    for (style, text) in hl_spans {
+        spans.push(Span::styled(
+            text.clone(),
+            highlight::syntect_style_to_ratatui(*style),
+        ));
+    }
+    Line::from(spans)
 }
 
 /// Builds a line with word-level diff highlighting.

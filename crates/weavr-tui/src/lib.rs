@@ -28,6 +28,7 @@ pub mod diff;
 pub mod editor;
 pub mod event;
 pub mod help;
+pub mod highlight;
 pub mod input;
 pub mod keybindings;
 pub mod navigation;
@@ -128,6 +129,12 @@ pub struct App {
     pub(crate) partial_write: bool,
     /// Whether the base (ancestor) pane is visible.
     pub(crate) show_base_pane: bool,
+    /// Whether syntax highlighting is enabled.
+    pub(crate) syntax_highlight: bool,
+    /// Lazy-initialized syntax highlighter.
+    pub(crate) highlighter: Option<highlight::Highlighter>,
+    /// Cached highlighted documents for the current file.
+    pub(crate) highlight_cache: Option<highlight::HighlightCache>,
 }
 
 impl App {
@@ -165,6 +172,9 @@ impl App {
             workspace: None,
             partial_write: false,
             show_base_pane: false,
+            syntax_highlight: true,
+            highlighter: None,
+            highlight_cache: None,
         }
     }
 
@@ -202,12 +212,16 @@ impl App {
             workspace: None,
             partial_write: false,
             show_base_pane: false,
+            syntax_highlight: true,
+            highlighter: None,
+            highlight_cache: None,
         }
     }
 
     /// Sets the merge session to display.
     pub fn set_session(&mut self, session: MergeSession) {
         self.session = Some(session);
+        self.highlight_cache = None;
     }
 
     /// Returns a reference to the current session, if any.
@@ -420,6 +434,129 @@ impl App {
             "Word diff disabled"
         };
         self.set_status_message(status);
+    }
+
+    /// Toggles syntax highlighting on/off.
+    pub(crate) fn toggle_syntax_highlight(&mut self) {
+        self.syntax_highlight = !self.syntax_highlight;
+        let status = if self.syntax_highlight {
+            "Syntax highlighting enabled"
+        } else {
+            "Syntax highlighting disabled"
+        };
+        self.set_status_message(status);
+    }
+
+    /// Returns whether syntax highlighting is enabled.
+    #[must_use]
+    pub fn syntax_highlight(&self) -> bool {
+        self.syntax_highlight
+    }
+
+    /// Returns a reference to the highlight cache, if any.
+    #[must_use]
+    pub fn highlight_cache(&self) -> Option<&highlight::HighlightCache> {
+        self.highlight_cache.as_ref()
+    }
+
+    /// Ensures the highlight cache is populated for the current file.
+    ///
+    /// Lazily initializes the `Highlighter` on first call and rebuilds
+    /// the cache when the file path changes.
+    pub fn ensure_highlight_cache(&mut self) {
+        if !self.syntax_highlight {
+            return;
+        }
+
+        let Some(session) = self.session.as_ref() else {
+            return;
+        };
+
+        let file_path = session.input().left.path.clone();
+
+        // Check if cache is already valid for this file
+        if let Some(ref cache) = self.highlight_cache {
+            if cache.path == file_path {
+                return;
+            }
+        }
+
+        let highlighter = self
+            .highlighter
+            .get_or_insert_with(highlight::Highlighter::new);
+
+        let lang = weavr_core::detect_language(&file_path);
+
+        // Build the full text for each side from the segments
+        let segments = session.segments();
+        let hunks = session.hunks();
+
+        let mut left_text = String::new();
+        let mut right_text = String::new();
+        let mut base_text = String::new();
+        let mut result_text = String::new();
+
+        for segment in segments {
+            match segment {
+                weavr_core::Segment::Clean(text) => {
+                    left_text.push_str(text);
+                    if !text.ends_with('\n') {
+                        left_text.push('\n');
+                    }
+                    right_text.push_str(text);
+                    if !text.ends_with('\n') {
+                        right_text.push('\n');
+                    }
+                    base_text.push_str(text);
+                    if !text.ends_with('\n') {
+                        base_text.push('\n');
+                    }
+                    result_text.push_str(text);
+                    if !text.ends_with('\n') {
+                        result_text.push('\n');
+                    }
+                }
+                weavr_core::Segment::Conflict(hunk_idx) => {
+                    let hunk = &hunks[*hunk_idx];
+                    left_text.push_str(&hunk.left.text);
+                    if !hunk.left.text.ends_with('\n') {
+                        left_text.push('\n');
+                    }
+                    right_text.push_str(&hunk.right.text);
+                    if !hunk.right.text.ends_with('\n') {
+                        right_text.push('\n');
+                    }
+                    if let Some(base) = &hunk.base {
+                        base_text.push_str(&base.text);
+                        if !base.text.ends_with('\n') {
+                            base_text.push('\n');
+                        }
+                    }
+                    // For result, only include resolved content; unresolved
+                    // hunks render placeholder UI that doesn't consume line
+                    // numbers, so we must not add text here for them.
+                    if let weavr_core::HunkState::Resolved(resolution) = &hunk.state {
+                        result_text.push_str(&resolution.content);
+                        if !resolution.content.ends_with('\n') {
+                            result_text.push('\n');
+                        }
+                    }
+                }
+            }
+        }
+
+        self.highlight_cache = Some(highlight::HighlightCache {
+            path: file_path,
+            left: highlighter.highlight(&left_text, lang),
+            right: highlighter.highlight(&right_text, lang),
+            base: highlighter.highlight(&base_text, lang),
+            result: highlighter.highlight(&result_text, lang),
+        });
+    }
+
+    /// Invalidates the highlight cache (e.g., on file switch).
+    pub fn invalidate_highlight_cache(&mut self) {
+        self.highlight_cache = None;
     }
 
     /// Sets a status message to display in the status bar.
@@ -1004,6 +1141,7 @@ fn run_event_loop(terminal: &mut ratatui::DefaultTerminal, app: &mut App) -> std
         // Poll AI background events (non-blocking)
         ai::poll_ai_events(app);
 
+        app.ensure_highlight_cache();
         terminal.draw(|frame| ui::draw(frame, app))?;
 
         if let Some(evt) = event::poll_event(Duration::from_millis(100))? {

@@ -51,6 +51,7 @@ pub fn clear_current_resolution(app: &mut App) {
                     hunk_id,
                     old: old_resolution,
                 });
+                app.invalidate_highlight_cache();
                 app.set_status_message("Cleared resolution");
             }
             Err(_) => {
@@ -81,7 +82,10 @@ pub fn undo(app: &mut App) {
         };
 
         match result {
-            Ok(()) => app.set_status_message(&format!("Undid: {description}")),
+            Ok(()) => {
+                app.invalidate_highlight_cache();
+                app.set_status_message(&format!("Undid: {description}"));
+            }
             Err(_) => app.set_status_message("Failed to undo"),
         }
     }
@@ -102,7 +106,10 @@ pub fn redo(app: &mut App) {
         };
 
         match result {
-            Ok(()) => app.set_status_message(&format!("Redid: {description}")),
+            Ok(()) => {
+                app.invalidate_highlight_cache();
+                app.set_status_message(&format!("Redid: {description}"));
+            }
             Err(_) => app.set_status_message("Failed to redo"),
         }
     }
@@ -140,6 +147,7 @@ where
                     old: prev,
                     new: resolution,
                 });
+                app.invalidate_highlight_cache();
                 app.set_status_message(action);
             }
             Err(_) => {
