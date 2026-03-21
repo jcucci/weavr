@@ -389,8 +389,14 @@ impl App {
     }
 
     /// Toggles the base (ancestor) pane visibility.
+    ///
+    /// When hiding the base pane, resets focus to Left if it was on Base
+    /// to avoid focusing a hidden pane.
     pub(crate) fn toggle_base_pane(&mut self) {
         self.show_base_pane = !self.show_base_pane;
+        if !self.show_base_pane && self.focused_pane == FocusedPane::Base {
+            self.focused_pane = FocusedPane::Left;
+        }
         let status = if self.show_base_pane {
             "Base pane enabled (diff3)"
         } else {
@@ -744,6 +750,10 @@ impl App {
             self.stage_requested = file_state.stage_requested;
             self.focused_pane = file_state.focused_pane;
             self.show_base_pane = file_state.show_base_pane;
+            // Ensure we never focus a hidden pane after restoring state
+            if !self.show_base_pane && self.focused_pane == FocusedPane::Base {
+                self.focused_pane = FocusedPane::Left;
+            }
         }
     }
 
@@ -1132,6 +1142,72 @@ mod tests {
 
         app.cycle_focus_back();
         assert_eq!(app.focused_pane(), FocusedPane::Left);
+    }
+
+    #[test]
+    fn cycle_focus_forward_with_base_pane() {
+        let mut app = App::new();
+        app.show_base_pane = true;
+        assert_eq!(app.focused_pane(), FocusedPane::Left);
+
+        app.cycle_focus();
+        assert_eq!(app.focused_pane(), FocusedPane::Base);
+
+        app.cycle_focus();
+        assert_eq!(app.focused_pane(), FocusedPane::Right);
+
+        app.cycle_focus();
+        assert_eq!(app.focused_pane(), FocusedPane::Result);
+
+        app.cycle_focus();
+        assert_eq!(app.focused_pane(), FocusedPane::Left);
+    }
+
+    #[test]
+    fn cycle_focus_backward_with_base_pane() {
+        let mut app = App::new();
+        app.show_base_pane = true;
+        assert_eq!(app.focused_pane(), FocusedPane::Left);
+
+        app.cycle_focus_back();
+        assert_eq!(app.focused_pane(), FocusedPane::Result);
+
+        app.cycle_focus_back();
+        assert_eq!(app.focused_pane(), FocusedPane::Right);
+
+        app.cycle_focus_back();
+        assert_eq!(app.focused_pane(), FocusedPane::Base);
+
+        app.cycle_focus_back();
+        assert_eq!(app.focused_pane(), FocusedPane::Left);
+    }
+
+    #[test]
+    fn toggle_base_pane_resets_focus_when_hiding() {
+        let mut app = App::new();
+
+        // Enable base pane and focus it
+        app.toggle_base_pane();
+        assert!(app.show_base_pane());
+        app.focused_pane = FocusedPane::Base;
+
+        // Disable base pane — focus should reset to Left
+        app.toggle_base_pane();
+        assert!(!app.show_base_pane());
+        assert_eq!(app.focused_pane(), FocusedPane::Left);
+    }
+
+    #[test]
+    fn toggle_base_pane_preserves_non_base_focus_when_hiding() {
+        let mut app = App::new();
+
+        // Enable base pane, keep focus on Right
+        app.toggle_base_pane();
+        app.focused_pane = FocusedPane::Right;
+
+        // Disable base pane — focus should stay on Right
+        app.toggle_base_pane();
+        assert_eq!(app.focused_pane(), FocusedPane::Right);
     }
 
     #[test]
