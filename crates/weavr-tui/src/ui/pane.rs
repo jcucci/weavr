@@ -740,6 +740,8 @@ fn build_line(line_number: usize, text: &str, style: Style, highlight: bool) -> 
 /// Builds a line using syntax highlighting if available, otherwise plain.
 ///
 /// `line_number` is 1-based; the highlighted document is indexed 0-based.
+/// Falls back to plain rendering if the cached span text doesn't match the
+/// source `text`, guarding against stale cache misalignment.
 fn build_highlighted_or_plain_line(
     line_number: usize,
     text: &str,
@@ -750,7 +752,12 @@ fn build_highlighted_or_plain_line(
     if let Some(doc) = highlight_doc {
         if let Some(spans_data) = doc.get_line_spans(line_number - 1) {
             if !spans_data.is_empty() {
-                return build_highlighted_line(line_number, spans_data, is_highlighted);
+                // Validate cached span text matches source to avoid rendering
+                // wrong content from a stale or misaligned cache.
+                let cached_text: String = spans_data.iter().map(|(_, s)| s.as_str()).collect();
+                if cached_text == text {
+                    return build_highlighted_line(line_number, spans_data, is_highlighted);
+                }
             }
         }
     }

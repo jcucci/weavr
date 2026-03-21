@@ -48,16 +48,24 @@ impl Default for Highlighter {
 impl Highlighter {
     /// Creates a new highlighter with the default syntax definitions and theme.
     ///
-    /// # Panics
-    ///
-    /// Panics if the bundled syntect theme set does not contain "base16-ocean.dark".
+    /// Prefers "base16-ocean.dark" from the bundled theme set. Falls back to
+    /// the first available theme, then to a default `Theme` instance.
     #[must_use]
     pub fn new() -> Self {
         let syntax_set = SyntaxSet::load_defaults_newlines();
-        let theme = ThemeSet::load_defaults()
+        let mut theme_set = ThemeSet::load_defaults();
+        let theme = theme_set
             .themes
             .remove("base16-ocean.dark")
-            .expect("default theme must exist");
+            .or_else(|| {
+                theme_set
+                    .themes
+                    .keys()
+                    .next()
+                    .cloned()
+                    .and_then(|k| theme_set.themes.remove(&k))
+            })
+            .unwrap_or_default();
         Self { syntax_set, theme }
     }
 
@@ -70,11 +78,14 @@ impl Highlighter {
         let syntax = self.syntax_set.find_syntax_by_name(syntax_name)?;
         let mut h = syntect::easy::HighlightLines::new(syntax, &self.theme);
         let mut lines = Vec::new();
+        let mut with_nl = String::new();
         for line in text.lines() {
             // `line` lacks a trailing newline, but syntect expects one for
             // correct state tracking. Append it for highlighting then strip
             // the newline from the last token.
-            let with_nl = format!("{line}\n");
+            with_nl.clear();
+            with_nl.push_str(line);
+            with_nl.push('\n');
             let ranges = h
                 .highlight_line(&with_nl, &self.syntax_set)
                 .unwrap_or_default();

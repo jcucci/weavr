@@ -532,15 +532,12 @@ impl App {
                             base_text.push('\n');
                         }
                     }
-                    // For result, use resolved content or left as fallback
+                    // For result, only include resolved content; unresolved
+                    // hunks render placeholder UI that doesn't consume line
+                    // numbers, so we must not add text here for them.
                     if let weavr_core::HunkState::Resolved(resolution) = &hunk.state {
                         result_text.push_str(&resolution.content);
                         if !resolution.content.ends_with('\n') {
-                            result_text.push('\n');
-                        }
-                    } else {
-                        result_text.push_str(&hunk.left.text);
-                        if !hunk.left.text.ends_with('\n') {
                             result_text.push('\n');
                         }
                     }
