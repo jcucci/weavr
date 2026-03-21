@@ -33,7 +33,6 @@ const NORD11: Color = Color::Rgb(191, 97, 106); // Red
 const NORD12: Color = Color::Rgb(208, 135, 112); // Orange
 const NORD13: Color = Color::Rgb(235, 203, 139); // Yellow
 const NORD14: Color = Color::Rgb(163, 190, 140); // Green
-#[allow(dead_code)]
 const NORD15: Color = Color::Rgb(180, 142, 173); // Purple
 
 /// Creates the Nord theme.
@@ -51,6 +50,7 @@ pub fn theme() -> Theme {
         Style::default().fg(NORD8),  // left - frost blue
         Style::default().fg(NORD12), // right - orange
         Style::default().fg(NORD14), // both - green
+        Style::default().fg(NORD15), // base (ancestor) - purple
         Style::default().fg(NORD11), // unresolved - red
         Style::default().fg(NORD14), // resolved - green
     );

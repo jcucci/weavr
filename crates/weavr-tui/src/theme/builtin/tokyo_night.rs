@@ -3,7 +3,7 @@
 //! A clean, dark theme inspired by Tokyo at night.
 //! <https://github.com/folke/tokyonight.nvim>
 
-use ratatui::style::Style;
+use ratatui::style::{Color, Style};
 
 use crate::theme::types::{ColorPalette, ConflictColors, DiffColors, Theme, UiColors};
 
@@ -65,6 +65,7 @@ pub fn night() -> Theme {
         Style::default().fg(BLUE),
         Style::default().fg(ORANGE),
         Style::default().fg(GREEN),
+        Style::default().fg(PURPLE), // base (ancestor)
         Style::default().fg(RED),
         Style::default().fg(GREEN),
     );
@@ -100,6 +101,7 @@ pub fn storm() -> Theme {
         Style::default().fg(BLUE),
         Style::default().fg(ORANGE),
         Style::default().fg(GREEN),
+        Style::default().fg(PURPLE), // base (ancestor)
         Style::default().fg(RED),
         Style::default().fg(GREEN),
     );
@@ -134,6 +136,7 @@ pub fn light() -> Theme {
         Style::default().fg(BLUE),
         Style::default().fg(ORANGE),
         Style::default().fg(GREEN),
+        Style::default().fg(Color::Rgb(150, 120, 200)), // base (ancestor) - muted purple
         Style::default().fg(RED),
         Style::default().fg(GREEN),
     );

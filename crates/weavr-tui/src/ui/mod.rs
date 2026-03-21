@@ -15,13 +15,16 @@ use crate::App;
 
 /// Renders the entire UI to the frame.
 pub fn draw(frame: &mut Frame, app: &App) {
-    let areas = calculate_layout(frame.area(), app.layout_config());
+    let areas = calculate_layout(frame.area(), app.layout_config(), app.show_base_pane());
 
     // Title bar with hunk counter
     pane::render_title_bar(frame, areas.title_bar, app);
 
-    // Three panes with full document content
+    // Side panes with full document content
     pane::render_left_pane(frame, areas.left_pane, app);
+    if let Some(base_area) = areas.base_pane {
+        pane::render_base_pane(frame, base_area, app);
+    }
     pane::render_right_pane(frame, areas.right_pane, app);
     pane::render_result_pane(frame, areas.result_pane, app);
 

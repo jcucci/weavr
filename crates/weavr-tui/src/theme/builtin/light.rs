@@ -19,6 +19,7 @@ pub fn theme() -> Theme {
         Style::default().fg(Color::Rgb(0, 100, 200)), // left - blue
         Style::default().fg(Color::Rgb(200, 100, 0)), // right - orange
         Style::default().fg(Color::Rgb(0, 150, 0)),   // both - green
+        Style::default().fg(Color::Rgb(130, 100, 160)), // base (ancestor) - muted purple
         Style::default().fg(Color::Rgb(200, 50, 50)), // unresolved - red
         Style::default().fg(Color::Rgb(50, 150, 50)), // resolved - green
     );

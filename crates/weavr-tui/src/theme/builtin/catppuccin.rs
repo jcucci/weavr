@@ -50,6 +50,7 @@ fn from_flavor(flavor: &Flavor) -> Theme {
         Style::default().fg(Color::from(c.blue)),
         Style::default().fg(Color::from(c.peach)),
         Style::default().fg(Color::from(c.green)),
+        Style::default().fg(Color::from(c.mauve)), // base (ancestor)
         Style::default().fg(Color::from(c.red)),
         Style::default().fg(Color::from(c.green)),
     );

@@ -62,6 +62,8 @@ pub enum FocusedPane {
     /// Left pane (ours).
     #[default]
     Left,
+    /// Base pane (ancestor).
+    Base,
     /// Right pane (theirs).
     Right,
     /// Result pane (merged output).
@@ -124,6 +126,8 @@ pub struct App {
     pub(crate) workspace: Option<workspace::Workspace>,
     /// Whether a partial write was requested (single-file mode).
     pub(crate) partial_write: bool,
+    /// Whether the base (ancestor) pane is visible.
+    pub(crate) show_base_pane: bool,
 }
 
 impl App {
@@ -160,6 +164,7 @@ impl App {
             stage_prompt: false,
             workspace: None,
             partial_write: false,
+            show_base_pane: false,
         }
     }
 
@@ -196,6 +201,7 @@ impl App {
             stage_prompt: false,
             workspace: None,
             partial_write: false,
+            show_base_pane: false,
         }
     }
 
@@ -380,6 +386,23 @@ impl App {
     #[must_use]
     pub fn diff_config(&self) -> &diff::DiffConfig {
         &self.diff_config
+    }
+
+    /// Toggles the base (ancestor) pane visibility.
+    pub(crate) fn toggle_base_pane(&mut self) {
+        self.show_base_pane = !self.show_base_pane;
+        let status = if self.show_base_pane {
+            "Base pane enabled (diff3)"
+        } else {
+            "Base pane hidden"
+        };
+        self.set_status_message(status);
+    }
+
+    /// Returns whether the base pane is visible.
+    #[must_use]
+    pub fn show_base_pane(&self) -> bool {
+        self.show_base_pane
     }
 
     /// Toggles word-level diff highlighting on/off.
@@ -697,6 +720,7 @@ impl App {
                 std::mem::replace(&mut self.action_history, ActionHistory::new());
             file_state.stage_requested = self.stage_requested;
             file_state.focused_pane = self.focused_pane;
+            file_state.show_base_pane = self.show_base_pane;
         }
     }
 
@@ -719,6 +743,7 @@ impl App {
                 std::mem::replace(&mut file_state.action_history, ActionHistory::new());
             self.stage_requested = file_state.stage_requested;
             self.focused_pane = file_state.focused_pane;
+            self.show_base_pane = file_state.show_base_pane;
         }
     }
 
@@ -921,6 +946,7 @@ impl FocusedPane {
     pub fn title(self) -> &'static str {
         match self {
             Self::Left => "Left (Ours)",
+            Self::Base => "Base (Ancestor)",
             Self::Right => "Right (Theirs)",
             Self::Result => "Result",
         }
@@ -1111,6 +1137,7 @@ mod tests {
     #[test]
     fn focused_pane_titles() {
         assert_eq!(FocusedPane::Left.title(), "Left (Ours)");
+        assert_eq!(FocusedPane::Base.title(), "Base (Ancestor)");
         assert_eq!(FocusedPane::Right.title(), "Right (Theirs)");
         assert_eq!(FocusedPane::Result.title(), "Result");
     }

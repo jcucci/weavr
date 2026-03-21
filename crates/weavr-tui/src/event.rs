@@ -174,6 +174,7 @@ fn dispatch_action(app: &mut App, action: Action) {
 
         // Display
         Action::ToggleWordDiff => app.toggle_word_diff(),
+        Action::ToggleBasePane => app.toggle_base_pane(),
 
         // AI
         Action::AiSuggest => ai::request_suggestion(app),

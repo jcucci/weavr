@@ -76,6 +76,7 @@ pub fn main() -> Theme {
         Style::default().fg(FOAM),
         Style::default().fg(ROSE),
         Style::default().fg(PINE),
+        Style::default().fg(IRIS), // base (ancestor)
         Style::default().fg(LOVE),
         Style::default().fg(PINE),
     );
@@ -110,6 +111,7 @@ pub fn moon() -> Theme {
         Style::default().fg(FOAM),
         Style::default().fg(ROSE),
         Style::default().fg(PINE),
+        Style::default().fg(IRIS), // base (ancestor)
         Style::default().fg(LOVE),
         Style::default().fg(PINE),
     );
@@ -144,6 +146,7 @@ pub fn dawn() -> Theme {
         Style::default().fg(FOAM),
         Style::default().fg(ROSE),
         Style::default().fg(PINE),
+        Style::default().fg(IRIS), // base (ancestor)
         Style::default().fg(LOVE),
         Style::default().fg(PINE),
     );

@@ -11,20 +11,40 @@ use crate::{App, FocusedPane};
 
 // --- Focus Management ---
 
-/// Cycles focus to the next pane (Left -> Right -> Result -> Left).
+/// Cycles focus to the next pane.
+///
+/// When the base pane is visible: Left -> Base -> Right -> Result -> Left.
+/// Otherwise: Left -> Right -> Result -> Left.
 pub fn cycle_focus(app: &mut App) {
     app.focused_pane = match app.focused_pane {
-        FocusedPane::Left => FocusedPane::Right,
+        FocusedPane::Left => {
+            if app.show_base_pane {
+                FocusedPane::Base
+            } else {
+                FocusedPane::Right
+            }
+        }
+        FocusedPane::Base => FocusedPane::Right,
         FocusedPane::Right => FocusedPane::Result,
         FocusedPane::Result => FocusedPane::Left,
     };
 }
 
-/// Cycles focus to the previous pane (Left -> Result -> Right -> Left).
+/// Cycles focus to the previous pane.
+///
+/// When the base pane is visible: Left -> Result -> Right -> Base -> Left.
+/// Otherwise: Left -> Result -> Right -> Left.
 pub fn cycle_focus_back(app: &mut App) {
     app.focused_pane = match app.focused_pane {
         FocusedPane::Left => FocusedPane::Result,
-        FocusedPane::Right => FocusedPane::Left,
+        FocusedPane::Base => FocusedPane::Left,
+        FocusedPane::Right => {
+            if app.show_base_pane {
+                FocusedPane::Base
+            } else {
+                FocusedPane::Left
+            }
+        }
         FocusedPane::Result => FocusedPane::Right,
     };
 }
@@ -109,7 +129,7 @@ pub fn prev_unresolved_hunk(app: &mut App) {
 /// Scrolls up by the specified number of lines.
 pub fn scroll_up(app: &mut App, lines: u16) {
     match app.focused_pane {
-        FocusedPane::Left | FocusedPane::Right => {
+        FocusedPane::Left | FocusedPane::Base | FocusedPane::Right => {
             app.left_right_scroll = app.left_right_scroll.saturating_sub(lines);
         }
         FocusedPane::Result => {
@@ -121,7 +141,7 @@ pub fn scroll_up(app: &mut App, lines: u16) {
 /// Scrolls down by the specified number of lines.
 pub fn scroll_down(app: &mut App, lines: u16) {
     match app.focused_pane {
-        FocusedPane::Left | FocusedPane::Right => {
+        FocusedPane::Left | FocusedPane::Base | FocusedPane::Right => {
             app.left_right_scroll = app.left_right_scroll.saturating_add(lines);
         }
         FocusedPane::Result => {

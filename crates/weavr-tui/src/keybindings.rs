@@ -77,6 +77,8 @@ pub enum Action {
     // Display
     /// Toggle word-level diff highlighting.
     ToggleWordDiff,
+    /// Toggle base (ancestor) pane visibility.
+    ToggleBasePane,
 
     // AI
     /// Request an AI suggestion for the current hunk.
@@ -124,6 +126,7 @@ const ALL_ACTIONS: &[Action] = &[
     Action::Redo,
     Action::EditInEditor,
     Action::ToggleWordDiff,
+    Action::ToggleBasePane,
     Action::AiSuggest,
     Action::AiSuggestAll,
     Action::AiExplainOrHelp,
@@ -177,6 +180,7 @@ impl Action {
             Self::Redo => "redo",
             Self::EditInEditor => "edit_in_editor",
             Self::ToggleWordDiff => "toggle_word_diff",
+            Self::ToggleBasePane => "toggle_base_pane",
             Self::AiSuggest => "ai_suggest",
             Self::AiSuggestAll => "ai_suggest_all",
             Self::AiExplainOrHelp => "ai_explain_or_help",
@@ -599,6 +603,10 @@ impl KeybindingMap {
 
         // Display
         map.bind(Action::ToggleWordDiff, single_char('w'));
+        map.bind(
+            Action::ToggleBasePane,
+            KeyInput::Single(KeyCode::Char('b'), KeyModifiers::CONTROL),
+        );
 
         // AI
         map.bind(Action::AiSuggest, single_char('s'));

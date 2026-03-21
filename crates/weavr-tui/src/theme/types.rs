@@ -41,6 +41,8 @@ pub struct ConflictColors {
     pub right: Style,
     /// Style for both sides (merged content).
     pub both: Style,
+    /// Style for base (ancestor) side.
+    pub base: Style,
     /// Style for unresolved conflicts.
     pub unresolved: Style,
     /// Style for resolved conflicts.
@@ -120,6 +122,7 @@ impl ConflictColors {
         left: Style,
         right: Style,
         both: Style,
+        base: Style,
         unresolved: Style,
         resolved: Style,
     ) -> Self {
@@ -127,6 +130,7 @@ impl ConflictColors {
             left,
             right,
             both,
+            base,
             unresolved,
             resolved,
         }
@@ -193,6 +197,7 @@ mod tests {
             Color::Cyan,
         );
         let conflict = ConflictColors::new(
+            Style::default(),
             Style::default(),
             Style::default(),
             Style::default(),
