@@ -54,13 +54,11 @@ pub fn run(
     })?;
 
     let emit_json = |json: &output::JsonMergeDriverOutput| {
-        if let Err(e) = output::print_json_stderr(json) {
-            eprintln!("weavr: failed to write JSON to stderr: {e}");
-        }
+        // In JSON output mode, avoid emitting non-JSON text to stderr.
+        // Ignore write errors to keep stderr strictly JSON for consumers.
+        let _ = output::print_json_stderr(json);
         if let Some(ref log_path) = args.log_file {
-            if let Err(e) = output::print_json_file(log_path, json) {
-                eprintln!("weavr: failed to write JSON to log file: {e}");
-            }
+            let _ = output::print_json_file(log_path, json);
         }
     };
 

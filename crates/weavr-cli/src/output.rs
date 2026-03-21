@@ -144,7 +144,7 @@ pub fn print_json_stderr<T: Serialize>(value: &T) -> Result<(), std::io::Error> 
     print_json_to(&mut handle, value)
 }
 
-/// Appends the given value as JSON to the specified file.
+/// Appends the given value as compact one-line JSON (JSONL) to the specified file.
 pub fn print_json_file<T: Serialize>(
     path: &std::path::Path,
     value: &T,
@@ -153,7 +153,9 @@ pub fn print_json_file<T: Serialize>(
         .create(true)
         .append(true)
         .open(path)?;
-    print_json_to(&mut file, value)
+    serde_json::to_writer(&mut file, value).map_err(std::io::Error::other)?;
+    writeln!(file)?;
+    Ok(())
 }
 
 /// Prints a JSON error object to stderr.

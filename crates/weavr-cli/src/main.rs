@@ -414,8 +414,8 @@ fn main() {
     let cli = Cli::parse();
 
     // Determine the effective format — merge-driver has its own --format flag
-    let effective_format = match cli.command {
-        Some(cli::Command::MergeDriver(ref args)) => args.format,
+    let effective_format = match &cli.command {
+        Some(cli::Command::MergeDriver(args)) => args.format,
         _ => cli.format,
     };
 
