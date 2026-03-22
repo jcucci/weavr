@@ -76,7 +76,7 @@ impl LocalProvider {
     ///
     /// Returns an error if the HTTP client cannot be built.
     pub fn new(config: &LocalConfig) -> Result<Self, AiError> {
-        Self::with_timeout(config, Duration::from_secs(120))
+        Self::with_timeout(config, Duration::from_secs(30))
     }
 
     /// Creates a new local LLM provider with a custom timeout.
@@ -92,12 +92,26 @@ impl LocalProvider {
                 AiError::ProviderNotAvailable(format!("failed to build HTTP client: {e}"))
             })?;
 
+        // Normalize endpoint: strip any trailing `/api/...` path so we always
+        // store just the base URL (e.g. `http://localhost:11434`).
+        let endpoint = config
+            .endpoint
+            .trim_end_matches('/')
+            .trim_end_matches("/api/chat")
+            .trim_end_matches("/api/generate")
+            .to_string();
+
         Ok(Self {
-            endpoint: config.endpoint.clone(),
+            endpoint,
             model: config.model.clone(),
             timeout,
             client,
         })
+    }
+
+    /// Returns the full URL for the Ollama chat endpoint.
+    fn chat_url(&self) -> String {
+        format!("{}/api/chat", self.endpoint)
     }
 
     /// Builds a prompt for merge conflict resolution.
@@ -255,7 +269,7 @@ impl AiProvider for LocalProvider {
         let request = AiRequest::from_hunk(hunk, None);
         let prompt = Self::build_merge_prompt(&request);
 
-        let url = format!("{}/api/chat", self.endpoint.trim_end_matches('/'));
+        let url = self.chat_url();
 
         let request = self
             .client
@@ -303,7 +317,7 @@ impl AiProvider for LocalProvider {
         let request = AiRequest::from_hunk(hunk, None);
         let prompt = Self::build_explain_prompt(&request);
 
-        let url = format!("{}/api/chat", self.endpoint.trim_end_matches('/'));
+        let url = self.chat_url();
 
         let request = self
             .client
@@ -421,5 +435,35 @@ mod tests {
             LocalProvider::extract_json(text),
             "{\"suggestion\": \"code\"}"
         );
+    }
+
+    #[test]
+    fn endpoint_normalized_strips_api_chat() {
+        let config = LocalConfig {
+            endpoint: "http://localhost:11434/api/chat".into(),
+            model: "codellama".into(),
+        };
+        let provider = LocalProvider::new(&config).unwrap();
+        assert_eq!(provider.chat_url(), "http://localhost:11434/api/chat");
+    }
+
+    #[test]
+    fn endpoint_normalized_strips_api_generate() {
+        let config = LocalConfig {
+            endpoint: "http://localhost:11434/api/generate".into(),
+            model: "codellama".into(),
+        };
+        let provider = LocalProvider::new(&config).unwrap();
+        assert_eq!(provider.chat_url(), "http://localhost:11434/api/chat");
+    }
+
+    #[test]
+    fn endpoint_normalized_strips_trailing_slash() {
+        let config = LocalConfig {
+            endpoint: "http://localhost:11434/".into(),
+            model: "codellama".into(),
+        };
+        let provider = LocalProvider::new(&config).unwrap();
+        assert_eq!(provider.chat_url(), "http://localhost:11434/api/chat");
     }
 }
