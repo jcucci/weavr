@@ -153,6 +153,7 @@ pub fn render_base_pane(frame: &mut Frame, area: Rect, app: &App) {
 }
 
 /// Renders the result pane showing the merged output.
+#[allow(clippy::too_many_lines)]
 pub fn render_result_pane(frame: &mut Frame, area: Rect, app: &App) {
     let theme = app.theme();
     let is_focused = app.focused_pane() == FocusedPane::Result;
@@ -181,7 +182,7 @@ pub fn render_result_pane(frame: &mut Frame, area: Rect, app: &App) {
                 Line::from(vec![
                     Span::styled(format!("{line_num:4} "), line_num_style),
                     Span::styled(
-                        line_text.clone(),
+                        line_text.as_str(),
                         Style::default().fg(theme.base.foreground),
                     ),
                 ])
@@ -199,9 +200,26 @@ pub fn render_result_pane(frame: &mut Frame, area: Rect, app: &App) {
             .border_style(border_style)
             .title(title);
 
+        // Compute scroll from cursor position and viewport height
+        // (borders consume 2 rows)
+        let viewport_height = area.height.saturating_sub(2) as usize;
+        let scroll_offset = edit_state.scroll_offset;
+        let scroll_y = if viewport_height > 0 {
+            if edit_state.cursor_row < scroll_offset {
+                edit_state.cursor_row
+            } else if edit_state.cursor_row >= scroll_offset + viewport_height {
+                edit_state.cursor_row - viewport_height + 1
+            } else {
+                scroll_offset
+            }
+        } else {
+            0
+        };
         #[allow(clippy::cast_possible_truncation)]
-        let scroll_y = edit_state.scroll_offset as u16;
-        let paragraph = Paragraph::new(content).block(block).scroll((scroll_y, 0));
+        let scroll_y_u16 = scroll_y as u16;
+        let paragraph = Paragraph::new(content)
+            .block(block)
+            .scroll((scroll_y_u16, 0));
 
         frame.render_widget(paragraph, area);
 
@@ -210,7 +228,7 @@ pub fn render_result_pane(frame: &mut Frame, area: Rect, app: &App) {
         #[allow(clippy::cast_possible_truncation)]
         let cursor_x = area.x + 1 + 5 + edit_state.cursor_col as u16;
         #[allow(clippy::cast_possible_truncation)]
-        let cursor_y = area.y + 1 + (edit_state.cursor_row as u16).saturating_sub(scroll_y);
+        let cursor_y = area.y + 1 + (edit_state.cursor_row as u16).saturating_sub(scroll_y_u16);
 
         if cursor_x < area.x + area.width && cursor_y < area.y + area.height {
             frame.set_cursor_position((cursor_x, cursor_y));

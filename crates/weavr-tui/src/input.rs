@@ -202,15 +202,22 @@ impl EditState {
             return;
         }
         let line = &self.lines[self.cursor_row];
-        let bytes = line.as_bytes();
         let mut pos = self.cursor_col;
-        // Skip whitespace backwards
-        while pos > 0 && bytes[pos - 1].is_ascii_whitespace() {
-            pos -= 1;
+        // Skip whitespace backwards, stepping by char boundaries
+        while pos > 0 {
+            let prev = prev_char_boundary(line, pos);
+            if !line.as_bytes()[prev].is_ascii_whitespace() {
+                break;
+            }
+            pos = prev;
         }
-        // Skip non-whitespace backwards
-        while pos > 0 && !bytes[pos - 1].is_ascii_whitespace() {
-            pos -= 1;
+        // Skip non-whitespace backwards, stepping by char boundaries
+        while pos > 0 {
+            let prev = prev_char_boundary(line, pos);
+            if line.as_bytes()[prev].is_ascii_whitespace() {
+                break;
+            }
+            pos = prev;
         }
         self.cursor_col = pos;
     }
@@ -695,5 +702,111 @@ mod tests {
         // With a long timeout, keys should be available
         let keys = seq.pending_keys(Duration::from_secs(10));
         assert_eq!(keys.len(), 1);
+    }
+
+    // --- EditState tests ---
+
+    #[test]
+    fn edit_state_new_from_content() {
+        let state = EditState::new("hello\nworld");
+        assert_eq!(state.lines, vec!["hello", "world"]);
+        assert_eq!(state.cursor_row, 0);
+        assert_eq!(state.cursor_col, 0);
+        assert_eq!(state.sub_mode, EditSubMode::Insert);
+    }
+
+    #[test]
+    fn edit_state_new_empty() {
+        let state = EditState::new("");
+        assert_eq!(state.lines, vec![""]);
+    }
+
+    #[test]
+    fn edit_state_content_roundtrip() {
+        let state = EditState::new("hello\nworld");
+        assert_eq!(state.content(), "hello\nworld");
+    }
+
+    #[test]
+    fn edit_state_insert_char() {
+        let mut state = EditState::new("hllo");
+        state.cursor_col = 1;
+        state.insert_char('e');
+        assert_eq!(state.lines[0], "hello");
+        assert_eq!(state.cursor_col, 2);
+    }
+
+    #[test]
+    fn edit_state_backspace() {
+        let mut state = EditState::new("hello");
+        state.cursor_col = 5;
+        state.backspace();
+        assert_eq!(state.lines[0], "hell");
+        assert_eq!(state.cursor_col, 4);
+    }
+
+    #[test]
+    fn edit_state_backspace_joins_lines() {
+        let mut state = EditState::new("hello\nworld");
+        state.cursor_row = 1;
+        state.cursor_col = 0;
+        state.backspace();
+        assert_eq!(state.lines, vec!["helloworld"]);
+        assert_eq!(state.cursor_row, 0);
+        assert_eq!(state.cursor_col, 5);
+    }
+
+    #[test]
+    fn edit_state_newline_splits_line() {
+        let mut state = EditState::new("helloworld");
+        state.cursor_col = 5;
+        state.newline();
+        assert_eq!(state.lines, vec!["hello", "world"]);
+        assert_eq!(state.cursor_row, 1);
+        assert_eq!(state.cursor_col, 0);
+    }
+
+    #[test]
+    fn edit_state_delete_char_joins_with_next() {
+        let mut state = EditState::new("hello\nworld");
+        state.cursor_col = 5; // at end of "hello"
+        state.delete_char();
+        assert_eq!(state.lines, vec!["helloworld"]);
+    }
+
+    #[test]
+    fn edit_state_delete_line() {
+        let mut state = EditState::new("a\nb\nc");
+        state.delete_line();
+        assert_eq!(state.lines, vec!["b", "c"]);
+    }
+
+    #[test]
+    fn edit_state_move_word_back_ascii() {
+        let mut state = EditState::new("hello world foo");
+        state.cursor_col = 15; // end
+        state.move_word_back();
+        assert_eq!(state.cursor_col, 12); // start of "foo"
+        state.move_word_back();
+        assert_eq!(state.cursor_col, 6); // start of "world"
+    }
+
+    #[test]
+    fn edit_state_enter_normal_moves_cursor_back() {
+        let mut state = EditState::new("hello");
+        state.cursor_col = 3;
+        state.enter_normal();
+        assert_eq!(state.sub_mode, EditSubMode::Normal);
+        assert_eq!(state.cursor_col, 2);
+    }
+
+    #[test]
+    fn edit_state_open_line_below() {
+        let mut state = EditState::new("hello");
+        state.sub_mode = EditSubMode::Normal;
+        state.open_line_below();
+        assert_eq!(state.lines, vec!["hello", ""]);
+        assert_eq!(state.cursor_row, 1);
+        assert_eq!(state.sub_mode, EditSubMode::Insert);
     }
 }
