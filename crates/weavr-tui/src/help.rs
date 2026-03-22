@@ -39,6 +39,7 @@ pub fn build_help_sections(map: &KeybindingMap) -> Vec<HelpSection> {
                 binding(map, Action::ResolveBoth, "Accept both (default)"),
                 binding(map, Action::ResolveBothOptions, "Accept both (options)"),
                 binding(map, Action::EditInEditor, "Edit in $EDITOR"),
+                binding(map, Action::EnterEditMode, "Edit in result pane"),
                 binding(map, Action::ClearResolution, "Clear resolution"),
                 binding(map, Action::Undo, "Undo last action"),
                 binding(map, Action::Redo, "Redo last action"),

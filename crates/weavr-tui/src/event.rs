@@ -8,7 +8,7 @@ use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifier
 
 use crate::ai;
 use crate::ast;
-use crate::input::{Dialog, InputMode};
+use crate::input::{Dialog, EditSubMode, InputMode};
 use crate::keybindings::Action;
 use crate::{App, KEY_SEQUENCE_TIMEOUT};
 
@@ -46,6 +46,7 @@ fn handle_key_event(app: &mut App, key: KeyEvent) {
         InputMode::Normal => handle_normal_mode(app, key),
         InputMode::Command => handle_command_mode(app, key),
         InputMode::Dialog => handle_dialog_mode(app, key),
+        InputMode::Edit => handle_edit_mode(app, key),
     }
 }
 
@@ -171,6 +172,9 @@ fn dispatch_action(app: &mut App, action: Action) {
         Action::EditInEditor => {
             app.prepare_editor();
         }
+        Action::EnterEditMode => {
+            app.enter_edit_mode();
+        }
 
         // Display
         Action::ToggleWordDiff => app.toggle_word_diff(),
@@ -289,6 +293,197 @@ fn handle_dialog_mode(app: &mut App, key: KeyEvent) {
             _ => {}
         },
         None => {}
+    }
+}
+
+/// Handles key events in edit mode (inline result pane editor).
+fn handle_edit_mode(app: &mut App, key: KeyEvent) {
+    let Some(ref edit_state) = app.edit_state else {
+        return;
+    };
+
+    match edit_state.sub_mode {
+        EditSubMode::Insert => handle_edit_insert(app, key),
+        EditSubMode::Normal => handle_edit_normal(app, key),
+    }
+}
+
+/// Handles key events in edit-insert sub-mode (typing inserts text).
+fn handle_edit_insert(app: &mut App, key: KeyEvent) {
+    match key.code {
+        KeyCode::Esc => {
+            if let Some(ref mut state) = app.edit_state {
+                state.enter_normal();
+            }
+        }
+        KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+            app.exit_edit_mode(false);
+        }
+        KeyCode::Char(c)
+            if !key.modifiers.contains(KeyModifiers::CONTROL)
+                && !key.modifiers.contains(KeyModifiers::ALT) =>
+        {
+            if let Some(ref mut state) = app.edit_state {
+                state.insert_char(c);
+            }
+        }
+        KeyCode::Enter => {
+            if let Some(ref mut state) = app.edit_state {
+                state.newline();
+            }
+        }
+        KeyCode::Backspace => {
+            if let Some(ref mut state) = app.edit_state {
+                state.backspace();
+            }
+        }
+        KeyCode::Delete => {
+            if let Some(ref mut state) = app.edit_state {
+                state.delete_char();
+            }
+        }
+        KeyCode::Left => {
+            if let Some(ref mut state) = app.edit_state {
+                state.move_left();
+            }
+        }
+        KeyCode::Right => {
+            if let Some(ref mut state) = app.edit_state {
+                state.move_right();
+            }
+        }
+        KeyCode::Up => {
+            if let Some(ref mut state) = app.edit_state {
+                state.move_up();
+            }
+        }
+        KeyCode::Down => {
+            if let Some(ref mut state) = app.edit_state {
+                state.move_down();
+            }
+        }
+        KeyCode::Home => {
+            if let Some(ref mut state) = app.edit_state {
+                state.move_to_line_start();
+            }
+        }
+        KeyCode::End => {
+            if let Some(ref mut state) = app.edit_state {
+                state.move_to_line_end();
+            }
+        }
+        _ => {}
+    }
+}
+
+/// Handles key events in edit-normal sub-mode (vim navigation).
+fn handle_edit_normal(app: &mut App, key: KeyEvent) {
+    // Check for Ctrl+C first (discard)
+    if key.code == KeyCode::Char('c') && key.modifiers.contains(KeyModifiers::CONTROL) {
+        app.exit_edit_mode(false);
+        return;
+    }
+
+    match key.code {
+        // Exit: apply changes
+        KeyCode::Esc | KeyCode::Char('q') => {
+            app.exit_edit_mode(true);
+        }
+
+        // Movement
+        KeyCode::Char('h') | KeyCode::Left => {
+            if let Some(ref mut state) = app.edit_state {
+                state.move_left();
+            }
+        }
+        KeyCode::Char('j') | KeyCode::Down => {
+            if let Some(ref mut state) = app.edit_state {
+                state.move_down();
+            }
+        }
+        KeyCode::Char('k') | KeyCode::Up => {
+            if let Some(ref mut state) = app.edit_state {
+                state.move_up();
+            }
+        }
+        KeyCode::Char('l') | KeyCode::Right => {
+            if let Some(ref mut state) = app.edit_state {
+                state.move_right();
+            }
+        }
+        KeyCode::Char('w') => {
+            if let Some(ref mut state) = app.edit_state {
+                state.move_word_forward();
+            }
+        }
+        KeyCode::Char('b') => {
+            if let Some(ref mut state) = app.edit_state {
+                state.move_word_back();
+            }
+        }
+        KeyCode::Char('0') => {
+            if let Some(ref mut state) = app.edit_state {
+                state.move_to_line_start();
+            }
+        }
+        KeyCode::Char('$') => {
+            if let Some(ref mut state) = app.edit_state {
+                state.move_to_line_end();
+            }
+        }
+
+        // Enter insert mode
+        KeyCode::Char('i') => {
+            if let Some(ref mut state) = app.edit_state {
+                state.enter_insert();
+            }
+        }
+        KeyCode::Char('a') => {
+            if let Some(ref mut state) = app.edit_state {
+                state.enter_insert_after();
+            }
+        }
+        KeyCode::Char('A') => {
+            if let Some(ref mut state) = app.edit_state {
+                state.enter_insert_end();
+            }
+        }
+        KeyCode::Char('o') => {
+            if let Some(ref mut state) = app.edit_state {
+                state.open_line_below();
+            }
+        }
+        KeyCode::Char('O') => {
+            if let Some(ref mut state) = app.edit_state {
+                state.open_line_above();
+            }
+        }
+
+        // Delete
+        KeyCode::Char('x') => {
+            if let Some(ref mut state) = app.edit_state {
+                state.delete_char();
+            }
+        }
+        KeyCode::Char('d') => {
+            // Check for dd sequence
+            if let Some(ref mut state) = app.edit_state {
+                if state.pending_key == Some('d') {
+                    state.delete_line();
+                    state.pending_key = None;
+                } else {
+                    state.pending_key = Some('d');
+                }
+            }
+            return; // Don't clear pending_key below
+        }
+
+        _ => {}
+    }
+
+    // Clear pending key on any non-d key press
+    if let Some(ref mut state) = app.edit_state {
+        state.pending_key = None;
     }
 }
 
@@ -637,5 +832,173 @@ mod tests {
 
         assert_eq!(app.input_mode(), InputMode::Normal);
         assert!(app.active_dialog().is_none());
+    }
+
+    // --- Edit mode tests ---
+
+    #[test]
+    fn i_key_enters_edit_mode() {
+        use crate::input::InputMode;
+
+        let mut app = App::new();
+        // Without a session, enter_edit_mode sets a status message but stays Normal
+        let event = Event::Key(make_key_event(KeyCode::Char('i'), KeyModifiers::NONE));
+        handle_event(&mut app, &event);
+        assert_eq!(app.input_mode(), InputMode::Normal);
+    }
+
+    #[test]
+    fn edit_mode_esc_switches_to_normal_submode() {
+        use crate::input::{EditState, EditSubMode, InputMode};
+
+        let mut app = App::new();
+        app.edit_state = Some(EditState::new("hello"));
+        app.input_mode = InputMode::Edit;
+
+        // In insert submode, Esc switches to edit-normal submode
+        let event = Event::Key(make_key_event(KeyCode::Esc, KeyModifiers::NONE));
+        handle_event(&mut app, &event);
+
+        assert_eq!(app.input_mode(), InputMode::Edit);
+        assert_eq!(
+            app.edit_state.as_ref().unwrap().sub_mode,
+            EditSubMode::Normal
+        );
+    }
+
+    #[test]
+    fn edit_mode_ctrl_c_discards() {
+        use crate::input::{EditState, InputMode};
+
+        let mut app = App::new();
+        app.edit_state = Some(EditState::new("hello"));
+        app.input_mode = InputMode::Edit;
+
+        let event = Event::Key(make_key_event(KeyCode::Char('c'), KeyModifiers::CONTROL));
+        handle_event(&mut app, &event);
+
+        assert_eq!(app.input_mode(), InputMode::Normal);
+        assert!(app.edit_state.is_none());
+    }
+
+    #[test]
+    fn edit_insert_typing_inserts_chars() {
+        use crate::input::{EditState, InputMode};
+
+        let mut app = App::new();
+        app.edit_state = Some(EditState::new(""));
+        app.input_mode = InputMode::Edit;
+
+        let event = Event::Key(make_key_event(KeyCode::Char('a'), KeyModifiers::NONE));
+        handle_event(&mut app, &event);
+        let event = Event::Key(make_key_event(KeyCode::Char('b'), KeyModifiers::NONE));
+        handle_event(&mut app, &event);
+
+        assert_eq!(app.edit_state.as_ref().unwrap().content(), "ab");
+    }
+
+    #[test]
+    fn edit_insert_ctrl_key_does_not_insert() {
+        use crate::input::{EditState, InputMode};
+
+        let mut app = App::new();
+        app.edit_state = Some(EditState::new(""));
+        app.input_mode = InputMode::Edit;
+
+        // Ctrl+U should not insert 'u'
+        let event = Event::Key(make_key_event(KeyCode::Char('u'), KeyModifiers::CONTROL));
+        handle_event(&mut app, &event);
+
+        assert_eq!(app.edit_state.as_ref().unwrap().content(), "");
+    }
+
+    #[test]
+    fn edit_normal_q_applies_and_exits() {
+        use crate::input::{EditState, EditSubMode, InputMode};
+
+        let mut app = App::new();
+        let mut state = EditState::new("test content");
+        state.sub_mode = EditSubMode::Normal;
+        app.edit_state = Some(state);
+        app.input_mode = InputMode::Edit;
+
+        let event = Event::Key(make_key_event(KeyCode::Char('q'), KeyModifiers::NONE));
+        handle_event(&mut app, &event);
+
+        assert_eq!(app.input_mode(), InputMode::Normal);
+        assert!(app.edit_state.is_none());
+    }
+
+    #[test]
+    fn edit_normal_i_enters_insert_submode() {
+        use crate::input::{EditState, EditSubMode, InputMode};
+
+        let mut app = App::new();
+        let mut state = EditState::new("hello");
+        state.sub_mode = EditSubMode::Normal;
+        app.edit_state = Some(state);
+        app.input_mode = InputMode::Edit;
+
+        let event = Event::Key(make_key_event(KeyCode::Char('i'), KeyModifiers::NONE));
+        handle_event(&mut app, &event);
+
+        assert_eq!(app.input_mode(), InputMode::Edit);
+        assert_eq!(
+            app.edit_state.as_ref().unwrap().sub_mode,
+            EditSubMode::Insert
+        );
+    }
+
+    #[test]
+    fn edit_normal_hjkl_moves_cursor() {
+        use crate::input::{EditState, EditSubMode, InputMode};
+
+        let mut app = App::new();
+        let mut state = EditState::new("hello\nworld");
+        state.sub_mode = EditSubMode::Normal;
+        state.cursor_col = 2;
+        app.edit_state = Some(state);
+        app.input_mode = InputMode::Edit;
+
+        // j moves down
+        let event = Event::Key(make_key_event(KeyCode::Char('j'), KeyModifiers::NONE));
+        handle_event(&mut app, &event);
+        assert_eq!(app.edit_state.as_ref().unwrap().cursor_row, 1);
+
+        // k moves up
+        let event = Event::Key(make_key_event(KeyCode::Char('k'), KeyModifiers::NONE));
+        handle_event(&mut app, &event);
+        assert_eq!(app.edit_state.as_ref().unwrap().cursor_row, 0);
+
+        // l moves right
+        let event = Event::Key(make_key_event(KeyCode::Char('l'), KeyModifiers::NONE));
+        handle_event(&mut app, &event);
+        assert_eq!(app.edit_state.as_ref().unwrap().cursor_col, 3);
+
+        // h moves left
+        let event = Event::Key(make_key_event(KeyCode::Char('h'), KeyModifiers::NONE));
+        handle_event(&mut app, &event);
+        assert_eq!(app.edit_state.as_ref().unwrap().cursor_col, 2);
+    }
+
+    #[test]
+    fn edit_normal_dd_deletes_line() {
+        use crate::input::{EditState, EditSubMode, InputMode};
+
+        let mut app = App::new();
+        let mut state = EditState::new("line1\nline2\nline3");
+        state.sub_mode = EditSubMode::Normal;
+        app.edit_state = Some(state);
+        app.input_mode = InputMode::Edit;
+
+        // First d sets pending
+        let event = Event::Key(make_key_event(KeyCode::Char('d'), KeyModifiers::NONE));
+        handle_event(&mut app, &event);
+        assert_eq!(app.edit_state.as_ref().unwrap().lines.len(), 3);
+
+        // Second d deletes line
+        handle_event(&mut app, &event);
+        assert_eq!(app.edit_state.as_ref().unwrap().lines.len(), 2);
+        assert_eq!(app.edit_state.as_ref().unwrap().lines[0], "line2");
     }
 }

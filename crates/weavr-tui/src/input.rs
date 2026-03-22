@@ -17,6 +17,308 @@ pub enum InputMode {
     Command,
     /// Dialog mode - a modal dialog is open.
     Dialog,
+    /// Edit mode - inline text editing in the result pane.
+    Edit,
+}
+
+/// Sub-mode within edit mode (vim-style normal vs insert).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum EditSubMode {
+    /// Normal sub-mode: vim navigation keys active.
+    #[default]
+    Normal,
+    /// Insert sub-mode: typing inserts text at cursor.
+    Insert,
+}
+
+/// State for the inline text editor in the result pane.
+#[derive(Debug, Clone)]
+pub struct EditState {
+    /// Text buffer split by newlines.
+    pub lines: Vec<String>,
+    /// 0-based cursor row.
+    pub cursor_row: usize,
+    /// 0-based cursor column (byte offset within line).
+    pub cursor_col: usize,
+    /// Vertical scroll offset for long content.
+    pub scroll_offset: usize,
+    /// Current sub-mode (normal vs insert).
+    pub sub_mode: EditSubMode,
+    /// Pending key for multi-key sequences (e.g., `dd`).
+    pub pending_key: Option<char>,
+}
+
+impl EditState {
+    /// Creates a new edit state from content string.
+    #[must_use]
+    pub fn new(content: &str) -> Self {
+        let lines: Vec<String> = if content.is_empty() {
+            vec![String::new()]
+        } else {
+            content.lines().map(String::from).collect()
+        };
+        Self {
+            lines,
+            cursor_row: 0,
+            cursor_col: 0,
+            scroll_offset: 0,
+            sub_mode: EditSubMode::Insert,
+            pending_key: None,
+        }
+    }
+
+    /// Joins the lines back into a single string.
+    #[must_use]
+    pub fn content(&self) -> String {
+        self.lines.join("\n")
+    }
+
+    /// Inserts a character at the cursor position.
+    pub fn insert_char(&mut self, c: char) {
+        let line = &mut self.lines[self.cursor_row];
+        if self.cursor_col >= line.len() {
+            line.push(c);
+            self.cursor_col = line.len();
+        } else {
+            line.insert(self.cursor_col, c);
+            self.cursor_col += c.len_utf8();
+        }
+    }
+
+    /// Deletes the character under the cursor.
+    pub fn delete_char(&mut self) {
+        let line = &self.lines[self.cursor_row];
+        if self.cursor_col < line.len() {
+            let c = self.lines[self.cursor_row].as_bytes()[self.cursor_col];
+            let char_len = utf8_char_len(c);
+            self.lines[self.cursor_row].drain(self.cursor_col..self.cursor_col + char_len);
+        } else if self.cursor_row + 1 < self.lines.len() {
+            // Join with next line
+            let next = self.lines.remove(self.cursor_row + 1);
+            self.lines[self.cursor_row].push_str(&next);
+        }
+    }
+
+    /// Deletes the character before the cursor (backspace).
+    pub fn backspace(&mut self) {
+        if self.cursor_col > 0 {
+            // Find the start of the previous character
+            let line = &self.lines[self.cursor_row];
+            let prev_boundary = prev_char_boundary(line, self.cursor_col);
+            self.lines[self.cursor_row].drain(prev_boundary..self.cursor_col);
+            self.cursor_col = prev_boundary;
+        } else if self.cursor_row > 0 {
+            // Join with previous line
+            let current = self.lines.remove(self.cursor_row);
+            self.cursor_row -= 1;
+            self.cursor_col = self.lines[self.cursor_row].len();
+            self.lines[self.cursor_row].push_str(&current);
+        }
+    }
+
+    /// Inserts a newline at the cursor position.
+    pub fn newline(&mut self) {
+        let rest = self.lines[self.cursor_row].split_off(self.cursor_col);
+        self.cursor_row += 1;
+        self.lines.insert(self.cursor_row, rest);
+        self.cursor_col = 0;
+    }
+
+    /// Moves cursor up one row.
+    pub fn move_up(&mut self) {
+        if self.cursor_row > 0 {
+            self.cursor_row -= 1;
+            self.clamp_cursor_col();
+        }
+    }
+
+    /// Moves cursor down one row.
+    pub fn move_down(&mut self) {
+        if self.cursor_row + 1 < self.lines.len() {
+            self.cursor_row += 1;
+            self.clamp_cursor_col();
+        }
+    }
+
+    /// Moves cursor left one character.
+    pub fn move_left(&mut self) {
+        if self.cursor_col > 0 {
+            let line = &self.lines[self.cursor_row];
+            self.cursor_col = prev_char_boundary(line, self.cursor_col);
+        }
+    }
+
+    /// Moves cursor right one character.
+    pub fn move_right(&mut self) {
+        let line = &self.lines[self.cursor_row];
+        if self.cursor_col < line.len() {
+            let c = line.as_bytes()[self.cursor_col];
+            self.cursor_col += utf8_char_len(c);
+        }
+    }
+
+    /// Moves cursor to the start of the current line.
+    pub fn move_to_line_start(&mut self) {
+        self.cursor_col = 0;
+    }
+
+    /// Moves cursor to the end of the current line.
+    pub fn move_to_line_end(&mut self) {
+        self.cursor_col = self.lines[self.cursor_row].len();
+    }
+
+    /// Moves cursor forward one word.
+    pub fn move_word_forward(&mut self) {
+        let line = &self.lines[self.cursor_row];
+        let bytes = line.as_bytes();
+        let len = bytes.len();
+        if self.cursor_col >= len {
+            // Move to next line if possible
+            if self.cursor_row + 1 < self.lines.len() {
+                self.cursor_row += 1;
+                self.cursor_col = 0;
+            }
+            return;
+        }
+        // Skip non-whitespace
+        let mut pos = self.cursor_col;
+        while pos < len && !bytes[pos].is_ascii_whitespace() {
+            pos += utf8_char_len(bytes[pos]);
+        }
+        // Skip whitespace
+        while pos < len && bytes[pos].is_ascii_whitespace() {
+            pos += 1;
+        }
+        self.cursor_col = pos;
+    }
+
+    /// Moves cursor backward one word.
+    pub fn move_word_back(&mut self) {
+        if self.cursor_col == 0 {
+            if self.cursor_row > 0 {
+                self.cursor_row -= 1;
+                self.cursor_col = self.lines[self.cursor_row].len();
+            }
+            return;
+        }
+        let line = &self.lines[self.cursor_row];
+        let mut pos = self.cursor_col;
+        // Skip whitespace backwards, stepping by char boundaries
+        while pos > 0 {
+            let prev = prev_char_boundary(line, pos);
+            if !line.as_bytes()[prev].is_ascii_whitespace() {
+                break;
+            }
+            pos = prev;
+        }
+        // Skip non-whitespace backwards, stepping by char boundaries
+        while pos > 0 {
+            let prev = prev_char_boundary(line, pos);
+            if line.as_bytes()[prev].is_ascii_whitespace() {
+                break;
+            }
+            pos = prev;
+        }
+        self.cursor_col = pos;
+    }
+
+    /// Deletes the current line.
+    pub fn delete_line(&mut self) {
+        if self.lines.len() > 1 {
+            self.lines.remove(self.cursor_row);
+            if self.cursor_row >= self.lines.len() {
+                self.cursor_row = self.lines.len() - 1;
+            }
+        } else {
+            self.lines[0].clear();
+        }
+        self.clamp_cursor_col();
+    }
+
+    /// Opens a new line below the cursor and enters insert mode.
+    pub fn open_line_below(&mut self) {
+        self.cursor_row += 1;
+        self.lines.insert(self.cursor_row, String::new());
+        self.cursor_col = 0;
+        self.sub_mode = EditSubMode::Insert;
+    }
+
+    /// Opens a new line above the cursor and enters insert mode.
+    pub fn open_line_above(&mut self) {
+        self.lines.insert(self.cursor_row, String::new());
+        self.cursor_col = 0;
+        self.sub_mode = EditSubMode::Insert;
+    }
+
+    /// Enters insert mode at the cursor position.
+    pub fn enter_insert(&mut self) {
+        self.sub_mode = EditSubMode::Insert;
+    }
+
+    /// Enters insert mode after the cursor position.
+    pub fn enter_insert_after(&mut self) {
+        let line = &self.lines[self.cursor_row];
+        if self.cursor_col < line.len() {
+            let c = line.as_bytes()[self.cursor_col];
+            self.cursor_col += utf8_char_len(c);
+        }
+        self.sub_mode = EditSubMode::Insert;
+    }
+
+    /// Enters insert mode at the end of the current line.
+    pub fn enter_insert_end(&mut self) {
+        self.cursor_col = self.lines[self.cursor_row].len();
+        self.sub_mode = EditSubMode::Insert;
+    }
+
+    /// Switches to normal sub-mode.
+    pub fn enter_normal(&mut self) {
+        self.sub_mode = EditSubMode::Normal;
+        // In vim, cursor moves back one position when entering normal mode
+        if self.cursor_col > 0 {
+            let line = &self.lines[self.cursor_row];
+            self.cursor_col = prev_char_boundary(line, self.cursor_col);
+        }
+    }
+
+    /// Clamps cursor column to the current line length.
+    fn clamp_cursor_col(&mut self) {
+        let max = self.lines[self.cursor_row].len();
+        if self.cursor_col > max {
+            self.cursor_col = max;
+        }
+    }
+
+    /// Ensures the cursor is visible within the given viewport height.
+    pub fn ensure_cursor_visible(&mut self, viewport_height: usize) {
+        if viewport_height == 0 {
+            return;
+        }
+        if self.cursor_row < self.scroll_offset {
+            self.scroll_offset = self.cursor_row;
+        } else if self.cursor_row >= self.scroll_offset + viewport_height {
+            self.scroll_offset = self.cursor_row - viewport_height + 1;
+        }
+    }
+}
+
+/// Returns the byte length of a UTF-8 character from its first byte.
+fn utf8_char_len(first_byte: u8) -> usize {
+    match first_byte {
+        0xC0..=0xDF => 2,
+        0xE0..=0xEF => 3,
+        0xF0..=0xFF => 4,
+        _ => 1,
+    }
+}
+
+/// Finds the previous character boundary in a string.
+fn prev_char_boundary(s: &str, pos: usize) -> usize {
+    let mut p = pos.saturating_sub(1);
+    while p > 0 && !s.is_char_boundary(p) {
+        p -= 1;
+    }
+    p
 }
 
 use weavr_core::BothOrder;
@@ -400,5 +702,111 @@ mod tests {
         // With a long timeout, keys should be available
         let keys = seq.pending_keys(Duration::from_secs(10));
         assert_eq!(keys.len(), 1);
+    }
+
+    // --- EditState tests ---
+
+    #[test]
+    fn edit_state_new_from_content() {
+        let state = EditState::new("hello\nworld");
+        assert_eq!(state.lines, vec!["hello", "world"]);
+        assert_eq!(state.cursor_row, 0);
+        assert_eq!(state.cursor_col, 0);
+        assert_eq!(state.sub_mode, EditSubMode::Insert);
+    }
+
+    #[test]
+    fn edit_state_new_empty() {
+        let state = EditState::new("");
+        assert_eq!(state.lines, vec![""]);
+    }
+
+    #[test]
+    fn edit_state_content_roundtrip() {
+        let state = EditState::new("hello\nworld");
+        assert_eq!(state.content(), "hello\nworld");
+    }
+
+    #[test]
+    fn edit_state_insert_char() {
+        let mut state = EditState::new("hllo");
+        state.cursor_col = 1;
+        state.insert_char('e');
+        assert_eq!(state.lines[0], "hello");
+        assert_eq!(state.cursor_col, 2);
+    }
+
+    #[test]
+    fn edit_state_backspace() {
+        let mut state = EditState::new("hello");
+        state.cursor_col = 5;
+        state.backspace();
+        assert_eq!(state.lines[0], "hell");
+        assert_eq!(state.cursor_col, 4);
+    }
+
+    #[test]
+    fn edit_state_backspace_joins_lines() {
+        let mut state = EditState::new("hello\nworld");
+        state.cursor_row = 1;
+        state.cursor_col = 0;
+        state.backspace();
+        assert_eq!(state.lines, vec!["helloworld"]);
+        assert_eq!(state.cursor_row, 0);
+        assert_eq!(state.cursor_col, 5);
+    }
+
+    #[test]
+    fn edit_state_newline_splits_line() {
+        let mut state = EditState::new("helloworld");
+        state.cursor_col = 5;
+        state.newline();
+        assert_eq!(state.lines, vec!["hello", "world"]);
+        assert_eq!(state.cursor_row, 1);
+        assert_eq!(state.cursor_col, 0);
+    }
+
+    #[test]
+    fn edit_state_delete_char_joins_with_next() {
+        let mut state = EditState::new("hello\nworld");
+        state.cursor_col = 5; // at end of "hello"
+        state.delete_char();
+        assert_eq!(state.lines, vec!["helloworld"]);
+    }
+
+    #[test]
+    fn edit_state_delete_line() {
+        let mut state = EditState::new("a\nb\nc");
+        state.delete_line();
+        assert_eq!(state.lines, vec!["b", "c"]);
+    }
+
+    #[test]
+    fn edit_state_move_word_back_ascii() {
+        let mut state = EditState::new("hello world foo");
+        state.cursor_col = 15; // end
+        state.move_word_back();
+        assert_eq!(state.cursor_col, 12); // start of "foo"
+        state.move_word_back();
+        assert_eq!(state.cursor_col, 6); // start of "world"
+    }
+
+    #[test]
+    fn edit_state_enter_normal_moves_cursor_back() {
+        let mut state = EditState::new("hello");
+        state.cursor_col = 3;
+        state.enter_normal();
+        assert_eq!(state.sub_mode, EditSubMode::Normal);
+        assert_eq!(state.cursor_col, 2);
+    }
+
+    #[test]
+    fn edit_state_open_line_below() {
+        let mut state = EditState::new("hello");
+        state.sub_mode = EditSubMode::Normal;
+        state.open_line_below();
+        assert_eq!(state.lines, vec!["hello", ""]);
+        assert_eq!(state.cursor_row, 1);
+        assert_eq!(state.sub_mode, EditSubMode::Insert);
     }
 }
