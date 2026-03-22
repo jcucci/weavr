@@ -73,6 +73,8 @@ pub enum Action {
     Redo,
     /// Open the current hunk in an external editor.
     EditInEditor,
+    /// Enter inline edit mode in the result pane.
+    EnterEditMode,
 
     // Display
     /// Toggle word-level diff highlighting.
@@ -127,6 +129,7 @@ const ALL_ACTIONS: &[Action] = &[
     Action::Undo,
     Action::Redo,
     Action::EditInEditor,
+    Action::EnterEditMode,
     Action::ToggleWordDiff,
     Action::ToggleBasePane,
     Action::ToggleSyntaxHighlight,
@@ -182,6 +185,7 @@ impl Action {
             Self::Undo => "undo",
             Self::Redo => "redo",
             Self::EditInEditor => "edit_in_editor",
+            Self::EnterEditMode => "enter_edit_mode",
             Self::ToggleWordDiff => "toggle_word_diff",
             Self::ToggleBasePane => "toggle_base_pane",
             Self::ToggleSyntaxHighlight => "toggle_syntax_highlight",
@@ -604,6 +608,7 @@ impl KeybindingMap {
             KeyInput::Single(KeyCode::Char('r'), KeyModifiers::CONTROL),
         );
         map.bind(Action::EditInEditor, single_char('e'));
+        map.bind(Action::EnterEditMode, single_char('i'));
 
         // Display
         map.bind(Action::ToggleWordDiff, single_char('w'));

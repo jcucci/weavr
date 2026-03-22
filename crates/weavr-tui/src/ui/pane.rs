@@ -157,6 +157,68 @@ pub fn render_result_pane(frame: &mut Frame, area: Rect, app: &App) {
     let theme = app.theme();
     let is_focused = app.focused_pane() == FocusedPane::Result;
 
+    // Edit mode: render the edit buffer instead of normal content
+    if let Some(edit_state) = app.edit_state() {
+        let border_style = Style::default()
+            .fg(theme.base.accent)
+            .add_modifier(Modifier::BOLD);
+
+        let content: Vec<Line<'_>> = edit_state
+            .lines
+            .iter()
+            .enumerate()
+            .map(|(i, line_text)| {
+                let line_num = i + 1;
+                let is_cursor_line = i == edit_state.cursor_row;
+                let line_num_style = if is_cursor_line {
+                    Style::default()
+                        .fg(ratatui::style::Color::Yellow)
+                        .add_modifier(Modifier::BOLD)
+                } else {
+                    Style::default().add_modifier(Modifier::DIM)
+                };
+
+                Line::from(vec![
+                    Span::styled(format!("{line_num:4} "), line_num_style),
+                    Span::styled(
+                        line_text.clone(),
+                        Style::default().fg(theme.base.foreground),
+                    ),
+                ])
+            })
+            .collect();
+
+        let title = match edit_state.sub_mode {
+            crate::input::EditSubMode::Insert => " Result [INSERT] ",
+            crate::input::EditSubMode::Normal => " Result [EDIT] ",
+        };
+
+        let block = Block::default()
+            .borders(Borders::ALL)
+            .border_type(BorderType::Rounded)
+            .border_style(border_style)
+            .title(title);
+
+        #[allow(clippy::cast_possible_truncation)]
+        let scroll_y = edit_state.scroll_offset as u16;
+        let paragraph = Paragraph::new(content).block(block).scroll((scroll_y, 0));
+
+        frame.render_widget(paragraph, area);
+
+        // Set cursor position within the pane
+        // Account for border (1) and line number prefix (5 chars: "   1 ")
+        #[allow(clippy::cast_possible_truncation)]
+        let cursor_x = area.x + 1 + 5 + edit_state.cursor_col as u16;
+        #[allow(clippy::cast_possible_truncation)]
+        let cursor_y = area.y + 1 + (edit_state.cursor_row as u16).saturating_sub(scroll_y);
+
+        if cursor_x < area.x + area.width && cursor_y < area.y + area.height {
+            frame.set_cursor_position((cursor_x, cursor_y));
+        }
+
+        return;
+    }
+
     let border_style = if is_focused {
         Style::default().fg(theme.ui.border_focused)
     } else {
@@ -254,6 +316,29 @@ const STATUS_MESSAGE_DURATION: Duration = Duration::from_secs(3);
 #[allow(clippy::too_many_lines)]
 pub fn render_status_bar(frame: &mut Frame, area: Rect, app: &App) {
     let theme = app.theme();
+
+    // Edit mode: show submode-aware indicator
+    if app.input_mode() == InputMode::Edit {
+        let edit_status = if let Some(edit_state) = app.edit_state() {
+            match edit_state.sub_mode {
+                crate::input::EditSubMode::Insert => {
+                    " -- INSERT -- (Esc: normal | Ctrl+C: discard)".to_string()
+                }
+                crate::input::EditSubMode::Normal => {
+                    " -- EDIT -- (Esc/q: apply | i: insert | Ctrl+C: discard)".to_string()
+                }
+            }
+        } else {
+            String::new()
+        };
+        let status = Paragraph::new(edit_status).style(
+            Style::default()
+                .fg(theme.base.accent)
+                .bg(theme.base.background),
+        );
+        frame.render_widget(status, area);
+        return;
+    }
 
     // Command mode: show the command line
     if app.input_mode() == InputMode::Command {

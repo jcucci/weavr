@@ -36,7 +36,7 @@ pub mod resolution;
 pub mod theme;
 pub mod ui;
 pub mod workspace;
-use input::{Command, Dialog, InputMode, KeySequence};
+use input::{Command, Dialog, EditState, InputMode, KeySequence};
 use keybindings::KeybindingMap;
 use weavr_core::ActionHistory;
 
@@ -104,6 +104,8 @@ pub struct App {
     pub(crate) active_dialog: Option<Dialog>,
     /// Content pending for external editor (Phase 7).
     pub(crate) editor_pending: Option<String>,
+    /// State for inline edit mode (None when not editing).
+    pub(crate) edit_state: Option<EditState>,
     /// Configuration for diff highlighting.
     pub(crate) diff_config: diff::DiffConfig,
     /// Keybinding map for normal mode.
@@ -159,6 +161,7 @@ impl App {
             command_buffer: String::new(),
             active_dialog: None,
             editor_pending: None,
+            edit_state: None,
             diff_config: diff::DiffConfig::default(),
             keybindings,
             help_sections,
@@ -199,6 +202,7 @@ impl App {
             command_buffer: String::new(),
             active_dialog: None,
             editor_pending: None,
+            edit_state: None,
             diff_config: diff::DiffConfig::default(),
             keybindings,
             help_sections,
@@ -996,6 +1000,57 @@ impl App {
                 self.quit();
             }
         }
+    }
+
+    // --- Inline Edit Mode ---
+
+    /// Enters inline edit mode in the result pane.
+    ///
+    /// Focuses the result pane and initializes the edit buffer from the
+    /// current hunk's content (resolved content if resolved, left side
+    /// content if unresolved). Starts in insert sub-mode.
+    pub fn enter_edit_mode(&mut self) {
+        let content = self.session.as_ref().and_then(|session| {
+            session.hunks().get(self.current_hunk_index).map(|hunk| {
+                if let Some(resolution) = session.resolutions().get(&hunk.id) {
+                    resolution.content.clone()
+                } else {
+                    hunk.left.text.clone()
+                }
+            })
+        });
+
+        let Some(content) = content else {
+            self.set_status_message("No hunk to edit");
+            return;
+        };
+
+        self.focused_pane = FocusedPane::Result;
+        self.edit_state = Some(EditState::new(&content));
+        self.input_mode = InputMode::Edit;
+    }
+
+    /// Exits inline edit mode.
+    ///
+    /// If `apply` is true, applies the edit buffer as a manual resolution.
+    /// Otherwise discards changes.
+    pub fn exit_edit_mode(&mut self, apply: bool) {
+        if apply {
+            if let Some(ref state) = self.edit_state {
+                let content = state.content();
+                resolution::apply_resolution(self, "Manual edit", |_hunk| {
+                    weavr_core::Resolution::manual(content.clone())
+                });
+            }
+        }
+        self.edit_state = None;
+        self.input_mode = InputMode::Normal;
+    }
+
+    /// Returns a reference to the edit state, if in edit mode.
+    #[must_use]
+    pub fn edit_state(&self) -> Option<&EditState> {
+        self.edit_state.as_ref()
     }
 
     // --- Phase 7: Editor Integration ---

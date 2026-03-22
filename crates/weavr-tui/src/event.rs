@@ -8,7 +8,7 @@ use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifier
 
 use crate::ai;
 use crate::ast;
-use crate::input::{Dialog, InputMode};
+use crate::input::{Dialog, EditSubMode, InputMode};
 use crate::keybindings::Action;
 use crate::{App, KEY_SEQUENCE_TIMEOUT};
 
@@ -46,6 +46,7 @@ fn handle_key_event(app: &mut App, key: KeyEvent) {
         InputMode::Normal => handle_normal_mode(app, key),
         InputMode::Command => handle_command_mode(app, key),
         InputMode::Dialog => handle_dialog_mode(app, key),
+        InputMode::Edit => handle_edit_mode(app, key),
     }
 }
 
@@ -171,6 +172,9 @@ fn dispatch_action(app: &mut App, action: Action) {
         Action::EditInEditor => {
             app.prepare_editor();
         }
+        Action::EnterEditMode => {
+            app.enter_edit_mode();
+        }
 
         // Display
         Action::ToggleWordDiff => app.toggle_word_diff(),
@@ -289,6 +293,194 @@ fn handle_dialog_mode(app: &mut App, key: KeyEvent) {
             _ => {}
         },
         None => {}
+    }
+}
+
+/// Handles key events in edit mode (inline result pane editor).
+fn handle_edit_mode(app: &mut App, key: KeyEvent) {
+    let Some(ref edit_state) = app.edit_state else {
+        return;
+    };
+
+    match edit_state.sub_mode {
+        EditSubMode::Insert => handle_edit_insert(app, key),
+        EditSubMode::Normal => handle_edit_normal(app, key),
+    }
+}
+
+/// Handles key events in edit-insert sub-mode (typing inserts text).
+fn handle_edit_insert(app: &mut App, key: KeyEvent) {
+    match key.code {
+        KeyCode::Esc => {
+            if let Some(ref mut state) = app.edit_state {
+                state.enter_normal();
+            }
+        }
+        KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+            app.exit_edit_mode(false);
+        }
+        KeyCode::Char(c) => {
+            if let Some(ref mut state) = app.edit_state {
+                state.insert_char(c);
+            }
+        }
+        KeyCode::Enter => {
+            if let Some(ref mut state) = app.edit_state {
+                state.newline();
+            }
+        }
+        KeyCode::Backspace => {
+            if let Some(ref mut state) = app.edit_state {
+                state.backspace();
+            }
+        }
+        KeyCode::Delete => {
+            if let Some(ref mut state) = app.edit_state {
+                state.delete_char();
+            }
+        }
+        KeyCode::Left => {
+            if let Some(ref mut state) = app.edit_state {
+                state.move_left();
+            }
+        }
+        KeyCode::Right => {
+            if let Some(ref mut state) = app.edit_state {
+                state.move_right();
+            }
+        }
+        KeyCode::Up => {
+            if let Some(ref mut state) = app.edit_state {
+                state.move_up();
+            }
+        }
+        KeyCode::Down => {
+            if let Some(ref mut state) = app.edit_state {
+                state.move_down();
+            }
+        }
+        KeyCode::Home => {
+            if let Some(ref mut state) = app.edit_state {
+                state.move_to_line_start();
+            }
+        }
+        KeyCode::End => {
+            if let Some(ref mut state) = app.edit_state {
+                state.move_to_line_end();
+            }
+        }
+        _ => {}
+    }
+}
+
+/// Handles key events in edit-normal sub-mode (vim navigation).
+fn handle_edit_normal(app: &mut App, key: KeyEvent) {
+    // Check for Ctrl+C first (discard)
+    if key.code == KeyCode::Char('c') && key.modifiers.contains(KeyModifiers::CONTROL) {
+        app.exit_edit_mode(false);
+        return;
+    }
+
+    match key.code {
+        // Exit: apply changes
+        KeyCode::Esc | KeyCode::Char('q') => {
+            app.exit_edit_mode(true);
+        }
+
+        // Movement
+        KeyCode::Char('h') | KeyCode::Left => {
+            if let Some(ref mut state) = app.edit_state {
+                state.move_left();
+            }
+        }
+        KeyCode::Char('j') | KeyCode::Down => {
+            if let Some(ref mut state) = app.edit_state {
+                state.move_down();
+            }
+        }
+        KeyCode::Char('k') | KeyCode::Up => {
+            if let Some(ref mut state) = app.edit_state {
+                state.move_up();
+            }
+        }
+        KeyCode::Char('l') | KeyCode::Right => {
+            if let Some(ref mut state) = app.edit_state {
+                state.move_right();
+            }
+        }
+        KeyCode::Char('w') => {
+            if let Some(ref mut state) = app.edit_state {
+                state.move_word_forward();
+            }
+        }
+        KeyCode::Char('b') => {
+            if let Some(ref mut state) = app.edit_state {
+                state.move_word_back();
+            }
+        }
+        KeyCode::Char('0') => {
+            if let Some(ref mut state) = app.edit_state {
+                state.move_to_line_start();
+            }
+        }
+        KeyCode::Char('$') => {
+            if let Some(ref mut state) = app.edit_state {
+                state.move_to_line_end();
+            }
+        }
+
+        // Enter insert mode
+        KeyCode::Char('i') => {
+            if let Some(ref mut state) = app.edit_state {
+                state.enter_insert();
+            }
+        }
+        KeyCode::Char('a') => {
+            if let Some(ref mut state) = app.edit_state {
+                state.enter_insert_after();
+            }
+        }
+        KeyCode::Char('A') => {
+            if let Some(ref mut state) = app.edit_state {
+                state.enter_insert_end();
+            }
+        }
+        KeyCode::Char('o') => {
+            if let Some(ref mut state) = app.edit_state {
+                state.open_line_below();
+            }
+        }
+        KeyCode::Char('O') => {
+            if let Some(ref mut state) = app.edit_state {
+                state.open_line_above();
+            }
+        }
+
+        // Delete
+        KeyCode::Char('x') => {
+            if let Some(ref mut state) = app.edit_state {
+                state.delete_char();
+            }
+        }
+        KeyCode::Char('d') => {
+            // Check for dd sequence
+            if let Some(ref mut state) = app.edit_state {
+                if state.pending_key == Some('d') {
+                    state.delete_line();
+                    state.pending_key = None;
+                } else {
+                    state.pending_key = Some('d');
+                }
+            }
+            return; // Don't clear pending_key below
+        }
+
+        _ => {}
+    }
+
+    // Clear pending key on any non-d key press
+    if let Some(ref mut state) = app.edit_state {
+        state.pending_key = None;
     }
 }
 
