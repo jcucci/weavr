@@ -156,7 +156,9 @@ pub fn request_all_suggestions(app: &mut App) {
     for hunk_id in &hunk_ids {
         // Scope borrows so we can mutate ast_state after try_resolve returns.
         let result = {
-            let session = app.session.as_ref().unwrap();
+            let Some(session) = &app.session else {
+                return;
+            };
             session
                 .hunks()
                 .iter()

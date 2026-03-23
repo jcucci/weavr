@@ -246,10 +246,7 @@ pub fn request_all_suggestions(app: &mut App) {
     }
     let count = hunks.len();
     app.ai_state.pending_batch = true;
-    if handle
-        .send(AiCommand::SuggestAll { hunks })
-        .is_err()
-    {
+    if handle.send(AiCommand::SuggestAll { hunks }).is_err() {
         app.ai_state.pending_batch = false;
         app.ai_handle = None;
         app.set_status_message("AI worker disconnected");
