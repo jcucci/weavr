@@ -338,11 +338,99 @@ pub enum Dialog {
     FileList(FileListState),
 }
 
+/// Sub-mode for the file list dialog.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum FileListMode {
+    /// Normal navigation mode.
+    #[default]
+    Navigate,
+    /// Search/filter mode — keystrokes append to the search query.
+    Search,
+}
+
+/// Sort order for the file list.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum FileListSort {
+    /// Sort by file path (default).
+    #[default]
+    Path,
+    /// Sort by number of unresolved conflicts (descending).
+    ConflictCount,
+    /// Sort by file extension.
+    FileType,
+}
+
+impl FileListSort {
+    /// Returns the display label for this sort variant.
+    #[must_use]
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Path => "path",
+            Self::ConflictCount => "conflicts",
+            Self::FileType => "type",
+        }
+    }
+
+    /// Cycles to the next sort variant.
+    #[must_use]
+    pub fn next(self) -> Self {
+        match self {
+            Self::Path => Self::ConflictCount,
+            Self::ConflictCount => Self::FileType,
+            Self::FileType => Self::Path,
+        }
+    }
+}
+
+/// Filter predicate for the file list.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum FileListFilter {
+    /// Show all files.
+    #[default]
+    All,
+    /// Show only files with unresolved hunks.
+    Unresolved,
+    /// Show only fully-resolved files.
+    Resolved,
+}
+
+impl FileListFilter {
+    /// Returns the display label for this filter variant.
+    #[must_use]
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::All => "all",
+            Self::Unresolved => "unresolved",
+            Self::Resolved => "resolved",
+        }
+    }
+
+    /// Cycles to the next filter variant.
+    #[must_use]
+    pub fn next(self) -> Self {
+        match self {
+            Self::All => Self::Unresolved,
+            Self::Unresolved => Self::Resolved,
+            Self::Resolved => Self::All,
+        }
+    }
+}
+
 /// State for the file list dialog.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FileListState {
-    /// Currently selected index in the file list.
+    /// Index into `filtered_indices` (not the workspace file list).
     pub selected_index: usize,
+    /// Maps display row → workspace file index.
+    pub filtered_indices: Vec<usize>,
+    /// Current interaction mode.
+    pub mode: FileListMode,
+    /// Current search/filter query.
+    pub search_query: String,
+    /// Current sort order.
+    pub sort: FileListSort,
+    /// Current filter predicate.
+    pub filter: FileListFilter,
 }
 
 /// State for the scrollable help dialog.
