@@ -12,7 +12,7 @@ use ratatui::{
 };
 
 use crate::help::{self, HelpSection};
-use crate::input::{AcceptBothOptionsState, FileListState, HelpState};
+use crate::input::{AcceptBothOptionsState, FileListMode, FileListState, HelpState};
 use crate::theme::Theme;
 use crate::workspace::{FileStatus, Workspace};
 use weavr_core::BothOrder;
@@ -255,6 +255,91 @@ pub fn render_staging_prompt_dialog(frame: &mut Frame, area: Rect, theme: &Theme
     frame.render_widget(paragraph, dialog_area);
 }
 
+/// Builds the search bar line for the file list dialog.
+fn file_list_search_line(state: &FileListState, theme: &Theme) -> Line<'static> {
+    match state.mode {
+        FileListMode::Navigate if state.search_query.is_empty() => Line::from(Span::styled(
+            "  / to search",
+            Style::default().fg(theme.base.muted),
+        )),
+        FileListMode::Navigate => Line::from(vec![
+            Span::styled("  /", Style::default().fg(theme.base.muted)),
+            Span::styled(
+                state.search_query.clone(),
+                Style::default().fg(theme.base.foreground),
+            ),
+        ]),
+        FileListMode::Search => Line::from(vec![
+            Span::styled("  /", Style::default().fg(theme.base.accent)),
+            Span::styled(
+                state.search_query.clone(),
+                Style::default().fg(theme.base.foreground),
+            ),
+            Span::styled("_", Style::default().fg(theme.base.accent)),
+        ]),
+    }
+}
+
+/// Builds lines for the file entries in the file list dialog.
+fn file_list_entry_lines<'a>(
+    state: &FileListState,
+    workspace: &Workspace,
+    theme: &'a Theme,
+) -> Vec<Line<'a>> {
+    let files = workspace.files();
+    let current_idx = workspace.current_index();
+
+    if state.filtered_indices.is_empty() {
+        return vec![Line::from(Span::styled(
+            "  (no matching files)",
+            Style::default().fg(theme.base.muted),
+        ))];
+    }
+
+    state
+        .filtered_indices
+        .iter()
+        .enumerate()
+        .map(|(display_row, &ws_idx)| {
+            let file = &files[ws_idx];
+            let is_selected = display_row == state.selected_index;
+            let is_current = ws_idx == current_idx;
+
+            let icon = match (is_current, file.status(), file.written) {
+                (true, _, _) => ">",
+                (_, FileStatus::NotStarted, _) => " ",
+                (_, FileStatus::InProgress, _) => "~",
+                (_, FileStatus::FullyResolved, true) => "+",
+                (_, FileStatus::FullyResolved, false) => "*",
+            };
+
+            let (resolved, total) = file.resolution_counts();
+            let display_path = file.path.to_string_lossy();
+            let text = format!(
+                "  {icon} {:2}. {display_path}  ({resolved}/{total} resolved)",
+                ws_idx + 1
+            );
+
+            let style = if is_selected {
+                Style::default()
+                    .fg(theme.base.background)
+                    .bg(theme.base.accent)
+                    .add_modifier(Modifier::BOLD)
+            } else if file.written {
+                Style::default().fg(theme.base.muted)
+            } else if is_current {
+                Style::default()
+                    .fg(theme.base.accent)
+                    .add_modifier(Modifier::BOLD)
+            } else {
+                Style::default().fg(theme.base.foreground)
+            };
+
+            Line::from(Span::styled(text, style))
+        })
+        .collect()
+}
+
 /// Renders the file list overlay for multi-file navigation.
 pub fn render_file_list_overlay(
     frame: &mut Frame,
@@ -264,67 +349,42 @@ pub fn render_file_list_overlay(
     workspace: &Workspace,
 ) {
     let dialog_area = centered_rect(50, 60, area);
-
-    // Clear the background
     frame.render_widget(Clear, dialog_area);
 
+    let total_files = workspace.files().len();
     let mut lines: Vec<Line<'_>> = Vec::new();
-    lines.push(Line::from(""));
 
-    let current_idx = workspace.current_index();
-    for (i, file) in workspace.files().iter().enumerate() {
-        let is_selected = i == state.selected_index;
-        let is_current = i == current_idx;
-
-        let icon = if is_current {
-            ">"
-        } else {
-            match file.status() {
-                FileStatus::NotStarted => " ",
-                FileStatus::InProgress => "~",
-                FileStatus::FullyResolved => {
-                    if file.written {
-                        "+"
-                    } else {
-                        "*"
-                    }
-                }
-            }
-        };
-
-        let (resolved, total) = file.resolution_counts();
-        let display_path = file.path.to_string_lossy();
-        let text = format!(
-            "  {icon} {:2}. {display_path}  ({resolved}/{total} resolved)",
-            i + 1
-        );
-
-        let style = if is_selected {
-            Style::default()
-                .fg(theme.base.background)
-                .bg(theme.base.accent)
-                .add_modifier(Modifier::BOLD)
-        } else if file.written {
-            Style::default().fg(theme.base.muted)
-        } else if is_current {
-            Style::default()
-                .fg(theme.base.accent)
-                .add_modifier(Modifier::BOLD)
-        } else {
-            Style::default().fg(theme.base.foreground)
-        };
-
-        lines.push(Line::from(Span::styled(text, style)));
-    }
-
-    lines.push(Line::from(""));
+    lines.push(file_list_search_line(state, theme));
     lines.push(Line::from(Span::styled(
-        "  [j/k] Navigate  [Enter] Open  [q] Back",
+        format!(
+            "  [sort: {}] [filter: {}]",
+            state.sort.label(),
+            state.filter.label()
+        ),
+        Style::default().fg(theme.base.muted),
+    )));
+    lines.push(Line::from(""));
+    lines.extend(file_list_entry_lines(state, workspace, theme));
+    lines.push(Line::from(""));
+    let footer = match state.mode {
+        FileListMode::Navigate => {
+            "  [j/k] Navigate  [/] Search  [s] Sort  [f] Filter  [Enter] Open  [q] Back"
+        }
+        FileListMode::Search => "  Type to filter  [Esc] Stop search  [Up/Down] Navigate",
+    };
+    lines.push(Line::from(Span::styled(
+        footer,
         Style::default().fg(theme.base.muted),
     )));
 
+    let title = if state.filtered_indices.len() < total_files {
+        format!(" Files ({}/{}) ", state.filtered_indices.len(), total_files)
+    } else {
+        " Files ".to_string()
+    };
+
     let block = Block::default()
-        .title(" Files ")
+        .title(title)
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
         .border_style(Style::default().fg(theme.ui.border_focused))

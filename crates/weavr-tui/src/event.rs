@@ -8,7 +8,7 @@ use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifier
 
 use crate::ai;
 use crate::ast;
-use crate::input::{Dialog, EditSubMode, InputMode};
+use crate::input::{Dialog, EditSubMode, FileListMode, InputMode};
 use crate::keybindings::Action;
 use crate::{App, KEY_SEQUENCE_TIMEOUT};
 
@@ -285,13 +285,39 @@ fn handle_dialog_mode(app: &mut App, key: KeyEvent) {
             KeyCode::Char('n' | 'N') | KeyCode::Esc => crate::dialog::deny_staging(app),
             _ => {}
         },
-        Some(Dialog::FileList(_)) => match key.code {
-            KeyCode::Char('j') | KeyCode::Down => crate::dialog::file_list_move_down(app),
-            KeyCode::Char('k') | KeyCode::Up => crate::dialog::file_list_move_up(app),
-            KeyCode::Enter => crate::dialog::file_list_select(app),
-            KeyCode::Esc | KeyCode::Char('q') => app.close_dialog(),
-            _ => {}
-        },
+        Some(Dialog::FileList(state)) => {
+            let mode = state.mode;
+            match mode {
+                FileListMode::Navigate => match key.code {
+                    KeyCode::Char('j') | KeyCode::Down => {
+                        crate::dialog::file_list_move_down(app);
+                    }
+                    KeyCode::Char('k') | KeyCode::Up => {
+                        crate::dialog::file_list_move_up(app);
+                    }
+                    KeyCode::Enter => crate::dialog::file_list_select(app),
+                    KeyCode::Char('/') => crate::dialog::file_list_enter_search(app),
+                    KeyCode::Char('s') => crate::dialog::file_list_cycle_sort(app),
+                    KeyCode::Char('f') => crate::dialog::file_list_cycle_filter(app),
+                    KeyCode::Esc | KeyCode::Char('q') => app.close_dialog(),
+                    _ => {}
+                },
+                FileListMode::Search => match key.code {
+                    KeyCode::Esc | KeyCode::Enter => {
+                        crate::dialog::file_list_exit_search(app);
+                    }
+                    KeyCode::Backspace => {
+                        crate::dialog::file_list_search_backspace(app);
+                    }
+                    KeyCode::Down => crate::dialog::file_list_move_down(app),
+                    KeyCode::Up => crate::dialog::file_list_move_up(app),
+                    KeyCode::Char(c) => {
+                        crate::dialog::file_list_search_append(app, c);
+                    }
+                    _ => {}
+                },
+            }
+        }
         None => {}
     }
 }
@@ -1000,5 +1026,128 @@ mod tests {
         handle_event(&mut app, &event);
         assert_eq!(app.edit_state.as_ref().unwrap().lines.len(), 2);
         assert_eq!(app.edit_state.as_ref().unwrap().lines[0], "line2");
+    }
+
+    // --- File list dialog search/filter/sort event tests ---
+
+    fn setup_file_list_app() -> App {
+        use crate::input::{
+            Dialog, FileListFilter, FileListMode, FileListSort, FileListState, InputMode,
+        };
+        let mut app = App::new();
+        app.active_dialog = Some(Dialog::FileList(FileListState {
+            selected_index: 0,
+            filtered_indices: vec![0, 1, 2],
+            mode: FileListMode::Navigate,
+            search_query: String::new(),
+            sort: FileListSort::default(),
+            filter: FileListFilter::default(),
+        }));
+        app.input_mode = InputMode::Dialog;
+        app
+    }
+
+    #[test]
+    fn file_list_slash_enters_search_mode() {
+        let mut app = setup_file_list_app();
+        let event = Event::Key(make_key_event(KeyCode::Char('/'), KeyModifiers::NONE));
+        handle_event(&mut app, &event);
+
+        if let Some(Dialog::FileList(state)) = app.active_dialog() {
+            assert_eq!(state.mode, FileListMode::Search);
+        } else {
+            panic!("expected FileList dialog");
+        }
+    }
+
+    #[test]
+    fn file_list_search_mode_esc_returns_to_navigate() {
+        let mut app = setup_file_list_app();
+        // Enter search
+        let slash = Event::Key(make_key_event(KeyCode::Char('/'), KeyModifiers::NONE));
+        handle_event(&mut app, &slash);
+        // Exit search
+        let esc = Event::Key(make_key_event(KeyCode::Esc, KeyModifiers::NONE));
+        handle_event(&mut app, &esc);
+
+        if let Some(Dialog::FileList(state)) = app.active_dialog() {
+            assert_eq!(state.mode, FileListMode::Navigate);
+        } else {
+            panic!("expected FileList dialog");
+        }
+    }
+
+    #[test]
+    fn file_list_search_mode_enter_returns_to_navigate() {
+        let mut app = setup_file_list_app();
+        let slash = Event::Key(make_key_event(KeyCode::Char('/'), KeyModifiers::NONE));
+        handle_event(&mut app, &slash);
+
+        let enter = Event::Key(make_key_event(KeyCode::Enter, KeyModifiers::NONE));
+        handle_event(&mut app, &enter);
+
+        if let Some(Dialog::FileList(state)) = app.active_dialog() {
+            assert_eq!(state.mode, FileListMode::Navigate);
+        } else {
+            panic!("expected FileList dialog");
+        }
+    }
+
+    #[test]
+    fn file_list_search_char_does_not_close_dialog() {
+        // Without a workspace, search_append is a no-op but the dialog stays open
+        let mut app = setup_file_list_app();
+        let slash = Event::Key(make_key_event(KeyCode::Char('/'), KeyModifiers::NONE));
+        handle_event(&mut app, &slash);
+        let a = Event::Key(make_key_event(KeyCode::Char('a'), KeyModifiers::NONE));
+        handle_event(&mut app, &a);
+
+        // Dialog should still be open in search mode
+        if let Some(Dialog::FileList(state)) = app.active_dialog() {
+            assert_eq!(state.mode, FileListMode::Search);
+        } else {
+            panic!("expected FileList dialog");
+        }
+    }
+
+    #[test]
+    fn file_list_search_backspace_does_not_close_dialog() {
+        let mut app = setup_file_list_app();
+        let slash = Event::Key(make_key_event(KeyCode::Char('/'), KeyModifiers::NONE));
+        handle_event(&mut app, &slash);
+        let bs = Event::Key(make_key_event(KeyCode::Backspace, KeyModifiers::NONE));
+        handle_event(&mut app, &bs);
+
+        if let Some(Dialog::FileList(state)) = app.active_dialog() {
+            assert_eq!(state.mode, FileListMode::Search);
+        } else {
+            panic!("expected FileList dialog");
+        }
+    }
+
+    #[test]
+    fn file_list_navigate_q_closes_dialog() {
+        let mut app = setup_file_list_app();
+        let q = Event::Key(make_key_event(KeyCode::Char('q'), KeyModifiers::NONE));
+        handle_event(&mut app, &q);
+        assert!(app.active_dialog().is_none());
+        assert_eq!(app.input_mode(), InputMode::Normal);
+    }
+
+    #[test]
+    fn file_list_navigate_j_k_moves_selection() {
+        let mut app = setup_file_list_app();
+
+        let j = Event::Key(make_key_event(KeyCode::Char('j'), KeyModifiers::NONE));
+        handle_event(&mut app, &j);
+        if let Some(Dialog::FileList(state)) = app.active_dialog() {
+            assert_eq!(state.selected_index, 1);
+        }
+
+        let k = Event::Key(make_key_event(KeyCode::Char('k'), KeyModifiers::NONE));
+        handle_event(&mut app, &k);
+        if let Some(Dialog::FileList(state)) = app.active_dialog() {
+            assert_eq!(state.selected_index, 0);
+        }
     }
 }
