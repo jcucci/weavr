@@ -199,12 +199,11 @@ impl AiState {
 // ---------------------------------------------------------------------------
 
 /// Requests an AI suggestion for the current hunk.
-#[allow(clippy::missing_panics_doc)] // unwrap is guarded by is_none() check above
 pub fn request_suggestion(app: &mut App) {
-    if app.ai_handle.is_none() {
+    let Some(handle) = &app.ai_handle else {
         app.set_status_message("AI not configured");
         return;
-    }
+    };
     let Some(hunk) = app.current_hunk().cloned() else {
         return;
     };
@@ -213,7 +212,7 @@ pub fn request_suggestion(app: &mut App) {
         return;
     }
     app.ai_state.pending_hunk = Some(hunk.id);
-    let send_result = app.ai_handle.as_ref().unwrap().send(AiCommand::Suggest {
+    let send_result = handle.send(AiCommand::Suggest {
         hunk_id: hunk.id,
         hunk,
     });
@@ -227,12 +226,11 @@ pub fn request_suggestion(app: &mut App) {
 }
 
 /// Requests AI suggestions for all unresolved hunks.
-#[allow(clippy::missing_panics_doc)] // unwrap is guarded by is_none() check above
 pub fn request_all_suggestions(app: &mut App) {
-    if app.ai_handle.is_none() {
+    let Some(handle) = &app.ai_handle else {
         app.set_status_message("AI not configured");
         return;
-    }
+    };
     let Some(session) = &app.session else {
         return;
     };
@@ -248,10 +246,7 @@ pub fn request_all_suggestions(app: &mut App) {
     }
     let count = hunks.len();
     app.ai_state.pending_batch = true;
-    if app
-        .ai_handle
-        .as_ref()
-        .unwrap()
+    if handle
         .send(AiCommand::SuggestAll { hunks })
         .is_err()
     {
@@ -293,12 +288,11 @@ pub fn dismiss_suggestion(app: &mut App) {
 ///
 /// Returns a cached explanation immediately if one exists for the same
 /// hunk content. Otherwise sends an async request to the AI worker.
-#[allow(clippy::missing_panics_doc)] // unwrap is guarded by is_none() check above
 pub fn request_explanation(app: &mut App) {
-    if app.ai_handle.is_none() {
+    let Some(handle) = &app.ai_handle else {
         app.set_status_message("AI not configured");
         return;
-    }
+    };
     let Some(hunk) = app.current_hunk().cloned() else {
         return;
     };
@@ -319,10 +313,7 @@ pub fn request_explanation(app: &mut App) {
     }
     app.ai_state.pending_hunk = Some(hunk.id);
     app.ai_state.pending_explanation_hash = Some(hash);
-    if app
-        .ai_handle
-        .as_ref()
-        .unwrap()
+    if handle
         .send(AiCommand::Explain {
             hunk_id: hunk.id,
             hunk,

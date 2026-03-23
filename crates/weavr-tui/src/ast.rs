@@ -121,12 +121,11 @@ pub fn request_suggestion(app: &mut App) {
 
 /// Requests AST merge suggestions for all unresolved hunks.
 #[cfg(feature = "ast")]
-#[allow(clippy::missing_panics_doc)] // unwraps guarded by early returns
 pub fn request_all_suggestions(app: &mut App) {
-    if app.ast_strategy.is_none() {
+    let Some(strategy) = &app.ast_strategy else {
         app.set_status_message("AST merging not available");
         return;
-    }
+    };
 
     // Gather file metadata and candidate hunk IDs without cloning full hunks.
     let (file_path, language, hunk_ids) = {
@@ -157,13 +156,12 @@ pub fn request_all_suggestions(app: &mut App) {
     for hunk_id in &hunk_ids {
         // Scope borrows so we can mutate ast_state after try_resolve returns.
         let result = {
-            let ast_strategy = app.ast_strategy.as_ref().unwrap();
             let session = app.session.as_ref().unwrap();
             session
                 .hunks()
                 .iter()
                 .find(|h| h.id == *hunk_id)
-                .map(|h| ast_strategy.try_resolve(h, &file_path, language))
+                .map(|h| strategy.try_resolve(h, &file_path, language))
         };
 
         match result {
