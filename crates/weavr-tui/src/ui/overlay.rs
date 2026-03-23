@@ -366,8 +366,14 @@ pub fn render_file_list_overlay(
     lines.push(Line::from(""));
     lines.extend(file_list_entry_lines(state, workspace, theme));
     lines.push(Line::from(""));
+    let footer = match state.mode {
+        FileListMode::Navigate => {
+            "  [j/k] Navigate  [/] Search  [s] Sort  [f] Filter  [Enter] Open  [q] Back"
+        }
+        FileListMode::Search => "  Type to filter  [Esc] Stop search  [Up/Down] Navigate",
+    };
     lines.push(Line::from(Span::styled(
-        "  [j/k] Navigate  [/] Search  [s] Sort  [f] Filter  [Enter] Open  [q] Back",
+        footer,
         Style::default().fg(theme.base.muted),
     )));
 

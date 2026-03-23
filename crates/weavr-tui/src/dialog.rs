@@ -133,14 +133,16 @@ pub fn file_list_move_up(app: &mut App) {
 }
 
 /// Selects the current item in the file list dialog and switches to that file.
+/// No-ops when the filtered list is empty so the dialog isn't dismissed on Enter
+/// with no matching files.
 pub fn file_list_select(app: &mut App) {
     let workspace_index = if let Some(Dialog::FileList(ref state)) = app.active_dialog {
         state.filtered_indices.get(state.selected_index).copied()
     } else {
         return;
     };
-    close_dialog(app);
     if let Some(idx) = workspace_index {
+        close_dialog(app);
         app.go_to_file(idx);
     }
 }
@@ -197,7 +199,7 @@ pub fn file_list_cycle_filter(app: &mut App) {
 
 /// Recomputes `filtered_indices` from the current search, filter, and sort
 /// settings. Tries to preserve the previously-selected workspace index.
-pub fn recompute_filtered_indices(state: &mut FileListState, workspace: &Workspace) {
+fn recompute_filtered_indices(state: &mut FileListState, workspace: &Workspace) {
     // Remember which workspace index was selected before recompute.
     let prev_workspace_idx = state.filtered_indices.get(state.selected_index).copied();
 
