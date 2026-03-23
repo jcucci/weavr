@@ -51,7 +51,6 @@ pub enum CliError {
     Config(#[from] crate::config::ConfigError),
 
     #[error("Ambiguous hunks remain: {0} hunks could not be auto-resolved")]
-    #[allow(dead_code)] // Reserved for --fail-on-ambiguous implementation
     AmbiguousHunks(usize),
 
     #[error("Merge driver error: {0}")]
