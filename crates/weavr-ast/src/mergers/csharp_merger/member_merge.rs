@@ -8,14 +8,9 @@ use std::collections::{BTreeMap, BTreeSet};
 use super::identity::{CSharpIdentity, MemberIdentity};
 use super::parse::{is_complex_using, to_member_identity, CSharpDeclaration, DeclarationKind};
 use super::using_merge;
+use crate::error::AstError;
+use crate::mergers::common::RawMergeOutput;
 use crate::mergers::confidence::{compute_import_confidence, compute_mixed_confidence};
-
-/// The result of merging declarations from two or three sides.
-pub(super) struct MergedDeclarations {
-    pub declarations: Vec<CSharpDeclaration>,
-    pub confidence: f32,
-    pub description: String,
-}
 
 /// Returns whether all declarations are using directives.
 fn all_usings(decls: &[CSharpDeclaration]) -> bool {
@@ -53,16 +48,18 @@ fn normalize_whitespace(s: &str) -> String {
 pub(super) fn merge_two_way(
     left: &[CSharpDeclaration],
     right: &[CSharpDeclaration],
-) -> Option<MergedDeclarations> {
+) -> Result<Option<RawMergeOutput<CSharpDeclaration>>, AstError> {
     // Special-case: pure using-directive merge
     if all_usings(left) && all_usings(right) {
-        return using_merge::merge_using_directives(left, right, None).map(|(decls, desc)| {
-            MergedDeclarations {
-                confidence: compute_import_confidence(all_usings(&decls), false),
-                declarations: decls,
-                description: desc,
-            }
-        });
+        return Ok(
+            using_merge::merge_using_directives(left, right, None).map(|(decls, desc)| {
+                RawMergeOutput {
+                    confidence: compute_import_confidence(all_usings(&decls), false),
+                    items: decls,
+                    description: desc,
+                }
+            }),
+        );
     }
 
     let right_map = build_identity_map(right);
@@ -96,7 +93,7 @@ pub(super) fn merge_two_way(
             || right_usings.iter().any(is_complex_using)
         {
             // Complex usings cannot be safely merged -- bail out to text merge
-            return None;
+            return Ok(None);
         } else {
             // Identical usings -- just keep left's
             merged.extend(left_usings);
@@ -129,7 +126,7 @@ pub(super) fn merge_two_way(
                         has_member_disjoint = true;
                         merged.push(merged_decl);
                     }
-                    None => return None, // Unresolvable conflict
+                    None => return Ok(None), // Unresolvable conflict
                 }
             }
         } else {
@@ -156,11 +153,11 @@ pub(super) fn merge_two_way(
     };
 
     let confidence = compute_mixed_confidence(has_using_merge, has_member_disjoint, false);
-    Some(MergedDeclarations {
-        declarations: merged,
+    Ok(Some(RawMergeOutput {
+        items: merged,
         confidence,
         description,
-    })
+    }))
 }
 
 /// Three-way merge: classifies each identity as unchanged/added/modified/deleted per side.
@@ -169,15 +166,17 @@ pub(super) fn merge_three_way(
     base: &[CSharpDeclaration],
     left: &[CSharpDeclaration],
     right: &[CSharpDeclaration],
-) -> Option<MergedDeclarations> {
+) -> Result<Option<RawMergeOutput<CSharpDeclaration>>, AstError> {
     // Special-case: pure using-directive merge
     if all_usings(left) && all_usings(right) && all_usings(base) {
-        return using_merge::merge_using_directives(left, right, Some(base)).map(
-            |(decls, desc)| MergedDeclarations {
-                confidence: compute_import_confidence(all_usings(&decls), true),
-                declarations: decls,
-                description: desc,
-            },
+        return Ok(
+            using_merge::merge_using_directives(left, right, Some(base)).map(|(decls, desc)| {
+                RawMergeOutput {
+                    confidence: compute_import_confidence(all_usings(&decls), true),
+                    items: decls,
+                    description: desc,
+                }
+            }),
         );
     }
 
@@ -220,7 +219,7 @@ pub(super) fn merge_three_way(
             || right_usings.iter().any(is_complex_using)
         {
             // Complex usings cannot be safely merged -- bail out to text merge
-            return None;
+            return Ok(None);
         } else {
             merged.extend(left_usings);
         }
@@ -253,18 +252,18 @@ pub(super) fn merge_three_way(
             // In all three -- check for modifications
             (Some(b), Some(l), Some(r)) => {
                 if !merge_three_present(b, l, r, &mut merged, &mut has_member_disjoint) {
-                    return None;
+                    return Ok(None);
                 }
             }
             // Deleted by one side -- respect deletion (unless modified by the other)
             (Some(b), Some(l), None) => {
                 if !source_equal(b, l) {
-                    return None;
+                    return Ok(None);
                 }
             }
             (Some(b), None, Some(r)) => {
                 if !source_equal(b, r) {
-                    return None;
+                    return Ok(None);
                 }
             }
             // Both sides deleted, or identity not actually present
@@ -279,7 +278,7 @@ pub(super) fn merge_three_way(
                             has_member_disjoint = true;
                             merged.push(merged_decl);
                         }
-                        None => return None,
+                        None => return Ok(None),
                     }
                 }
             }
@@ -299,11 +298,11 @@ pub(super) fn merge_three_way(
     };
 
     let confidence = compute_mixed_confidence(has_using_merge, has_member_disjoint, true);
-    Some(MergedDeclarations {
-        declarations: merged,
+    Ok(Some(RawMergeOutput {
+        items: merged,
         confidence,
         description,
-    })
+    }))
 }
 
 /// Handles the case where a declaration is present in all three sides (base, left, right).
@@ -549,23 +548,23 @@ mod tests {
     fn two_way_disjoint_classes() {
         let left = parse("class Foo { }");
         let right = parse("class Bar { }");
-        let result = merge_two_way(&left, &right).unwrap();
-        assert_eq!(result.declarations.len(), 2);
+        let result = merge_two_way(&left, &right).unwrap().unwrap();
+        assert_eq!(result.items.len(), 2);
     }
 
     #[test]
     fn two_way_identical_classes() {
         let left = parse("class Foo { }");
         let right = parse("class Foo { }");
-        let result = merge_two_way(&left, &right).unwrap();
-        assert_eq!(result.declarations.len(), 1);
+        let result = merge_two_way(&left, &right).unwrap().unwrap();
+        assert_eq!(result.items.len(), 1);
     }
 
     #[test]
     fn two_way_conflicting_classes() {
         let left = parse("class Foo { public void A() { } }");
         let right = parse("class Foo { public void B() { } }");
-        let result = merge_two_way(&left, &right);
+        let result = merge_two_way(&left, &right).unwrap();
         assert!(result.is_some());
     }
 

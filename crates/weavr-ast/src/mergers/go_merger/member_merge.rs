@@ -8,14 +8,9 @@ use std::collections::{BTreeMap, BTreeSet};
 use super::identity::GoIdentity;
 use super::import_merge;
 use super::parse::{is_dot_import, DeclarationKind, GoDeclaration};
+use crate::error::AstError;
+use crate::mergers::common::RawMergeOutput;
 use crate::mergers::confidence::{compute_import_confidence, compute_mixed_confidence};
-
-/// The result of merging declarations from two or three sides.
-pub(super) struct MergedDeclarations {
-    pub declarations: Vec<GoDeclaration>,
-    pub confidence: f32,
-    pub description: String,
-}
 
 /// Returns whether all declarations are import declarations.
 fn all_imports(decls: &[GoDeclaration]) -> bool {
@@ -53,16 +48,18 @@ fn normalize_whitespace(s: &str) -> String {
 pub(super) fn merge_two_way(
     left: &[GoDeclaration],
     right: &[GoDeclaration],
-) -> Option<MergedDeclarations> {
+) -> Result<Option<RawMergeOutput<GoDeclaration>>, AstError> {
     // Special-case: pure import merge
     if all_imports(left) && all_imports(right) {
-        return import_merge::merge_import_declarations(left, right, None).map(|(decls, desc)| {
-            MergedDeclarations {
-                confidence: compute_import_confidence(all_imports(&decls), false),
-                declarations: decls,
-                description: desc,
-            }
-        });
+        return Ok(
+            import_merge::merge_import_declarations(left, right, None).map(|(decls, desc)| {
+                RawMergeOutput {
+                    confidence: compute_import_confidence(all_imports(&decls), false),
+                    items: decls,
+                    description: desc,
+                }
+            }),
+        );
     }
 
     let right_map = build_identity_map(right);
@@ -95,7 +92,7 @@ pub(super) fn merge_two_way(
         } else if left_imports.iter().any(is_dot_import) || right_imports.iter().any(is_dot_import)
         {
             // Dot imports cannot be safely merged -- bail out to text merge
-            return None;
+            return Ok(None);
         } else {
             // Identical imports -- just keep left's
             merged.extend(left_imports);
@@ -128,7 +125,7 @@ pub(super) fn merge_two_way(
                         has_member_disjoint = true;
                         merged.push(merged_decl);
                     }
-                    None => return None, // Unresolvable conflict
+                    None => return Ok(None), // Unresolvable conflict
                 }
             }
         } else {
@@ -155,11 +152,11 @@ pub(super) fn merge_two_way(
     };
 
     let confidence = compute_mixed_confidence(has_import_merge, has_member_disjoint, false);
-    Some(MergedDeclarations {
-        declarations: merged,
+    Ok(Some(RawMergeOutput {
+        items: merged,
         confidence,
         description,
-    })
+    }))
 }
 
 /// Three-way merge: classifies each identity as unchanged/added/modified/deleted per side.
@@ -168,15 +165,17 @@ pub(super) fn merge_three_way(
     base: &[GoDeclaration],
     left: &[GoDeclaration],
     right: &[GoDeclaration],
-) -> Option<MergedDeclarations> {
+) -> Result<Option<RawMergeOutput<GoDeclaration>>, AstError> {
     // Special-case: pure import merge
     if all_imports(left) && all_imports(right) && all_imports(base) {
-        return import_merge::merge_import_declarations(left, right, Some(base)).map(
-            |(decls, desc)| MergedDeclarations {
-                confidence: compute_import_confidence(all_imports(&decls), true),
-                declarations: decls,
-                description: desc,
-            },
+        return Ok(
+            import_merge::merge_import_declarations(left, right, Some(base)).map(
+                |(decls, desc)| RawMergeOutput {
+                    confidence: compute_import_confidence(all_imports(&decls), true),
+                    items: decls,
+                    description: desc,
+                },
+            ),
         );
     }
 
@@ -221,7 +220,7 @@ pub(super) fn merge_three_way(
             || right_imports.iter().any(is_dot_import)
         {
             // Dot imports cannot be safely merged -- bail out to text merge
-            return None;
+            return Ok(None);
         } else {
             merged.extend(left_imports);
         }
@@ -254,18 +253,18 @@ pub(super) fn merge_three_way(
             // In all three -- check for modifications
             (Some(b), Some(l), Some(r)) => {
                 if !merge_three_present(b, l, r, &mut merged, &mut has_member_disjoint) {
-                    return None;
+                    return Ok(None);
                 }
             }
             // Deleted by one side -- respect deletion (unless modified by the other)
             (Some(b), Some(l), None) => {
                 if !source_equal(b, l) {
-                    return None;
+                    return Ok(None);
                 }
             }
             (Some(b), None, Some(r)) => {
                 if !source_equal(b, r) {
-                    return None;
+                    return Ok(None);
                 }
             }
             // Both sides deleted, or identity not actually present
@@ -280,7 +279,7 @@ pub(super) fn merge_three_way(
                             has_member_disjoint = true;
                             merged.push(merged_decl);
                         }
-                        None => return None,
+                        None => return Ok(None),
                     }
                 }
             }
@@ -300,11 +299,11 @@ pub(super) fn merge_three_way(
     };
 
     let confidence = compute_mixed_confidence(has_import_merge, has_member_disjoint, true);
-    Some(MergedDeclarations {
-        declarations: merged,
+    Ok(Some(RawMergeOutput {
+        items: merged,
         confidence,
         description,
-    })
+    }))
 }
 
 /// Handles the case where a declaration is present in all three sides (base, left, right).
@@ -487,23 +486,23 @@ mod tests {
     fn two_way_disjoint_functions() {
         let left = parse("func Foo() {}");
         let right = parse("func Bar() {}");
-        let result = merge_two_way(&left, &right).unwrap();
-        assert_eq!(result.declarations.len(), 2);
+        let result = merge_two_way(&left, &right).unwrap().unwrap();
+        assert_eq!(result.items.len(), 2);
     }
 
     #[test]
     fn two_way_identical_functions() {
         let left = parse("func Foo() {}");
         let right = parse("func Foo() {}");
-        let result = merge_two_way(&left, &right).unwrap();
-        assert_eq!(result.declarations.len(), 1);
+        let result = merge_two_way(&left, &right).unwrap().unwrap();
+        assert_eq!(result.items.len(), 1);
     }
 
     #[test]
     fn two_way_conflicting_functions() {
         let left = parse("func Foo() { return 1 }");
         let right = parse("func Foo() { return 2 }");
-        let result = merge_two_way(&left, &right);
+        let result = merge_two_way(&left, &right).unwrap();
         assert!(result.is_none(), "conflicting functions should return None");
     }
 
@@ -528,19 +527,19 @@ mod tests {
     fn struct_disjoint_field_additions() {
         let left = parse("type Config struct {\n\tName string\n\tHost string\n}");
         let right = parse("type Config struct {\n\tName string\n\tPort int\n}");
-        let result = merge_two_way(&left, &right).unwrap();
-        assert_eq!(result.declarations.len(), 1);
-        assert!(result.declarations[0].source_text.contains("Host"));
-        assert!(result.declarations[0].source_text.contains("Port"));
+        let result = merge_two_way(&left, &right).unwrap().unwrap();
+        assert_eq!(result.items.len(), 1);
+        assert!(result.items[0].source_text.contains("Host"));
+        assert!(result.items[0].source_text.contains("Port"));
     }
 
     #[test]
     fn interface_disjoint_method_additions() {
         let left = parse("type Handler interface {\n\tServeHTTP()\n\tInit()\n}");
         let right = parse("type Handler interface {\n\tServeHTTP()\n\tClose()\n}");
-        let result = merge_two_way(&left, &right).unwrap();
-        assert_eq!(result.declarations.len(), 1);
-        assert!(result.declarations[0].source_text.contains("Init"));
-        assert!(result.declarations[0].source_text.contains("Close"));
+        let result = merge_two_way(&left, &right).unwrap().unwrap();
+        assert_eq!(result.items.len(), 1);
+        assert!(result.items[0].source_text.contains("Init"));
+        assert!(result.items[0].source_text.contains("Close"));
     }
 }
