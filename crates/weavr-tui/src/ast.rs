@@ -72,7 +72,7 @@ pub fn request_suggestion(app: &mut App) {
     let Some(session) = &app.session else {
         return;
     };
-    let Some(hunk) = session.hunks().get(app.current_hunk_index) else {
+    let Some(hunk) = session.hunks().get(app.scroll.current_hunk_index) else {
         return;
     };
     // Don't re-request if we already have a suggestion for this hunk

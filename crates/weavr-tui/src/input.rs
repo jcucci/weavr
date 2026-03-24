@@ -7,6 +7,23 @@ use std::time::{Duration, Instant};
 
 use crossterm::event::{KeyCode, KeyModifiers};
 
+/// Input mode, command buffer, key sequences, dialogs, and edit state.
+#[derive(Debug, Default)]
+pub struct CommandState {
+    /// Current input mode.
+    pub(crate) input_mode: InputMode,
+    /// Command buffer for command mode.
+    pub(crate) command_buffer: String,
+    /// Tracker for multi-key sequences (e.g., 'gg').
+    pub(crate) key_sequence: KeySequence,
+    /// Currently active dialog, if any.
+    pub(crate) active_dialog: Option<Dialog>,
+    /// Content pending for external editor (Phase 7).
+    pub(crate) editor_pending: Option<String>,
+    /// State for inline edit mode (None when not editing).
+    pub(crate) edit_state: Option<EditState>,
+}
+
 /// The current input mode of the application.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum InputMode {

@@ -9,6 +9,19 @@ use weavr_core::HunkState;
 
 use crate::{App, FocusedPane};
 
+/// Scroll, hunk index, and pane focus state.
+#[derive(Debug, Clone, Default)]
+pub struct ScrollState {
+    /// Synchronized scroll offset for left/right panes.
+    pub(crate) left_right_scroll: u16,
+    /// Independent scroll offset for result pane.
+    pub(crate) result_scroll: u16,
+    /// Current hunk index (0-based).
+    pub(crate) current_hunk_index: usize,
+    /// Which pane has focus.
+    pub(crate) focused_pane: FocusedPane,
+}
+
 // --- Focus Management ---
 
 /// Cycles focus to the next pane.
@@ -16,9 +29,9 @@ use crate::{App, FocusedPane};
 /// When the base pane is visible: Left -> Base -> Right -> Result -> Left.
 /// Otherwise: Left -> Right -> Result -> Left.
 pub fn cycle_focus(app: &mut App) {
-    app.focused_pane = match app.focused_pane {
+    app.scroll.focused_pane = match app.scroll.focused_pane {
         FocusedPane::Left => {
-            if app.show_base_pane {
+            if app.display.show_base_pane {
                 FocusedPane::Base
             } else {
                 FocusedPane::Right
@@ -35,11 +48,11 @@ pub fn cycle_focus(app: &mut App) {
 /// When the base pane is visible: Left -> Result -> Right -> Base -> Left.
 /// Otherwise: Left -> Result -> Right -> Left.
 pub fn cycle_focus_back(app: &mut App) {
-    app.focused_pane = match app.focused_pane {
+    app.scroll.focused_pane = match app.scroll.focused_pane {
         FocusedPane::Left => FocusedPane::Result,
         FocusedPane::Base => FocusedPane::Left,
         FocusedPane::Right => {
-            if app.show_base_pane {
+            if app.display.show_base_pane {
                 FocusedPane::Base
             } else {
                 FocusedPane::Left
@@ -51,7 +64,7 @@ pub fn cycle_focus_back(app: &mut App) {
 
 /// Sets focus directly to the result pane.
 pub fn focus_result(app: &mut App) {
-    app.focused_pane = FocusedPane::Result;
+    app.scroll.focused_pane = FocusedPane::Result;
 }
 
 // --- Hunk Navigation ---
@@ -59,16 +72,16 @@ pub fn focus_result(app: &mut App) {
 /// Moves to the next hunk.
 pub fn next_hunk(app: &mut App) {
     let total = app.total_hunks();
-    if total > 0 && app.current_hunk_index < total - 1 {
-        app.current_hunk_index += 1;
+    if total > 0 && app.scroll.current_hunk_index < total - 1 {
+        app.scroll.current_hunk_index += 1;
         reset_scroll(app);
     }
 }
 
 /// Moves to the previous hunk.
 pub fn prev_hunk(app: &mut App) {
-    if app.current_hunk_index > 0 {
-        app.current_hunk_index -= 1;
+    if app.scroll.current_hunk_index > 0 {
+        app.scroll.current_hunk_index -= 1;
         reset_scroll(app);
     }
 }
@@ -77,7 +90,7 @@ pub fn prev_hunk(app: &mut App) {
 pub fn go_to_hunk(app: &mut App, index: usize) {
     let total = app.total_hunks();
     if total > 0 && index < total {
-        app.current_hunk_index = index;
+        app.scroll.current_hunk_index = index;
         reset_scroll(app);
     }
 }
@@ -93,9 +106,9 @@ pub fn next_unresolved_hunk(app: &mut App) {
 
         // Search forward from current position
         for i in 1..=total {
-            let idx = (app.current_hunk_index + i) % total;
+            let idx = (app.scroll.current_hunk_index + i) % total;
             if matches!(hunks[idx].state, HunkState::Unresolved) {
-                app.current_hunk_index = idx;
+                app.scroll.current_hunk_index = idx;
                 reset_scroll(app);
                 return;
             }
@@ -114,9 +127,9 @@ pub fn prev_unresolved_hunk(app: &mut App) {
 
         // Search backward from current position
         for i in 1..=total {
-            let idx = (app.current_hunk_index + total - i) % total;
+            let idx = (app.scroll.current_hunk_index + total - i) % total;
             if matches!(hunks[idx].state, HunkState::Unresolved) {
-                app.current_hunk_index = idx;
+                app.scroll.current_hunk_index = idx;
                 reset_scroll(app);
                 return;
             }
@@ -128,24 +141,24 @@ pub fn prev_unresolved_hunk(app: &mut App) {
 
 /// Scrolls up by the specified number of lines.
 pub fn scroll_up(app: &mut App, lines: u16) {
-    match app.focused_pane {
+    match app.scroll.focused_pane {
         FocusedPane::Left | FocusedPane::Base | FocusedPane::Right => {
-            app.left_right_scroll = app.left_right_scroll.saturating_sub(lines);
+            app.scroll.left_right_scroll = app.scroll.left_right_scroll.saturating_sub(lines);
         }
         FocusedPane::Result => {
-            app.result_scroll = app.result_scroll.saturating_sub(lines);
+            app.scroll.result_scroll = app.scroll.result_scroll.saturating_sub(lines);
         }
     }
 }
 
 /// Scrolls down by the specified number of lines.
 pub fn scroll_down(app: &mut App, lines: u16) {
-    match app.focused_pane {
+    match app.scroll.focused_pane {
         FocusedPane::Left | FocusedPane::Base | FocusedPane::Right => {
-            app.left_right_scroll = app.left_right_scroll.saturating_add(lines);
+            app.scroll.left_right_scroll = app.scroll.left_right_scroll.saturating_add(lines);
         }
         FocusedPane::Result => {
-            app.result_scroll = app.result_scroll.saturating_add(lines);
+            app.scroll.result_scroll = app.scroll.result_scroll.saturating_add(lines);
         }
     }
 }
@@ -154,8 +167,8 @@ pub fn scroll_down(app: &mut App, lines: u16) {
 ///
 /// Preserves batch state and cached suggestions for other hunks.
 fn reset_scroll(app: &mut App) {
-    app.left_right_scroll = 0;
-    app.result_scroll = 0;
+    app.scroll.left_right_scroll = 0;
+    app.scroll.result_scroll = 0;
 
     // Cancel in-flight single-hunk AI request when navigating
     if let Some(pending_id) = app.ai_state.pending_hunk {

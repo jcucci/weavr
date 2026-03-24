@@ -17,39 +17,39 @@ use crate::App;
 
 /// Shows the help dialog.
 pub fn show_help(app: &mut App) {
-    app.active_dialog = Some(Dialog::Help(HelpState::default()));
-    app.input_mode = InputMode::Dialog;
+    app.command.active_dialog = Some(Dialog::Help(HelpState::default()));
+    app.command.input_mode = InputMode::Dialog;
 }
 
 /// Scrolls the help dialog down by the given number of lines.
 pub fn help_scroll_down(app: &mut App, lines: usize) {
-    if let Some(Dialog::Help(ref mut state)) = app.active_dialog {
+    if let Some(Dialog::Help(ref mut state)) = app.command.active_dialog {
         state.scroll = state.scroll.saturating_add(lines);
     }
 }
 
 /// Scrolls the help dialog up by the given number of lines.
 pub fn help_scroll_up(app: &mut App, lines: usize) {
-    if let Some(Dialog::Help(ref mut state)) = app.active_dialog {
+    if let Some(Dialog::Help(ref mut state)) = app.command.active_dialog {
         state.scroll = state.scroll.saturating_sub(lines);
     }
 }
 
 /// Closes any open dialog and returns to normal mode.
 pub fn close_dialog(app: &mut App) {
-    app.active_dialog = None;
-    app.input_mode = InputMode::Normal;
+    app.command.active_dialog = None;
+    app.command.input_mode = InputMode::Normal;
 }
 
 /// Shows the `AcceptBoth` options dialog.
 pub fn show_accept_both_dialog(app: &mut App) {
-    app.active_dialog = Some(Dialog::AcceptBothOptions(AcceptBothOptionsState::default()));
-    app.input_mode = InputMode::Dialog;
+    app.command.active_dialog = Some(Dialog::AcceptBothOptions(AcceptBothOptionsState::default()));
+    app.command.input_mode = InputMode::Dialog;
 }
 
 /// Toggles the order in the `AcceptBoth` options dialog.
 pub fn toggle_accept_both_order(app: &mut App) {
-    if let Some(Dialog::AcceptBothOptions(ref mut state)) = app.active_dialog {
+    if let Some(Dialog::AcceptBothOptions(ref mut state)) = app.command.active_dialog {
         state.order = match state.order {
             BothOrder::LeftThenRight => BothOrder::RightThenLeft,
             BothOrder::RightThenLeft => BothOrder::LeftThenRight,
@@ -59,15 +59,15 @@ pub fn toggle_accept_both_order(app: &mut App) {
 
 /// Toggles the deduplicate option in the `AcceptBoth` options dialog.
 pub fn toggle_accept_both_dedupe(app: &mut App) {
-    if let Some(Dialog::AcceptBothOptions(ref mut state)) = app.active_dialog {
+    if let Some(Dialog::AcceptBothOptions(ref mut state)) = app.command.active_dialog {
         state.deduplicate = !state.deduplicate;
     }
 }
 
 /// Shows the staging prompt dialog.
 pub fn show_staging_prompt(app: &mut App) {
-    app.active_dialog = Some(Dialog::StagingPrompt);
-    app.input_mode = InputMode::Dialog;
+    app.command.active_dialog = Some(Dialog::StagingPrompt);
+    app.command.input_mode = InputMode::Dialog;
 }
 
 /// Confirms staging in the staging prompt dialog.
@@ -105,7 +105,7 @@ pub fn show_file_list(app: &mut App) {
         .iter()
         .position(|&i| i == current)
         .unwrap_or(0);
-    app.active_dialog = Some(Dialog::FileList(FileListState {
+    app.command.active_dialog = Some(Dialog::FileList(FileListState {
         selected_index,
         filtered_indices,
         mode: FileListMode::Navigate,
@@ -113,12 +113,12 @@ pub fn show_file_list(app: &mut App) {
         sort: FileListSort::default(),
         filter: FileListFilter::default(),
     }));
-    app.input_mode = InputMode::Dialog;
+    app.command.input_mode = InputMode::Dialog;
 }
 
 /// Moves the file list selection down.
 pub fn file_list_move_down(app: &mut App) {
-    if let Some(Dialog::FileList(ref mut state)) = app.active_dialog {
+    if let Some(Dialog::FileList(ref mut state)) = app.command.active_dialog {
         if state.selected_index + 1 < state.filtered_indices.len() {
             state.selected_index += 1;
         }
@@ -127,7 +127,7 @@ pub fn file_list_move_down(app: &mut App) {
 
 /// Moves the file list selection up.
 pub fn file_list_move_up(app: &mut App) {
-    if let Some(Dialog::FileList(ref mut state)) = app.active_dialog {
+    if let Some(Dialog::FileList(ref mut state)) = app.command.active_dialog {
         state.selected_index = state.selected_index.saturating_sub(1);
     }
 }
@@ -136,7 +136,7 @@ pub fn file_list_move_up(app: &mut App) {
 /// No-ops when the filtered list is empty so the dialog isn't dismissed on Enter
 /// with no matching files.
 pub fn file_list_select(app: &mut App) {
-    let workspace_index = if let Some(Dialog::FileList(ref state)) = app.active_dialog {
+    let workspace_index = if let Some(Dialog::FileList(ref state)) = app.command.active_dialog {
         state.filtered_indices.get(state.selected_index).copied()
     } else {
         return;
@@ -149,14 +149,14 @@ pub fn file_list_select(app: &mut App) {
 
 /// Enters search mode in the file list dialog.
 pub fn file_list_enter_search(app: &mut App) {
-    if let Some(Dialog::FileList(ref mut state)) = app.active_dialog {
+    if let Some(Dialog::FileList(ref mut state)) = app.command.active_dialog {
         state.mode = FileListMode::Search;
     }
 }
 
 /// Exits search mode (back to navigate), keeping the current query.
 pub fn file_list_exit_search(app: &mut App) {
-    if let Some(Dialog::FileList(ref mut state)) = app.active_dialog {
+    if let Some(Dialog::FileList(ref mut state)) = app.command.active_dialog {
         state.mode = FileListMode::Navigate;
     }
 }
@@ -164,7 +164,9 @@ pub fn file_list_exit_search(app: &mut App) {
 /// Appends a character to the search query and recomputes the filtered list.
 pub fn file_list_search_append(app: &mut App, c: char) {
     let workspace = app.workspace.as_ref();
-    if let (Some(Dialog::FileList(ref mut state)), Some(ws)) = (&mut app.active_dialog, workspace) {
+    if let (Some(Dialog::FileList(ref mut state)), Some(ws)) =
+        (&mut app.command.active_dialog, workspace)
+    {
         state.search_query.push(c);
         recompute_filtered_indices(state, ws);
     }
@@ -173,7 +175,9 @@ pub fn file_list_search_append(app: &mut App, c: char) {
 /// Removes the last character from the search query and recomputes.
 pub fn file_list_search_backspace(app: &mut App) {
     let workspace = app.workspace.as_ref();
-    if let (Some(Dialog::FileList(ref mut state)), Some(ws)) = (&mut app.active_dialog, workspace) {
+    if let (Some(Dialog::FileList(ref mut state)), Some(ws)) =
+        (&mut app.command.active_dialog, workspace)
+    {
         state.search_query.pop();
         recompute_filtered_indices(state, ws);
     }
@@ -182,7 +186,9 @@ pub fn file_list_search_backspace(app: &mut App) {
 /// Cycles the sort order and recomputes the filtered list.
 pub fn file_list_cycle_sort(app: &mut App) {
     let workspace = app.workspace.as_ref();
-    if let (Some(Dialog::FileList(ref mut state)), Some(ws)) = (&mut app.active_dialog, workspace) {
+    if let (Some(Dialog::FileList(ref mut state)), Some(ws)) =
+        (&mut app.command.active_dialog, workspace)
+    {
         state.sort = state.sort.next();
         recompute_filtered_indices(state, ws);
     }
@@ -191,7 +197,9 @@ pub fn file_list_cycle_sort(app: &mut App) {
 /// Cycles the filter predicate and recomputes the filtered list.
 pub fn file_list_cycle_filter(app: &mut App) {
     let workspace = app.workspace.as_ref();
-    if let (Some(Dialog::FileList(ref mut state)), Some(ws)) = (&mut app.active_dialog, workspace) {
+    if let (Some(Dialog::FileList(ref mut state)), Some(ws)) =
+        (&mut app.command.active_dialog, workspace)
+    {
         state.filter = state.filter.next();
         recompute_filtered_indices(state, ws);
     }
@@ -281,7 +289,7 @@ fn recompute_filtered_indices(state: &mut FileListState, workspace: &Workspace) 
 /// Confirms the `AcceptBoth` options and applies the resolution.
 pub fn confirm_accept_both(app: &mut App) {
     // Extract options from dialog
-    let options = if let Some(Dialog::AcceptBothOptions(ref state)) = app.active_dialog {
+    let options = if let Some(Dialog::AcceptBothOptions(ref state)) = app.command.active_dialog {
         AcceptBothOptions {
             order: state.order,
             deduplicate: state.deduplicate,

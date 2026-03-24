@@ -32,7 +32,7 @@ pub fn clear_current_resolution(app: &mut App) {
     let Some((hunk_id, prev)) = app.session.as_ref().and_then(|session| {
         session
             .hunks()
-            .get(app.current_hunk_index)
+            .get(app.scroll.current_hunk_index)
             .map(|hunk| (hunk.id, session.resolutions().get(&hunk.id).cloned()))
     }) else {
         return;
@@ -130,10 +130,13 @@ where
 {
     // Extract all data upfront to end the immutable borrow
     let Some((hunk_id, resolution, prev)) = app.session.as_ref().and_then(|session| {
-        session.hunks().get(app.current_hunk_index).map(|hunk| {
-            let prev = session.resolutions().get(&hunk.id).cloned();
-            (hunk.id, make_resolution(hunk), prev)
-        })
+        session
+            .hunks()
+            .get(app.scroll.current_hunk_index)
+            .map(|hunk| {
+                let prev = session.resolutions().get(&hunk.id).cloned();
+                (hunk.id, make_resolution(hunk), prev)
+            })
     }) else {
         return;
     };
