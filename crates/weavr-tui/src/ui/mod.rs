@@ -9,10 +9,38 @@ mod pane;
 
 pub use layout::{calculate_layout, PaneAreas};
 
+use crate::FocusedPane;
 use ratatui::Frame;
 
 use crate::input::Dialog;
 use crate::App;
+
+/// Which side of the conflict to render.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PaneSide {
+    /// Left side (`ours`/`HEAD`).
+    Left,
+    /// Right side (`theirs`/`MERGE_HEAD`).
+    Right,
+}
+
+impl PaneSide {
+    /// Returns the title for this side.
+    fn title(self) -> &'static str {
+        match self {
+            Self::Left => "Left (Ours)",
+            Self::Right => "Right (Theirs)",
+        }
+    }
+
+    /// Returns the corresponding `FocusedPane`.
+    fn focused_pane(self) -> FocusedPane {
+        match self {
+            Self::Left => FocusedPane::Left,
+            Self::Right => FocusedPane::Right,
+        }
+    }
+}
 
 /// Renders the entire UI to the frame.
 pub fn draw(frame: &mut Frame, app: &App) {

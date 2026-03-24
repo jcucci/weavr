@@ -15,7 +15,7 @@ use crate::ast::AstState;
 use crate::diff::{compute_line_diffs, compute_word_diffs, DiffConfig, DiffLine};
 use crate::highlight::{self, HighlightedDocument};
 
-use super::pane::PaneSide;
+use super::PaneSide;
 
 /// Builds the full document content for a side pane (left or right).
 pub(super) fn build_side_document<'a>(
@@ -435,7 +435,7 @@ fn build_highlighted_line(
 /// Uses the counterpart text to compute word-level diffs and renders
 /// each word segment with appropriate styling: base diff style for
 /// unchanged words, `theme.diff.modified` for changed words.
-pub(super) fn build_word_diff_line(
+fn build_word_diff_line(
     line_number: usize,
     diff_line: &DiffLine,
     side: PaneSide,
@@ -487,4 +487,30 @@ pub(super) fn build_word_diff_line(
     }
 
     Line::from(spans)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::diff::DiffLine;
+    use crate::theme::{Theme, ThemeName};
+
+    #[test]
+    fn word_diff_line_produces_multiple_spans() {
+        let theme = Theme::from(ThemeName::Dark);
+        let diff_line = DiffLine::with_counterpart(
+            "hello world",
+            ChangeTag::Delete,
+            "hello universe".to_string(),
+        );
+
+        let line = build_word_diff_line(1, &diff_line, PaneSide::Left, &theme, false);
+
+        // Should have: line number span + word spans (more than 2 total)
+        assert!(
+            line.spans.len() > 2,
+            "Expected multiple spans for word diff, got {}",
+            line.spans.len()
+        );
+    }
 }

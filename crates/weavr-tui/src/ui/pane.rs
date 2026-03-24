@@ -18,33 +18,7 @@ use crate::input::InputMode;
 use crate::{App, FocusedPane};
 
 use super::document::{build_base_document, build_result_document, build_side_document};
-
-/// Which side of the conflict to render.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum PaneSide {
-    /// Left side (`ours`/`HEAD`).
-    Left,
-    /// Right side (`theirs`/`MERGE_HEAD`).
-    Right,
-}
-
-impl PaneSide {
-    /// Returns the title for this side.
-    fn title(self) -> &'static str {
-        match self {
-            Self::Left => "Left (Ours)",
-            Self::Right => "Right (Theirs)",
-        }
-    }
-
-    /// Returns the corresponding `FocusedPane`.
-    fn focused_pane(self) -> FocusedPane {
-        match self {
-            Self::Left => FocusedPane::Left,
-            Self::Right => FocusedPane::Right,
-        }
-    }
-}
+use super::PaneSide;
 
 /// Renders the left pane showing the "ours" side of the document.
 pub fn render_left_pane(frame: &mut Frame, area: Rect, app: &App) {
@@ -586,29 +560,5 @@ mod tests {
                 })
                 .unwrap();
         }
-    }
-
-    #[test]
-    fn word_diff_line_produces_multiple_spans() {
-        use super::super::document::build_word_diff_line;
-        use crate::diff::DiffLine;
-        use crate::theme::Theme;
-        use similar::ChangeTag;
-
-        let theme = Theme::from(ThemeName::Dark);
-        let diff_line = DiffLine::with_counterpart(
-            "hello world",
-            ChangeTag::Delete,
-            "hello universe".to_string(),
-        );
-
-        let line = build_word_diff_line(1, &diff_line, PaneSide::Left, &theme, false);
-
-        // Should have: line number span + word spans (more than 2 total)
-        assert!(
-            line.spans.len() > 2,
-            "Expected multiple spans for word diff, got {}",
-            line.spans.len()
-        );
     }
 }
