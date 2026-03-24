@@ -8,15 +8,9 @@ use super::identity::ItemIdentity;
 use super::impl_merge;
 use super::tokens::{build_identity_map, tokens_equal};
 use super::use_merge;
+use crate::mergers::common::RawMergeOutput;
 use crate::mergers::confidence::{compute_import_confidence, compute_mixed_confidence};
 use crate::AstError;
-
-/// The result of merging items from two or three sides.
-pub(super) struct MergedItems {
-    pub items: Vec<Item>,
-    pub confidence: f32,
-    pub description: String,
-}
 
 /// Returns whether all items in the slice are `use` statements.
 fn all_uses(items: &[Item]) -> bool {
@@ -32,11 +26,11 @@ fn all_uses(items: &[Item]) -> bool {
 pub(super) fn merge_two_way(
     left: &[Item],
     right: &[Item],
-) -> Result<Option<MergedItems>, AstError> {
+) -> Result<Option<RawMergeOutput<Item>>, AstError> {
     // Special-case: pure use-statement merge
     if all_uses(left) && all_uses(right) {
         return match use_merge::merge_use_items(left, right, None)? {
-            Some((items, desc)) => Ok(Some(MergedItems {
+            Some((items, desc)) => Ok(Some(RawMergeOutput {
                 confidence: compute_import_confidence(all_uses(&items), false),
                 items,
                 description: desc,
@@ -133,7 +127,7 @@ pub(super) fn merge_two_way(
     };
 
     let confidence = compute_mixed_confidence(has_use_merge, has_impl_disjoint, false);
-    Ok(Some(MergedItems {
+    Ok(Some(RawMergeOutput {
         items: merged,
         confidence,
         description,
@@ -146,11 +140,11 @@ pub(super) fn merge_three_way(
     base: &[Item],
     left: &[Item],
     right: &[Item],
-) -> Result<Option<MergedItems>, AstError> {
+) -> Result<Option<RawMergeOutput<Item>>, AstError> {
     // Special-case: pure use-statement merge
     if all_uses(left) && all_uses(right) && all_uses(base) {
         return match use_merge::merge_use_items(left, right, Some(base))? {
-            Some((items, desc)) => Ok(Some(MergedItems {
+            Some((items, desc)) => Ok(Some(RawMergeOutput {
                 confidence: compute_import_confidence(all_uses(&items), true),
                 items,
                 description: desc,
@@ -275,7 +269,7 @@ pub(super) fn merge_three_way(
     };
 
     let confidence = compute_mixed_confidence(has_use_merge, has_impl_disjoint, true);
-    Ok(Some(MergedItems {
+    Ok(Some(RawMergeOutput {
         items: merged,
         confidence,
         description,

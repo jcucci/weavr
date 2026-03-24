@@ -18,6 +18,7 @@ use std::path::Path;
 use weavr_core::{ConflictHunk, Language};
 
 use crate::error::AstError;
+use crate::mergers::common::try_merge_ast;
 use crate::{AstMergeResult, AstMerger};
 
 use self::format::format_declarations;
@@ -49,41 +50,15 @@ impl AstMerger for GoMerger {
     }
 
     fn try_merge(&self, hunk: &ConflictHunk) -> Result<Option<AstMergeResult>, AstError> {
-        let left = match parse_fragment(&hunk.left.text) {
-            ParsedFragment::Declarations(decls) => decls,
-            ParsedFragment::Unparsable => return Ok(None),
-        };
-
-        let right = match parse_fragment(&hunk.right.text) {
-            ParsedFragment::Declarations(decls) => decls,
-            ParsedFragment::Unparsable => return Ok(None),
-        };
-
-        let base = if let Some(ref base_content) = hunk.base {
-            match parse_fragment(&base_content.text) {
+        try_merge_ast(
+            hunk,
+            |text| match parse_fragment(text) {
                 ParsedFragment::Declarations(decls) => Some(decls),
                 ParsedFragment::Unparsable => None,
-            }
-        } else {
-            None
-        };
-
-        let result = if let Some(base_decls) = base {
-            merge_three_way(&base_decls, &left, &right)
-        } else {
-            merge_two_way(&left, &right)
-        };
-
-        let Some(result) = result else {
-            return Ok(None);
-        };
-
-        let content = format_declarations(&result.declarations);
-
-        Ok(Some(AstMergeResult {
-            content,
-            confidence: result.confidence,
-            description: result.description,
-        }))
+            },
+            |left, right| merge_two_way(left, right),
+            |base, left, right| merge_three_way(base, left, right),
+            |decls| Ok(format_declarations(decls)),
+        )
     }
 }
