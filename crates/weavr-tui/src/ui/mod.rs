@@ -2,6 +2,7 @@
 //!
 //! This module handles all rendering logic using ratatui.
 
+mod document;
 mod layout;
 mod overlay;
 mod pane;
