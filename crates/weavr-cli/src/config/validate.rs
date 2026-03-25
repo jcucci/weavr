@@ -10,9 +10,21 @@ impl WeavrConfig {
     /// Returns a [`ConfigError::InvalidValue`] for unrecognized theme names
     /// or strategy names, with a hint listing valid values.
     pub fn from_raw(raw: &RawConfig) -> Result<Self, ConfigError> {
-        let theme = match raw.theme.as_ref().and_then(|t| t.name.as_deref()) {
-            Some(name) => parse_theme_name(name)?,
-            None => weavr_tui::theme::ThemeName::default(),
+        let theme = match raw.theme.as_ref() {
+            Some(t) if t.name.is_some() && t.custom.is_some() => {
+                return Err(ConfigError::InvalidValue {
+                    key: "theme".into(),
+                    value: String::new(),
+                    hint: "'name' and 'custom' are mutually exclusive".into(),
+                });
+            }
+            Some(t) if t.custom.is_some() => {
+                weavr_tui::theme::ThemeChoice::Custom(t.custom.clone().unwrap())
+            }
+            Some(t) if t.name.is_some() => weavr_tui::theme::ThemeChoice::Builtin(
+                parse_theme_name(t.name.as_deref().unwrap())?,
+            ),
+            _ => weavr_tui::theme::ThemeChoice::default(),
         };
 
         let default_strategy = match raw.strategies.as_ref().and_then(|s| s.default.as_deref()) {
@@ -103,7 +115,10 @@ mod tests {
     #[test]
     fn from_raw_defaults() {
         let config = WeavrConfig::from_raw(&RawConfig::default()).unwrap();
-        assert_eq!(config.theme, weavr_tui::theme::ThemeName::Dark);
+        assert_eq!(
+            config.theme,
+            weavr_tui::theme::ThemeChoice::Builtin(weavr_tui::theme::ThemeName::Dark)
+        );
         assert_eq!(config.default_strategy, Strategy::Left);
         assert!(!config.deduplicate);
         assert!(!config.fail_on_ambiguous);
@@ -116,11 +131,15 @@ mod tests {
         let raw = RawConfig {
             theme: Some(RawThemeConfig {
                 name: Some("nord".into()),
+                ..RawThemeConfig::default()
             }),
             ..RawConfig::default()
         };
         let config = WeavrConfig::from_raw(&raw).unwrap();
-        assert_eq!(config.theme, weavr_tui::theme::ThemeName::Nord);
+        assert_eq!(
+            config.theme,
+            weavr_tui::theme::ThemeChoice::Builtin(weavr_tui::theme::ThemeName::Nord)
+        );
     }
 
     #[test]
@@ -128,6 +147,7 @@ mod tests {
         let raw = RawConfig {
             theme: Some(RawThemeConfig {
                 name: Some("nonexistent".into()),
+                ..RawThemeConfig::default()
             }),
             ..RawConfig::default()
         };

@@ -50,7 +50,7 @@ pub fn process_file(
     let total_hunks = session.hunks().len();
 
     // Create and configure App
-    let mut app = App::with_theme(config.theme);
+    let mut app = App::with_theme(config.theme.clone());
     app.set_session(session);
 
     // Wire up custom keybindings if configured
@@ -201,7 +201,7 @@ pub fn process_files(
     let workspace = Workspace::new(file_states);
 
     // Create and configure App
-    let mut app = App::with_theme(config.theme);
+    let mut app = App::with_theme(config.theme.clone());
 
     // Wire up custom keybindings if configured
     if let Some(kb_config) = keybindings_config {

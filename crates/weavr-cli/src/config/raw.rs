@@ -7,10 +7,14 @@ use serde::Deserialize;
 // ---------------------------------------------------------------------------
 
 /// Raw theme configuration section.
+///
+/// Users may specify either a builtin `name` or an inline `custom` definition,
+/// but not both.
 #[derive(Debug, Clone, Default, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct RawThemeConfig {
     pub name: Option<String>,
+    pub custom: Option<weavr_tui::theme::ThemeDefinition>,
 }
 
 /// Raw strategies configuration section.
@@ -119,6 +123,7 @@ impl RawConfig {
         Self {
             theme: merge_option(self.theme, lower.theme, |hi, lo| RawThemeConfig {
                 name: hi.name.or(lo.name),
+                custom: hi.custom.or(lo.custom),
             }),
             strategies: merge_option(self.strategies, lower.strategies, |hi, lo| {
                 RawStrategiesConfig {
@@ -184,12 +189,14 @@ mod tests {
         let higher = RawConfig {
             theme: Some(RawThemeConfig {
                 name: Some("dracula".into()),
+                ..RawThemeConfig::default()
             }),
             ..RawConfig::default()
         };
         let lower = RawConfig {
             theme: Some(RawThemeConfig {
                 name: Some("nord".into()),
+                ..RawThemeConfig::default()
             }),
             ..RawConfig::default()
         };
@@ -207,6 +214,7 @@ mod tests {
         let lower = RawConfig {
             theme: Some(RawThemeConfig {
                 name: Some("nord".into()),
+                ..RawThemeConfig::default()
             }),
             strategies: Some(RawStrategiesConfig {
                 default: Some("right".into()),
@@ -271,7 +279,10 @@ fail_on_ambiguous = true
 "#;
         let raw: RawConfig = toml::from_str(toml_str).unwrap();
         let config = crate::config::WeavrConfig::from_raw(&raw).unwrap();
-        assert_eq!(config.theme, weavr_tui::theme::ThemeName::Dracula);
+        assert_eq!(
+            config.theme,
+            weavr_tui::theme::ThemeChoice::Builtin(weavr_tui::theme::ThemeName::Dracula)
+        );
         assert_eq!(config.default_strategy, crate::cli::Strategy::Both);
         assert!(config.deduplicate);
         assert!(config.fail_on_ambiguous);

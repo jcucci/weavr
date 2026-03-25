@@ -56,7 +56,7 @@ pub enum ConfigError {
 #[derive(Debug, Clone)]
 #[allow(clippy::struct_excessive_bools)] // Config structs are naturally boolean
 pub struct WeavrConfig {
-    pub theme: weavr_tui::theme::ThemeName,
+    pub theme: weavr_tui::theme::ThemeChoice,
     pub default_strategy: Strategy,
     pub deduplicate: bool,
     pub fail_on_ambiguous: bool,
