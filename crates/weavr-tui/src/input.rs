@@ -9,7 +9,7 @@ use crossterm::event::{KeyCode, KeyModifiers};
 
 /// Input mode, command buffer, key sequences, dialogs, and edit state.
 #[derive(Debug, Default)]
-pub struct CommandState {
+pub(crate) struct CommandState {
     /// Current input mode.
     pub(crate) input_mode: InputMode,
     /// Command buffer for command mode.

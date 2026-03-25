@@ -11,7 +11,7 @@ use crate::{App, FocusedPane};
 
 /// Scroll, hunk index, and pane focus state.
 #[derive(Debug, Clone, Default)]
-pub struct ScrollState {
+pub(crate) struct ScrollState {
     /// Synchronized scroll offset for left/right panes.
     pub(crate) left_right_scroll: u16,
     /// Independent scroll offset for result pane.

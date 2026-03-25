@@ -11,7 +11,7 @@ use crate::theme::Theme;
 use crate::LayoutConfig;
 
 /// Display configuration and visual state.
-pub struct DisplayState {
+pub(crate) struct DisplayState {
     /// The active theme.
     pub(crate) theme: Theme,
     /// Layout configuration.
@@ -28,4 +28,19 @@ pub struct DisplayState {
     pub(crate) highlight_cache: Option<highlight::HighlightCache>,
     /// Status message to display (with timestamp for auto-clear).
     pub(crate) status_message: Option<(String, Instant)>,
+}
+
+impl Default for DisplayState {
+    fn default() -> Self {
+        Self {
+            theme: Theme::from(crate::theme::ThemeName::default()),
+            layout_config: LayoutConfig::default(),
+            diff_config: diff::DiffConfig::default(),
+            show_base_pane: false,
+            syntax_highlight: true,
+            highlighter: None,
+            highlight_cache: None,
+            status_message: None,
+        }
+    }
 }

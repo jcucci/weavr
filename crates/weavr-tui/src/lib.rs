@@ -25,7 +25,7 @@ pub mod ai;
 pub mod ast;
 pub mod dialog;
 pub mod diff;
-pub mod display;
+mod display;
 pub mod editor;
 pub mod event;
 pub mod help;
@@ -121,16 +121,7 @@ impl App {
             session: None,
             should_quit: false,
             scroll: ScrollState::default(),
-            display: display::DisplayState {
-                theme: Theme::from(ThemeName::default()),
-                layout_config: LayoutConfig::default(),
-                diff_config: diff::DiffConfig::default(),
-                show_base_pane: false,
-                syntax_highlight: true,
-                highlighter: None,
-                highlight_cache: None,
-                status_message: None,
-            },
+            display: display::DisplayState::default(),
             command: input::CommandState::default(),
             action_history: ActionHistory::new(),
             keybindings,
@@ -158,13 +149,7 @@ impl App {
             scroll: ScrollState::default(),
             display: display::DisplayState {
                 theme: Theme::from(theme_name),
-                layout_config: LayoutConfig::default(),
-                diff_config: diff::DiffConfig::default(),
-                show_base_pane: false,
-                syntax_highlight: true,
-                highlighter: None,
-                highlight_cache: None,
-                status_message: None,
+                ..display::DisplayState::default()
             },
             command: input::CommandState::default(),
             action_history: ActionHistory::new(),
