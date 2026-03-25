@@ -1,125 +1,78 @@
 # weavr
 
-**A terminal-first merge conflict resolver with structured, language-aware resolution.**
+A terminal-first merge conflict resolver that treats conflicts as structured data, not raw text.
 
-`weavr` is a modern, terminal-native tool for resolving Git merge conflicts safely and efficiently.
-Instead of treating conflicts as raw text, `weavr` models them as structured data, enabling
-powerful workflows such as first-class "accept both", language-aware merging, and optional
-AI-assisted suggestions.
+weavr models each conflict hunk as an explicit domain object with typed resolution strategies, undo/redo, and deterministic output. It ships with a keyboard-driven TUI, a headless CLI for scripting and CI, and optional AI and AST-based merge assistance.
 
-`weavr` is designed for terminal-first developers, with a TUI, a headless CLI mode, and
-editor integrations (starting with Neovim).
-
----
+<!-- TODO: terminal screenshot / recording -->
 
 ## Why weavr?
 
-Merge conflicts are still one of the most frustrating parts of day-to-day development.
-Most tools either:
-- Treat conflicts as plain text, or
-- Hide important decisions behind opaque automation
+- **Structured conflicts** — hunks are parsed into a domain model, not string-matched
+- **Explicit resolutions** — every decision is visible, reversible, and replayable
+- **Assistive, not opaque** — AI and AST suggestions are opt-in and never auto-apply
+- **Terminal-first** — full keyboard-driven TUI with Vim-style bindings
+- **Git and jj** — works as a merge driver for both Git and Jujutsu
 
-`weavr` takes a different approach:
-- Conflicts are structured, not just text
-- Every resolution is explicit and reversible
-- Automation (AST or AI) assists but never decides
+## Quick start
 
----
+```bash
+# Install (Rust 1.75+)
+cargo install weavr-cli
+
+# Register as your Git merge driver
+weavr init
+
+# After a merge conflict, open the TUI
+weavr
+```
+
+See [Installation](docs/installation.md) for feature flags and platform notes.
 
 ## Features
 
-### Core
-- Parse Git conflict markers into structured hunks
-- Accept left / right / both (with configurable strategies)
-- Manual per-hunk editing
-- Deterministic, replayable merge decisions
-- Headless (non-TUI) execution
+| Feature | Description | Docs |
+|---------|-------------|------|
+| TUI | Three-pane merge view, inline editing, syntax highlighting | [TUI guide](docs/tui.md) |
+| Headless mode | Scriptable conflict resolution for CI pipelines | [CLI reference](docs/cli.md) |
+| AI suggestions | Per-hunk suggestions from Claude, OpenAI, or local models | [AI integration](docs/ai.md) |
+| AST merge | Language-aware structural merging (Rust, C#, TypeScript, Go) | [AST merge](docs/ast-merge.md) |
+| Themes | 19 built-in themes + custom theme support | [Themes](docs/themes.md) |
+| Configuration | Layered TOML config with per-project overrides | [Configuration](docs/configuration.md) |
+| Git + jj | Merge driver integration for Git and Jujutsu | [VCS integration](docs/vcs.md) |
 
-### TUI
-- Three-pane merge view (left / right / result)
-- Keyboard-first navigation
-- Configurable theming (dark / light)
+## Feature flags
 
-### Language Awareness (Planned)
-- AST-based merging for:
-  - Rust
-  - C#
-  - TypeScript
-  - Go
-- Structural merging (imports, functions, declarations)
-- Safe fallback to text-based merging
+weavr uses Cargo feature flags for optional integrations:
 
-### AI Assistance (Planned, Optional)
-- Per-hunk AI merge suggestions
-- Difference explanations
-- Fully opt-in and non-blocking
-
----
-
-## Project Status
-
-⚠️ **Early development**
-
-The core domain model and merge engine are being implemented.
-APIs may change until the first stable release.
-
----
-
-## Building from Source
-
-### Prerequisites
-
-- Rust 1.75 or later (install via [rustup](https://rustup.rs/))
-
-### Build
+| Flag | Description |
+|------|-------------|
+| `jj` | Jujutsu VCS support *(default)* |
+| `ai-claude` | Claude AI provider |
+| `ai-openai` | OpenAI provider |
+| `ai-local` | Local model support (Ollama) |
+| `ai-all` | All AI providers |
+| `ast-rust` | Rust AST merge (syn) |
+| `ast-csharp` | C# AST merge (tree-sitter) |
+| `ast-typescript` | TypeScript AST merge (tree-sitter) |
+| `ast-go` | Go AST merge (tree-sitter) |
+| `ast-all` | All AST languages |
 
 ```bash
-# Clone the repository
-git clone https://github.com/jcucci/weavr.git
-cd weavr
-
-# Build all crates
-cargo build
-
-# Run tests
-cargo test
-
-# Run the CLI
-cargo run --bin weavr -- --help
-
-# Check formatting and lints
-cargo fmt --check
-cargo clippy --workspace
+# Install with Claude AI and Rust AST support
+cargo install weavr-cli --features ai-claude,ast-rust
 ```
 
-### Development
+## Documentation
 
-```bash
-# Format code
-cargo fmt
-
-# Run clippy with auto-fix
-cargo clippy --fix --workspace --allow-dirty
-
-# Build documentation
-cargo doc --workspace --open
-```
-
----
-
-## Architecture
-
-`weavr` is built as a collection of small, focused crates:
-
-- `weavr-core` — Pure merge engine and domain model
-- `weavr-cli` — CLI and headless execution
-- `weavr-tui` — Terminal UI
-- (Planned) AST and AI integration crates
-
-The core engine is UI- and Git-agnostic, making it easy to integrate `weavr` into editors,
-CI workflows, or other tools.
-
----
+- [Installation & quick start](docs/installation.md)
+- [CLI reference](docs/cli.md)
+- [TUI usage & keybindings](docs/tui.md)
+- [Configuration](docs/configuration.md)
+- [Themes & customization](docs/themes.md)
+- [AI integration](docs/ai.md)
+- [AST merge](docs/ast-merge.md)
+- [VCS integration](docs/vcs.md)
 
 ## License
 
@@ -129,10 +82,6 @@ Licensed under either of:
 
 at your option.
 
----
-
 ## Contributing
 
-Contributions are welcome, but the project is still settling its foundations.
-If you're interested in contributing, please open an issue to discuss ideas before
-starting large changes.
+See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup and guidelines.
