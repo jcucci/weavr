@@ -7,10 +7,14 @@ use serde::Deserialize;
 // ---------------------------------------------------------------------------
 
 /// Raw theme configuration section.
+///
+/// Users may specify either a builtin `name` or an inline `custom` definition,
+/// but not both.
 #[derive(Debug, Clone, Default, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct RawThemeConfig {
     pub name: Option<String>,
+    pub custom: Option<weavr_tui::theme::ThemeDefinition>,
 }
 
 /// Raw strategies configuration section.
@@ -117,8 +121,23 @@ impl RawConfig {
     #[must_use]
     pub fn merge(self, lower: Self) -> Self {
         Self {
-            theme: merge_option(self.theme, lower.theme, |hi, lo| RawThemeConfig {
-                name: hi.name.or(lo.name),
+            theme: merge_option(self.theme, lower.theme, |hi, lo| {
+                // Higher-priority layer fully overrides theme selection.
+                // If `hi` specifies `name`, ignore any `custom` from lower.
+                // If `hi` specifies `custom`, ignore any `name` from lower.
+                if hi.name.is_some() {
+                    RawThemeConfig {
+                        name: hi.name,
+                        custom: None,
+                    }
+                } else if hi.custom.is_some() {
+                    RawThemeConfig {
+                        name: None,
+                        custom: hi.custom,
+                    }
+                } else {
+                    lo
+                }
             }),
             strategies: merge_option(self.strategies, lower.strategies, |hi, lo| {
                 RawStrategiesConfig {
@@ -184,12 +203,14 @@ mod tests {
         let higher = RawConfig {
             theme: Some(RawThemeConfig {
                 name: Some("dracula".into()),
+                ..RawThemeConfig::default()
             }),
             ..RawConfig::default()
         };
         let lower = RawConfig {
             theme: Some(RawThemeConfig {
                 name: Some("nord".into()),
+                ..RawThemeConfig::default()
             }),
             ..RawConfig::default()
         };
@@ -207,6 +228,7 @@ mod tests {
         let lower = RawConfig {
             theme: Some(RawThemeConfig {
                 name: Some("nord".into()),
+                ..RawThemeConfig::default()
             }),
             strategies: Some(RawStrategiesConfig {
                 default: Some("right".into()),
@@ -257,6 +279,59 @@ mod tests {
     }
 
     #[test]
+    fn merge_theme_name_overrides_lower_custom() {
+        let custom_toml = r##"
+[base]
+background = "#000000"
+foreground = "#FFFFFF"
+muted = "#808080"
+accent = "#FF0000"
+secondary = "#0000FF"
+[conflict]
+left = { fg = "#0000FF" }
+right = { fg = "#FF0000" }
+both = { fg = "#00FF00" }
+base = { fg = "#800080" }
+unresolved = { fg = "#FF0000" }
+resolved = { fg = "#00FF00" }
+[diff]
+added = { fg = "#00FF00" }
+removed = { fg = "#FF0000" }
+modified = { fg = "#FFFF00" }
+context = { fg = "#808080" }
+[ui]
+border_focused = "#FF0000"
+border_unfocused = "#808080"
+title = { fg = "#0000FF" }
+status = { fg = "#808080" }
+selection = { fg = "#FFFFFF", bg = "#000000" }
+"##;
+        let custom: weavr_tui::theme::ThemeDefinition = toml::from_str(custom_toml).unwrap();
+
+        // Higher layer sets name, lower layer sets custom
+        let higher = RawConfig {
+            theme: Some(RawThemeConfig {
+                name: Some("nord".into()),
+                ..RawThemeConfig::default()
+            }),
+            ..RawConfig::default()
+        };
+        let lower = RawConfig {
+            theme: Some(RawThemeConfig {
+                custom: Some(custom),
+                ..RawThemeConfig::default()
+            }),
+            ..RawConfig::default()
+        };
+
+        let merged = higher.merge(lower);
+        let theme = merged.theme.unwrap();
+        // Name from higher wins, custom from lower is discarded
+        assert_eq!(theme.name.as_deref(), Some("nord"));
+        assert!(theme.custom.is_none());
+    }
+
+    #[test]
     fn parse_toml_roundtrip() {
         let toml_str = r#"
 [theme]
@@ -271,7 +346,10 @@ fail_on_ambiguous = true
 "#;
         let raw: RawConfig = toml::from_str(toml_str).unwrap();
         let config = crate::config::WeavrConfig::from_raw(&raw).unwrap();
-        assert_eq!(config.theme, weavr_tui::theme::ThemeName::Dracula);
+        assert_eq!(
+            config.theme,
+            weavr_tui::theme::ThemeChoice::Builtin(weavr_tui::theme::ThemeName::Dracula)
+        );
         assert_eq!(config.default_strategy, crate::cli::Strategy::Both);
         assert!(config.deduplicate);
         assert!(config.fail_on_ambiguous);

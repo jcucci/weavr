@@ -54,9 +54,6 @@ serde_json = "1.0"
 # Syntax highlighting
 syntect = "5"
 
-# Theme dependencies
-catppuccin = { version = "2", features = ["ratatui"] }
-
 # AI dependencies
 async-trait = "0.1"
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }

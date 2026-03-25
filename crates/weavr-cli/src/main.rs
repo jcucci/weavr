@@ -170,7 +170,8 @@ fn run(cli: &Cli) -> Result<i32, CliError> {
 
     // Layer 5: CLI flag overrides
     if let Some(ref theme_name) = cli.theme {
-        config.theme = config::parse_theme_name(theme_name)?;
+        config.theme =
+            weavr_tui::theme::ThemeChoice::Builtin(config::parse_theme_name(theme_name)?);
     }
     if let Some(strategy) = cli.strategy {
         config.default_strategy = strategy;

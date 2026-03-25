@@ -57,7 +57,7 @@ impl Default for LayoutConfig {
     }
 }
 
-use theme::{Theme, ThemeName};
+use theme::Theme;
 
 /// Which pane currently has focus.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -140,7 +140,7 @@ impl App {
 
     /// Creates a new application instance with the specified theme.
     #[must_use]
-    pub fn with_theme(theme_name: ThemeName) -> Self {
+    pub fn with_theme(theme: impl Into<theme::ThemeChoice>) -> Self {
         let keybindings = KeybindingMap::defaults();
         let help_sections = help::build_help_sections(&keybindings);
         Self {
@@ -148,7 +148,7 @@ impl App {
             should_quit: false,
             scroll: ScrollState::default(),
             display: display::DisplayState {
-                theme: Theme::from(theme_name),
+                theme: Theme::from(theme.into()),
                 ..display::DisplayState::default()
             },
             command: input::CommandState::default(),
@@ -227,9 +227,9 @@ impl App {
         &self.display.theme
     }
 
-    /// Sets the theme by name.
-    pub fn set_theme(&mut self, name: ThemeName) {
-        self.display.theme = Theme::from(name);
+    /// Sets the theme.
+    pub fn set_theme(&mut self, theme: impl Into<theme::ThemeChoice>) {
+        self.display.theme = Theme::from(theme.into());
     }
 
     /// Returns a reference to the current hunk, if any.
@@ -1205,6 +1205,7 @@ fn run_editor(content: &str) -> std::io::Result<Option<String>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::theme::ThemeName;
     use weavr_core::BothOrder;
 
     #[test]

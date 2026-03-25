@@ -1,0 +1,27 @@
+[base]
+background = "#1E1E1E"
+foreground = "#DCDCDC"
+muted = "#808080"
+accent = "#FFD700"
+secondary = "#6495ED"
+
+[conflict]
+left = { fg = "#64B4FF" }
+right = { fg = "#FF9664" }
+both = { fg = "#96DC96" }
+base = { fg = "#B496C8" }
+unresolved = { fg = "#FF6464" }
+resolved = { fg = "#64C864" }
+
+[diff]
+added = { fg = "#96FF96", bg = "#283C28" }
+removed = { fg = "#FF9696", bg = "#3C2828" }
+modified = { fg = "#FFDC64", bg = "#3C3728" }
+context = { fg = "#B4B4B4" }
+
+[ui]
+border_focused = "#FFD700"
+border_unfocused = "#505050"
+title = { fg = "#64C8FF" }
+status = { fg = "#808080" }
+selection = { fg = "#FFFFFF", bg = "#464646" }

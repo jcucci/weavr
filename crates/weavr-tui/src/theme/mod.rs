@@ -22,8 +22,10 @@
 //! ```
 
 pub mod builtin;
+mod definition;
 mod types;
 
+pub use definition::{theme_from_definition, ThemeDefinition};
 pub use types::{ColorPalette, ConflictColors, DiffColors, Theme, UiColors};
 
 use std::fmt;
@@ -182,6 +184,36 @@ impl FromStr for ThemeName {
 impl From<ThemeName> for Theme {
     fn from(name: ThemeName) -> Self {
         builtin::get(name)
+    }
+}
+
+/// A theme selection: either a built-in theme by name or a custom definition.
+#[derive(Debug, Clone, PartialEq)]
+pub enum ThemeChoice {
+    /// A built-in theme selected by name.
+    Builtin(ThemeName),
+    /// A custom theme defined inline via TOML.
+    Custom(ThemeDefinition),
+}
+
+impl From<ThemeChoice> for Theme {
+    fn from(choice: ThemeChoice) -> Self {
+        match choice {
+            ThemeChoice::Builtin(name) => builtin::get(name),
+            ThemeChoice::Custom(def) => theme_from_definition(&def),
+        }
+    }
+}
+
+impl From<ThemeName> for ThemeChoice {
+    fn from(name: ThemeName) -> Self {
+        Self::Builtin(name)
+    }
+}
+
+impl Default for ThemeChoice {
+    fn default() -> Self {
+        Self::Builtin(ThemeName::default())
     }
 }
 
