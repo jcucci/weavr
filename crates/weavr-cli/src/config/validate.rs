@@ -14,7 +14,7 @@ impl WeavrConfig {
             Some(t) if t.name.is_some() && t.custom.is_some() => {
                 return Err(ConfigError::InvalidValue {
                     key: "theme".into(),
-                    value: String::new(),
+                    value: "both 'name' and 'custom' are set".into(),
                     hint: "'name' and 'custom' are mutually exclusive".into(),
                 });
             }
@@ -156,6 +156,47 @@ mod tests {
         assert!(msg.contains("theme.name"));
         assert!(msg.contains("nonexistent"));
         assert!(msg.contains("valid themes:"));
+    }
+
+    #[test]
+    fn from_raw_theme_name_and_custom_mutually_exclusive() {
+        let custom_toml = r##"
+[base]
+background = "#000000"
+foreground = "#FFFFFF"
+muted = "#808080"
+accent = "#FF0000"
+secondary = "#0000FF"
+[conflict]
+left = { fg = "#0000FF" }
+right = { fg = "#FF0000" }
+both = { fg = "#00FF00" }
+base = { fg = "#800080" }
+unresolved = { fg = "#FF0000" }
+resolved = { fg = "#00FF00" }
+[diff]
+added = { fg = "#00FF00" }
+removed = { fg = "#FF0000" }
+modified = { fg = "#FFFF00" }
+context = { fg = "#808080" }
+[ui]
+border_focused = "#FF0000"
+border_unfocused = "#808080"
+title = { fg = "#0000FF" }
+status = { fg = "#808080" }
+selection = { fg = "#FFFFFF", bg = "#000000" }
+"##;
+        let custom: weavr_tui::theme::ThemeDefinition = toml::from_str(custom_toml).unwrap();
+        let raw = RawConfig {
+            theme: Some(RawThemeConfig {
+                name: Some("nord".into()),
+                custom: Some(custom),
+            }),
+            ..RawConfig::default()
+        };
+        let err = WeavrConfig::from_raw(&raw).unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("mutually exclusive"));
     }
 
     #[test]

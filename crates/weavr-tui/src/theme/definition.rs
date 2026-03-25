@@ -35,17 +35,40 @@ impl<'de> Deserialize<'de> for HexColor {
     }
 }
 
+/// Converts a single hex digit byte to its numeric value.
+fn hex_nibble(b: u8) -> Result<u8, String> {
+    match b {
+        b'0'..=b'9' => Ok(b - b'0'),
+        b'a'..=b'f' => Ok(b - b'a' + 10),
+        b'A'..=b'F' => Ok(b - b'A' + 10),
+        _ => Err("non-hex digit".to_string()),
+    }
+}
+
 /// Parses a `"#RRGGBB"` string into a [`Color::Rgb`].
+///
+/// Uses byte-level parsing to avoid panics on non-ASCII input.
 fn parse_hex_color(s: &str) -> Result<Color, String> {
     let s = s
         .strip_prefix('#')
         .ok_or_else(|| format!("color must start with '#', got '{s}'"))?;
-    if s.len() != 6 {
-        return Err(format!("expected 6 hex digits after '#', got {}", s.len()));
+    let bytes = s.as_bytes();
+    if bytes.len() != 6 {
+        return Err(format!(
+            "expected 6 hex digits after '#', got {}",
+            bytes.len()
+        ));
     }
-    let r = u8::from_str_radix(&s[0..2], 16).map_err(|e| format!("invalid red: {e}"))?;
-    let g = u8::from_str_radix(&s[2..4], 16).map_err(|e| format!("invalid green: {e}"))?;
-    let b = u8::from_str_radix(&s[4..6], 16).map_err(|e| format!("invalid blue: {e}"))?;
+
+    let parse_component = |hi: u8, lo: u8, name: &str| -> Result<u8, String> {
+        let hi = hex_nibble(hi).map_err(|e| format!("invalid {name}: {e}"))?;
+        let lo = hex_nibble(lo).map_err(|e| format!("invalid {name}: {e}"))?;
+        Ok((hi << 4) | lo)
+    };
+
+    let r = parse_component(bytes[0], bytes[1], "red")?;
+    let g = parse_component(bytes[2], bytes[3], "green")?;
+    let b = parse_component(bytes[4], bytes[5], "blue")?;
     Ok(Color::Rgb(r, g, b))
 }
 
