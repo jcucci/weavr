@@ -298,8 +298,8 @@ pub fn request_explanation(app: &mut App) {
 
     // Cache hit — show the cached explanation immediately
     if let Some(text) = app.ai_state.explanations.get(&hash) {
-        app.active_dialog = Some(Dialog::AiExplanation(text.clone()));
-        app.input_mode = InputMode::Dialog;
+        app.command.active_dialog = Some(Dialog::AiExplanation(text.clone()));
+        app.command.input_mode = InputMode::Dialog;
         return;
     }
 
@@ -389,8 +389,8 @@ pub fn poll_ai_events(app: &mut App) {
                 }
                 app.ai_state.pending_hunk = None;
                 if interested {
-                    app.active_dialog = Some(Dialog::AiExplanation(text));
-                    app.input_mode = InputMode::Dialog;
+                    app.command.active_dialog = Some(Dialog::AiExplanation(text));
+                    app.command.input_mode = InputMode::Dialog;
                 }
             }
             AiEvent::Error { message, .. } => {

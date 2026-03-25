@@ -25,6 +25,7 @@ pub mod ai;
 pub mod ast;
 pub mod dialog;
 pub mod diff;
+mod display;
 pub mod editor;
 pub mod event;
 pub mod help;
@@ -36,8 +37,9 @@ pub mod resolution;
 pub mod theme;
 pub mod ui;
 pub mod workspace;
-use input::{Command, Dialog, EditState, InputMode, KeySequence};
+use input::{Command, Dialog, EditState, InputMode};
 use keybindings::KeybindingMap;
+use navigation::ScrollState;
 use weavr_core::ActionHistory;
 
 /// Configuration for the three-pane layout.
@@ -78,36 +80,14 @@ pub struct App {
     pub(crate) session: Option<MergeSession>,
     /// Whether the application should quit.
     pub(crate) should_quit: bool,
-    /// Which pane has focus.
-    pub(crate) focused_pane: FocusedPane,
-    /// The active theme.
-    pub(crate) theme: Theme,
-    /// Current hunk index (0-based).
-    pub(crate) current_hunk_index: usize,
-    /// Synchronized scroll offset for left/right panes.
-    pub(crate) left_right_scroll: u16,
-    /// Independent scroll offset for result pane.
-    pub(crate) result_scroll: u16,
-    /// Layout configuration.
-    pub(crate) layout_config: LayoutConfig,
-    /// Tracker for multi-key sequences (e.g., 'gg').
-    pub(crate) key_sequence: KeySequence,
-    /// Status message to display (with timestamp for auto-clear).
-    pub(crate) status_message: Option<(String, Instant)>,
+    /// Scroll, hunk index, and pane focus state.
+    pub(crate) scroll: ScrollState,
+    /// Display configuration and visual state.
+    pub(crate) display: display::DisplayState,
+    /// Input mode, command buffer, key sequences, dialogs, and edit state.
+    pub(crate) command: input::CommandState,
     /// Action history for undo/redo support.
     pub(crate) action_history: ActionHistory,
-    /// Current input mode.
-    pub(crate) input_mode: InputMode,
-    /// Command buffer for command mode.
-    pub(crate) command_buffer: String,
-    /// Currently active dialog, if any.
-    pub(crate) active_dialog: Option<Dialog>,
-    /// Content pending for external editor (Phase 7).
-    pub(crate) editor_pending: Option<String>,
-    /// State for inline edit mode (None when not editing).
-    pub(crate) edit_state: Option<EditState>,
-    /// Configuration for diff highlighting.
-    pub(crate) diff_config: diff::DiffConfig,
     /// Keybinding map for normal mode.
     pub(crate) keybindings: KeybindingMap,
     /// Cached help sections (built from keybindings).
@@ -129,14 +109,6 @@ pub struct App {
     pub(crate) workspace: Option<workspace::Workspace>,
     /// Whether a partial write was requested (single-file mode).
     pub(crate) partial_write: bool,
-    /// Whether the base (ancestor) pane is visible.
-    pub(crate) show_base_pane: bool,
-    /// Whether syntax highlighting is enabled.
-    pub(crate) syntax_highlight: bool,
-    /// Lazy-initialized syntax highlighter.
-    pub(crate) highlighter: Option<highlight::Highlighter>,
-    /// Cached highlighted documents for the current file.
-    pub(crate) highlight_cache: Option<highlight::HighlightCache>,
 }
 
 impl App {
@@ -148,21 +120,10 @@ impl App {
         Self {
             session: None,
             should_quit: false,
-            focused_pane: FocusedPane::default(),
-            theme: Theme::from(ThemeName::default()),
-            current_hunk_index: 0,
-            left_right_scroll: 0,
-            result_scroll: 0,
-            layout_config: LayoutConfig::default(),
-            key_sequence: KeySequence::new(),
-            status_message: None,
+            scroll: ScrollState::default(),
+            display: display::DisplayState::default(),
+            command: input::CommandState::default(),
             action_history: ActionHistory::new(),
-            input_mode: InputMode::default(),
-            command_buffer: String::new(),
-            active_dialog: None,
-            editor_pending: None,
-            edit_state: None,
-            diff_config: diff::DiffConfig::default(),
             keybindings,
             help_sections,
             ai_handle: None,
@@ -174,10 +135,6 @@ impl App {
             stage_prompt: false,
             workspace: None,
             partial_write: false,
-            show_base_pane: false,
-            syntax_highlight: true,
-            highlighter: None,
-            highlight_cache: None,
         }
     }
 
@@ -189,21 +146,13 @@ impl App {
         Self {
             session: None,
             should_quit: false,
-            focused_pane: FocusedPane::default(),
-            theme: Theme::from(theme_name),
-            current_hunk_index: 0,
-            left_right_scroll: 0,
-            result_scroll: 0,
-            layout_config: LayoutConfig::default(),
-            key_sequence: KeySequence::new(),
-            status_message: None,
+            scroll: ScrollState::default(),
+            display: display::DisplayState {
+                theme: Theme::from(theme_name),
+                ..display::DisplayState::default()
+            },
+            command: input::CommandState::default(),
             action_history: ActionHistory::new(),
-            input_mode: InputMode::default(),
-            command_buffer: String::new(),
-            active_dialog: None,
-            editor_pending: None,
-            edit_state: None,
-            diff_config: diff::DiffConfig::default(),
             keybindings,
             help_sections,
             ai_handle: None,
@@ -215,17 +164,15 @@ impl App {
             stage_prompt: false,
             workspace: None,
             partial_write: false,
-            show_base_pane: false,
-            syntax_highlight: true,
-            highlighter: None,
-            highlight_cache: None,
         }
     }
 
     /// Sets the merge session to display.
+    ///
+    /// Invalidates the highlight cache since the content has changed.
     pub fn set_session(&mut self, session: MergeSession) {
         self.session = Some(session);
-        self.highlight_cache = None;
+        self.display.highlight_cache = None;
     }
 
     /// Returns a reference to the current session, if any.
@@ -256,7 +203,7 @@ impl App {
     /// Returns the currently focused pane.
     #[must_use]
     pub fn focused_pane(&self) -> FocusedPane {
-        self.focused_pane
+        self.scroll.focused_pane
     }
 
     /// Cycles focus to the next pane (Left -> Right -> Result -> Left).
@@ -277,12 +224,12 @@ impl App {
     /// Returns a reference to the current theme.
     #[must_use]
     pub fn theme(&self) -> &Theme {
-        &self.theme
+        &self.display.theme
     }
 
     /// Sets the theme by name.
     pub fn set_theme(&mut self, name: ThemeName) {
-        self.theme = Theme::from(name);
+        self.display.theme = Theme::from(name);
     }
 
     /// Returns a reference to the current hunk, if any.
@@ -290,13 +237,13 @@ impl App {
     pub fn current_hunk(&self) -> Option<&ConflictHunk> {
         self.session
             .as_ref()
-            .and_then(|s| s.hunks().get(self.current_hunk_index))
+            .and_then(|s| s.hunks().get(self.scroll.current_hunk_index))
     }
 
     /// Returns the current hunk index (0-based).
     #[must_use]
     pub fn current_hunk_index(&self) -> usize {
-        self.current_hunk_index
+        self.scroll.current_hunk_index
     }
 
     /// Returns the total number of hunks.
@@ -385,25 +332,25 @@ impl App {
     /// Returns the scroll offset for left/right panes.
     #[must_use]
     pub fn left_right_scroll(&self) -> u16 {
-        self.left_right_scroll
+        self.scroll.left_right_scroll
     }
 
     /// Returns the scroll offset for the result pane.
     #[must_use]
     pub fn result_scroll(&self) -> u16 {
-        self.result_scroll
+        self.scroll.result_scroll
     }
 
     /// Returns a reference to the layout configuration.
     #[must_use]
     pub fn layout_config(&self) -> &LayoutConfig {
-        &self.layout_config
+        &self.display.layout_config
     }
 
     /// Returns a reference to the diff configuration.
     #[must_use]
     pub fn diff_config(&self) -> &diff::DiffConfig {
-        &self.diff_config
+        &self.display.diff_config
     }
 
     /// Toggles the base (ancestor) pane visibility.
@@ -411,11 +358,11 @@ impl App {
     /// When hiding the base pane, resets focus to Left if it was on Base
     /// to avoid focusing a hidden pane.
     pub(crate) fn toggle_base_pane(&mut self) {
-        self.show_base_pane = !self.show_base_pane;
-        if !self.show_base_pane && self.focused_pane == FocusedPane::Base {
-            self.focused_pane = FocusedPane::Left;
+        self.display.show_base_pane = !self.display.show_base_pane;
+        if !self.display.show_base_pane && self.scroll.focused_pane == FocusedPane::Base {
+            self.scroll.focused_pane = FocusedPane::Left;
         }
-        let status = if self.show_base_pane {
+        let status = if self.display.show_base_pane {
             "Base pane enabled (diff3)"
         } else {
             "Base pane hidden"
@@ -426,13 +373,13 @@ impl App {
     /// Returns whether the base pane is visible.
     #[must_use]
     pub fn show_base_pane(&self) -> bool {
-        self.show_base_pane
+        self.display.show_base_pane
     }
 
     /// Toggles word-level diff highlighting on/off.
     pub fn toggle_word_diff(&mut self) {
-        self.diff_config.word_diff = !self.diff_config.word_diff;
-        let status = if self.diff_config.word_diff {
+        self.display.diff_config.word_diff = !self.display.diff_config.word_diff;
+        let status = if self.display.diff_config.word_diff {
             "Word diff enabled"
         } else {
             "Word diff disabled"
@@ -442,8 +389,8 @@ impl App {
 
     /// Toggles syntax highlighting on/off.
     pub(crate) fn toggle_syntax_highlight(&mut self) {
-        self.syntax_highlight = !self.syntax_highlight;
-        let status = if self.syntax_highlight {
+        self.display.syntax_highlight = !self.display.syntax_highlight;
+        let status = if self.display.syntax_highlight {
             "Syntax highlighting enabled"
         } else {
             "Syntax highlighting disabled"
@@ -454,13 +401,13 @@ impl App {
     /// Returns whether syntax highlighting is enabled.
     #[must_use]
     pub fn syntax_highlight(&self) -> bool {
-        self.syntax_highlight
+        self.display.syntax_highlight
     }
 
     /// Returns a reference to the highlight cache, if any.
     #[must_use]
     pub fn highlight_cache(&self) -> Option<&highlight::HighlightCache> {
-        self.highlight_cache.as_ref()
+        self.display.highlight_cache.as_ref()
     }
 
     /// Ensures the highlight cache is populated for the current file.
@@ -468,7 +415,7 @@ impl App {
     /// Lazily initializes the `Highlighter` on first call and rebuilds
     /// the cache when the file path changes.
     pub fn ensure_highlight_cache(&mut self) {
-        if !self.syntax_highlight {
+        if !self.display.syntax_highlight {
             return;
         }
 
@@ -479,13 +426,14 @@ impl App {
         let file_path = session.input().left.path.clone();
 
         // Check if cache is already valid for this file
-        if let Some(ref cache) = self.highlight_cache {
+        if let Some(ref cache) = self.display.highlight_cache {
             if cache.path == file_path {
                 return;
             }
         }
 
         let highlighter = self
+            .display
             .highlighter
             .get_or_insert_with(highlight::Highlighter::new);
 
@@ -549,7 +497,7 @@ impl App {
             }
         }
 
-        self.highlight_cache = Some(highlight::HighlightCache {
+        self.display.highlight_cache = Some(highlight::HighlightCache {
             path: file_path,
             left: highlighter.highlight(&left_text, lang),
             right: highlighter.highlight(&right_text, lang),
@@ -560,59 +508,59 @@ impl App {
 
     /// Invalidates the highlight cache (e.g., on file switch).
     pub fn invalidate_highlight_cache(&mut self) {
-        self.highlight_cache = None;
+        self.display.highlight_cache = None;
     }
 
     /// Sets a status message to display in the status bar.
     ///
     /// The message will auto-clear after a few seconds.
     pub fn set_status_message(&mut self, msg: &str) {
-        self.status_message = Some((msg.to_string(), Instant::now()));
+        self.display.status_message = Some((msg.to_string(), Instant::now()));
     }
 
     /// Returns the current status message and its timestamp, if any.
     #[must_use]
     pub fn status_message(&self) -> Option<&(String, Instant)> {
-        self.status_message.as_ref()
+        self.display.status_message.as_ref()
     }
 
     /// Returns the current input mode.
     #[must_use]
     pub fn input_mode(&self) -> InputMode {
-        self.input_mode
+        self.command.input_mode
     }
 
     /// Enters command mode (for `:` commands).
     pub fn enter_command_mode(&mut self) {
-        self.input_mode = InputMode::Command;
-        self.command_buffer.clear();
+        self.command.input_mode = InputMode::Command;
+        self.command.command_buffer.clear();
     }
 
     /// Exits command mode and returns to normal mode.
     pub fn exit_command_mode(&mut self) {
-        self.input_mode = InputMode::Normal;
-        self.command_buffer.clear();
+        self.command.input_mode = InputMode::Normal;
+        self.command.command_buffer.clear();
     }
 
     /// Returns the current command buffer contents.
     #[must_use]
     pub fn command_buffer(&self) -> &str {
-        &self.command_buffer
+        &self.command.command_buffer
     }
 
     /// Appends a character to the command buffer.
     pub fn append_to_command(&mut self, c: char) {
-        self.command_buffer.push(c);
+        self.command.command_buffer.push(c);
     }
 
     /// Removes the last character from the command buffer.
     pub fn backspace_command(&mut self) {
-        self.command_buffer.pop();
+        self.command.command_buffer.pop();
     }
 
     /// Executes the current command buffer.
     pub fn execute_command(&mut self) {
-        let cmd = Command::parse(&self.command_buffer);
+        let cmd = Command::parse(&self.command.command_buffer);
         match cmd {
             Command::Write => self.write_file(),
             Command::WritePartial => self.write_file_partial(),
@@ -764,7 +712,7 @@ impl App {
     /// Returns the currently active dialog, if any.
     #[must_use]
     pub fn active_dialog(&self) -> Option<&Dialog> {
-        self.active_dialog.as_ref()
+        self.command.active_dialog.as_ref()
     }
 
     /// Returns whether the user requested staging.
@@ -860,14 +808,14 @@ impl App {
                         panic!("failed to create fallback session");
                     })
             });
-            file_state.current_hunk_index = self.current_hunk_index;
-            file_state.left_right_scroll = self.left_right_scroll;
-            file_state.result_scroll = self.result_scroll;
+            file_state.current_hunk_index = self.scroll.current_hunk_index;
+            file_state.left_right_scroll = self.scroll.left_right_scroll;
+            file_state.result_scroll = self.scroll.result_scroll;
             file_state.action_history =
                 std::mem::replace(&mut self.action_history, ActionHistory::new());
             file_state.stage_requested = self.stage_requested;
-            file_state.focused_pane = self.focused_pane;
-            file_state.show_base_pane = self.show_base_pane;
+            file_state.focused_pane = self.scroll.focused_pane;
+            file_state.show_base_pane = self.display.show_base_pane;
         }
     }
 
@@ -883,17 +831,17 @@ impl App {
                         panic!("failed to create placeholder session");
                     }),
             ));
-            self.current_hunk_index = file_state.current_hunk_index;
-            self.left_right_scroll = file_state.left_right_scroll;
-            self.result_scroll = file_state.result_scroll;
+            self.scroll.current_hunk_index = file_state.current_hunk_index;
+            self.scroll.left_right_scroll = file_state.left_right_scroll;
+            self.scroll.result_scroll = file_state.result_scroll;
             self.action_history =
                 std::mem::replace(&mut file_state.action_history, ActionHistory::new());
             self.stage_requested = file_state.stage_requested;
-            self.focused_pane = file_state.focused_pane;
-            self.show_base_pane = file_state.show_base_pane;
+            self.scroll.focused_pane = file_state.focused_pane;
+            self.display.show_base_pane = file_state.show_base_pane;
             // Ensure we never focus a hidden pane after restoring state
-            if !self.show_base_pane && self.focused_pane == FocusedPane::Base {
-                self.focused_pane = FocusedPane::Left;
+            if !self.display.show_base_pane && self.scroll.focused_pane == FocusedPane::Base {
+                self.scroll.focused_pane = FocusedPane::Left;
             }
         }
     }
@@ -1011,13 +959,16 @@ impl App {
     /// content if unresolved). Starts in insert sub-mode.
     pub fn enter_edit_mode(&mut self) {
         let content = self.session.as_ref().and_then(|session| {
-            session.hunks().get(self.current_hunk_index).map(|hunk| {
-                if let Some(resolution) = session.resolutions().get(&hunk.id) {
-                    resolution.content.clone()
-                } else {
-                    hunk.left.text.clone()
-                }
-            })
+            session
+                .hunks()
+                .get(self.scroll.current_hunk_index)
+                .map(|hunk| {
+                    if let Some(resolution) = session.resolutions().get(&hunk.id) {
+                        resolution.content.clone()
+                    } else {
+                        hunk.left.text.clone()
+                    }
+                })
         });
 
         let Some(content) = content else {
@@ -1025,9 +976,9 @@ impl App {
             return;
         };
 
-        self.focused_pane = FocusedPane::Result;
-        self.edit_state = Some(EditState::new(&content));
-        self.input_mode = InputMode::Edit;
+        self.scroll.focused_pane = FocusedPane::Result;
+        self.command.edit_state = Some(EditState::new(&content));
+        self.command.input_mode = InputMode::Edit;
     }
 
     /// Exits inline edit mode.
@@ -1036,21 +987,21 @@ impl App {
     /// Otherwise discards changes.
     pub fn exit_edit_mode(&mut self, apply: bool) {
         if apply {
-            if let Some(ref state) = self.edit_state {
+            if let Some(ref state) = self.command.edit_state {
                 let content = state.content();
                 resolution::apply_resolution(self, "Manual edit", |_hunk| {
                     weavr_core::Resolution::manual(content.clone())
                 });
             }
         }
-        self.edit_state = None;
-        self.input_mode = InputMode::Normal;
+        self.command.edit_state = None;
+        self.command.input_mode = InputMode::Normal;
     }
 
     /// Returns a reference to the edit state, if in edit mode.
     #[must_use]
     pub fn edit_state(&self) -> Option<&EditState> {
-        self.edit_state.as_ref()
+        self.command.edit_state.as_ref()
     }
 
     // --- Phase 7: Editor Integration ---
@@ -1340,7 +1291,7 @@ mod tests {
     #[test]
     fn cycle_focus_forward_with_base_pane() {
         let mut app = App::new();
-        app.show_base_pane = true;
+        app.display.show_base_pane = true;
         assert_eq!(app.focused_pane(), FocusedPane::Left);
 
         app.cycle_focus();
@@ -1359,7 +1310,7 @@ mod tests {
     #[test]
     fn cycle_focus_backward_with_base_pane() {
         let mut app = App::new();
-        app.show_base_pane = true;
+        app.display.show_base_pane = true;
         assert_eq!(app.focused_pane(), FocusedPane::Left);
 
         app.cycle_focus_back();
@@ -1382,7 +1333,7 @@ mod tests {
         // Enable base pane and focus it
         app.toggle_base_pane();
         assert!(app.show_base_pane());
-        app.focused_pane = FocusedPane::Base;
+        app.scroll.focused_pane = FocusedPane::Base;
 
         // Disable base pane — focus should reset to Left
         app.toggle_base_pane();
@@ -1396,7 +1347,7 @@ mod tests {
 
         // Enable base pane, keep focus on Right
         app.toggle_base_pane();
-        app.focused_pane = FocusedPane::Right;
+        app.scroll.focused_pane = FocusedPane::Right;
 
         // Disable base pane — focus should stay on Right
         app.toggle_base_pane();
@@ -1574,7 +1525,7 @@ mod tests {
     fn take_editor_pending_clears_pending() {
         let mut app = App::new();
         // Manually set pending for testing
-        app.editor_pending = Some("test content".to_string());
+        app.command.editor_pending = Some("test content".to_string());
 
         let content = app.take_editor_pending();
         assert_eq!(content, Some("test content".to_string()));

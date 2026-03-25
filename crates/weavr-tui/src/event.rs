@@ -73,36 +73,36 @@ fn handle_normal_mode(app: &mut App, key: KeyEvent) {
 
     // Check if this key could be the start of a multi-key sequence
     if app.keybindings.is_sequence_prefix(code, mods) {
-        if app.key_sequence.has_pending() {
+        if app.command.key_sequence.has_pending() {
             // We have buffered key(s) + this new key. Check for a complete sequence.
-            let mut pending = app.key_sequence.pending_keys(KEY_SEQUENCE_TIMEOUT);
+            let mut pending = app.command.key_sequence.pending_keys(KEY_SEQUENCE_TIMEOUT);
             pending.push((code, mods));
 
             if let Some(action) = app.keybindings.lookup_sequence(&pending) {
-                app.key_sequence.clear();
+                app.command.key_sequence.clear();
                 dispatch_action(app, action);
                 return;
             }
         }
         // Buffer this key as a potential sequence start
-        app.key_sequence.push(code, mods);
+        app.command.key_sequence.push(code, mods);
         return;
     }
 
     // Not a sequence prefix. If we have buffered keys, check for a complete
     // sequence with the current key appended.
-    if app.key_sequence.has_pending() {
-        let mut pending = app.key_sequence.pending_keys(KEY_SEQUENCE_TIMEOUT);
+    if app.command.key_sequence.has_pending() {
+        let mut pending = app.command.key_sequence.pending_keys(KEY_SEQUENCE_TIMEOUT);
         pending.push((code, mods));
 
         if let Some(action) = app.keybindings.lookup_sequence(&pending) {
-            app.key_sequence.clear();
+            app.command.key_sequence.clear();
             dispatch_action(app, action);
             return;
         }
 
         // No sequence match. Dispatch buffered keys as singles, then this key.
-        let buffered = app.key_sequence.drain();
+        let buffered = app.command.key_sequence.drain();
         for (buf_code, buf_mods) in buffered {
             if let Some(action) = app.keybindings.lookup_single(buf_code, buf_mods) {
                 dispatch_action(app, action);
@@ -110,7 +110,7 @@ fn handle_normal_mode(app: &mut App, key: KeyEvent) {
         }
     }
 
-    app.key_sequence.clear();
+    app.command.key_sequence.clear();
 
     // Dispatch the current key
     if let Some(action) = app.keybindings.lookup_single(code, mods) {
@@ -324,7 +324,7 @@ fn handle_dialog_mode(app: &mut App, key: KeyEvent) {
 
 /// Handles key events in edit mode (inline result pane editor).
 fn handle_edit_mode(app: &mut App, key: KeyEvent) {
-    let Some(ref edit_state) = app.edit_state else {
+    let Some(ref edit_state) = app.command.edit_state else {
         return;
     };
 
@@ -338,7 +338,7 @@ fn handle_edit_mode(app: &mut App, key: KeyEvent) {
 fn handle_edit_insert(app: &mut App, key: KeyEvent) {
     match key.code {
         KeyCode::Esc => {
-            if let Some(ref mut state) = app.edit_state {
+            if let Some(ref mut state) = app.command.edit_state {
                 state.enter_normal();
             }
         }
@@ -349,52 +349,52 @@ fn handle_edit_insert(app: &mut App, key: KeyEvent) {
             if !key.modifiers.contains(KeyModifiers::CONTROL)
                 && !key.modifiers.contains(KeyModifiers::ALT) =>
         {
-            if let Some(ref mut state) = app.edit_state {
+            if let Some(ref mut state) = app.command.edit_state {
                 state.insert_char(c);
             }
         }
         KeyCode::Enter => {
-            if let Some(ref mut state) = app.edit_state {
+            if let Some(ref mut state) = app.command.edit_state {
                 state.newline();
             }
         }
         KeyCode::Backspace => {
-            if let Some(ref mut state) = app.edit_state {
+            if let Some(ref mut state) = app.command.edit_state {
                 state.backspace();
             }
         }
         KeyCode::Delete => {
-            if let Some(ref mut state) = app.edit_state {
+            if let Some(ref mut state) = app.command.edit_state {
                 state.delete_char();
             }
         }
         KeyCode::Left => {
-            if let Some(ref mut state) = app.edit_state {
+            if let Some(ref mut state) = app.command.edit_state {
                 state.move_left();
             }
         }
         KeyCode::Right => {
-            if let Some(ref mut state) = app.edit_state {
+            if let Some(ref mut state) = app.command.edit_state {
                 state.move_right();
             }
         }
         KeyCode::Up => {
-            if let Some(ref mut state) = app.edit_state {
+            if let Some(ref mut state) = app.command.edit_state {
                 state.move_up();
             }
         }
         KeyCode::Down => {
-            if let Some(ref mut state) = app.edit_state {
+            if let Some(ref mut state) = app.command.edit_state {
                 state.move_down();
             }
         }
         KeyCode::Home => {
-            if let Some(ref mut state) = app.edit_state {
+            if let Some(ref mut state) = app.command.edit_state {
                 state.move_to_line_start();
             }
         }
         KeyCode::End => {
-            if let Some(ref mut state) = app.edit_state {
+            if let Some(ref mut state) = app.command.edit_state {
                 state.move_to_line_end();
             }
         }
@@ -418,82 +418,82 @@ fn handle_edit_normal(app: &mut App, key: KeyEvent) {
 
         // Movement
         KeyCode::Char('h') | KeyCode::Left => {
-            if let Some(ref mut state) = app.edit_state {
+            if let Some(ref mut state) = app.command.edit_state {
                 state.move_left();
             }
         }
         KeyCode::Char('j') | KeyCode::Down => {
-            if let Some(ref mut state) = app.edit_state {
+            if let Some(ref mut state) = app.command.edit_state {
                 state.move_down();
             }
         }
         KeyCode::Char('k') | KeyCode::Up => {
-            if let Some(ref mut state) = app.edit_state {
+            if let Some(ref mut state) = app.command.edit_state {
                 state.move_up();
             }
         }
         KeyCode::Char('l') | KeyCode::Right => {
-            if let Some(ref mut state) = app.edit_state {
+            if let Some(ref mut state) = app.command.edit_state {
                 state.move_right();
             }
         }
         KeyCode::Char('w') => {
-            if let Some(ref mut state) = app.edit_state {
+            if let Some(ref mut state) = app.command.edit_state {
                 state.move_word_forward();
             }
         }
         KeyCode::Char('b') => {
-            if let Some(ref mut state) = app.edit_state {
+            if let Some(ref mut state) = app.command.edit_state {
                 state.move_word_back();
             }
         }
         KeyCode::Char('0') => {
-            if let Some(ref mut state) = app.edit_state {
+            if let Some(ref mut state) = app.command.edit_state {
                 state.move_to_line_start();
             }
         }
         KeyCode::Char('$') => {
-            if let Some(ref mut state) = app.edit_state {
+            if let Some(ref mut state) = app.command.edit_state {
                 state.move_to_line_end();
             }
         }
 
         // Enter insert mode
         KeyCode::Char('i') => {
-            if let Some(ref mut state) = app.edit_state {
+            if let Some(ref mut state) = app.command.edit_state {
                 state.enter_insert();
             }
         }
         KeyCode::Char('a') => {
-            if let Some(ref mut state) = app.edit_state {
+            if let Some(ref mut state) = app.command.edit_state {
                 state.enter_insert_after();
             }
         }
         KeyCode::Char('A') => {
-            if let Some(ref mut state) = app.edit_state {
+            if let Some(ref mut state) = app.command.edit_state {
                 state.enter_insert_end();
             }
         }
         KeyCode::Char('o') => {
-            if let Some(ref mut state) = app.edit_state {
+            if let Some(ref mut state) = app.command.edit_state {
                 state.open_line_below();
             }
         }
         KeyCode::Char('O') => {
-            if let Some(ref mut state) = app.edit_state {
+            if let Some(ref mut state) = app.command.edit_state {
                 state.open_line_above();
             }
         }
 
         // Delete
         KeyCode::Char('x') => {
-            if let Some(ref mut state) = app.edit_state {
+            if let Some(ref mut state) = app.command.edit_state {
                 state.delete_char();
             }
         }
         KeyCode::Char('d') => {
             // Check for dd sequence
-            if let Some(ref mut state) = app.edit_state {
+            if let Some(ref mut state) = app.command.edit_state {
                 if state.pending_key == Some('d') {
                     state.delete_line();
                     state.pending_key = None;
@@ -508,7 +508,7 @@ fn handle_edit_normal(app: &mut App, key: KeyEvent) {
     }
 
     // Clear pending key on any non-d key press
-    if let Some(ref mut state) = app.edit_state {
+    if let Some(ref mut state) = app.command.edit_state {
         state.pending_key = None;
     }
 }
@@ -878,8 +878,8 @@ mod tests {
         use crate::input::{EditState, EditSubMode, InputMode};
 
         let mut app = App::new();
-        app.edit_state = Some(EditState::new("hello"));
-        app.input_mode = InputMode::Edit;
+        app.command.edit_state = Some(EditState::new("hello"));
+        app.command.input_mode = InputMode::Edit;
 
         // In insert submode, Esc switches to edit-normal submode
         let event = Event::Key(make_key_event(KeyCode::Esc, KeyModifiers::NONE));
@@ -887,7 +887,7 @@ mod tests {
 
         assert_eq!(app.input_mode(), InputMode::Edit);
         assert_eq!(
-            app.edit_state.as_ref().unwrap().sub_mode,
+            app.command.edit_state.as_ref().unwrap().sub_mode,
             EditSubMode::Normal
         );
     }
@@ -897,14 +897,14 @@ mod tests {
         use crate::input::{EditState, InputMode};
 
         let mut app = App::new();
-        app.edit_state = Some(EditState::new("hello"));
-        app.input_mode = InputMode::Edit;
+        app.command.edit_state = Some(EditState::new("hello"));
+        app.command.input_mode = InputMode::Edit;
 
         let event = Event::Key(make_key_event(KeyCode::Char('c'), KeyModifiers::CONTROL));
         handle_event(&mut app, &event);
 
         assert_eq!(app.input_mode(), InputMode::Normal);
-        assert!(app.edit_state.is_none());
+        assert!(app.command.edit_state.is_none());
     }
 
     #[test]
@@ -912,15 +912,15 @@ mod tests {
         use crate::input::{EditState, InputMode};
 
         let mut app = App::new();
-        app.edit_state = Some(EditState::new(""));
-        app.input_mode = InputMode::Edit;
+        app.command.edit_state = Some(EditState::new(""));
+        app.command.input_mode = InputMode::Edit;
 
         let event = Event::Key(make_key_event(KeyCode::Char('a'), KeyModifiers::NONE));
         handle_event(&mut app, &event);
         let event = Event::Key(make_key_event(KeyCode::Char('b'), KeyModifiers::NONE));
         handle_event(&mut app, &event);
 
-        assert_eq!(app.edit_state.as_ref().unwrap().content(), "ab");
+        assert_eq!(app.command.edit_state.as_ref().unwrap().content(), "ab");
     }
 
     #[test]
@@ -928,14 +928,14 @@ mod tests {
         use crate::input::{EditState, InputMode};
 
         let mut app = App::new();
-        app.edit_state = Some(EditState::new(""));
-        app.input_mode = InputMode::Edit;
+        app.command.edit_state = Some(EditState::new(""));
+        app.command.input_mode = InputMode::Edit;
 
         // Ctrl+U should not insert 'u'
         let event = Event::Key(make_key_event(KeyCode::Char('u'), KeyModifiers::CONTROL));
         handle_event(&mut app, &event);
 
-        assert_eq!(app.edit_state.as_ref().unwrap().content(), "");
+        assert_eq!(app.command.edit_state.as_ref().unwrap().content(), "");
     }
 
     #[test]
@@ -945,14 +945,14 @@ mod tests {
         let mut app = App::new();
         let mut state = EditState::new("test content");
         state.sub_mode = EditSubMode::Normal;
-        app.edit_state = Some(state);
-        app.input_mode = InputMode::Edit;
+        app.command.edit_state = Some(state);
+        app.command.input_mode = InputMode::Edit;
 
         let event = Event::Key(make_key_event(KeyCode::Char('q'), KeyModifiers::NONE));
         handle_event(&mut app, &event);
 
         assert_eq!(app.input_mode(), InputMode::Normal);
-        assert!(app.edit_state.is_none());
+        assert!(app.command.edit_state.is_none());
     }
 
     #[test]
@@ -962,15 +962,15 @@ mod tests {
         let mut app = App::new();
         let mut state = EditState::new("hello");
         state.sub_mode = EditSubMode::Normal;
-        app.edit_state = Some(state);
-        app.input_mode = InputMode::Edit;
+        app.command.edit_state = Some(state);
+        app.command.input_mode = InputMode::Edit;
 
         let event = Event::Key(make_key_event(KeyCode::Char('i'), KeyModifiers::NONE));
         handle_event(&mut app, &event);
 
         assert_eq!(app.input_mode(), InputMode::Edit);
         assert_eq!(
-            app.edit_state.as_ref().unwrap().sub_mode,
+            app.command.edit_state.as_ref().unwrap().sub_mode,
             EditSubMode::Insert
         );
     }
@@ -983,28 +983,28 @@ mod tests {
         let mut state = EditState::new("hello\nworld");
         state.sub_mode = EditSubMode::Normal;
         state.cursor_col = 2;
-        app.edit_state = Some(state);
-        app.input_mode = InputMode::Edit;
+        app.command.edit_state = Some(state);
+        app.command.input_mode = InputMode::Edit;
 
         // j moves down
         let event = Event::Key(make_key_event(KeyCode::Char('j'), KeyModifiers::NONE));
         handle_event(&mut app, &event);
-        assert_eq!(app.edit_state.as_ref().unwrap().cursor_row, 1);
+        assert_eq!(app.command.edit_state.as_ref().unwrap().cursor_row, 1);
 
         // k moves up
         let event = Event::Key(make_key_event(KeyCode::Char('k'), KeyModifiers::NONE));
         handle_event(&mut app, &event);
-        assert_eq!(app.edit_state.as_ref().unwrap().cursor_row, 0);
+        assert_eq!(app.command.edit_state.as_ref().unwrap().cursor_row, 0);
 
         // l moves right
         let event = Event::Key(make_key_event(KeyCode::Char('l'), KeyModifiers::NONE));
         handle_event(&mut app, &event);
-        assert_eq!(app.edit_state.as_ref().unwrap().cursor_col, 3);
+        assert_eq!(app.command.edit_state.as_ref().unwrap().cursor_col, 3);
 
         // h moves left
         let event = Event::Key(make_key_event(KeyCode::Char('h'), KeyModifiers::NONE));
         handle_event(&mut app, &event);
-        assert_eq!(app.edit_state.as_ref().unwrap().cursor_col, 2);
+        assert_eq!(app.command.edit_state.as_ref().unwrap().cursor_col, 2);
     }
 
     #[test]
@@ -1014,18 +1014,18 @@ mod tests {
         let mut app = App::new();
         let mut state = EditState::new("line1\nline2\nline3");
         state.sub_mode = EditSubMode::Normal;
-        app.edit_state = Some(state);
-        app.input_mode = InputMode::Edit;
+        app.command.edit_state = Some(state);
+        app.command.input_mode = InputMode::Edit;
 
         // First d sets pending
         let event = Event::Key(make_key_event(KeyCode::Char('d'), KeyModifiers::NONE));
         handle_event(&mut app, &event);
-        assert_eq!(app.edit_state.as_ref().unwrap().lines.len(), 3);
+        assert_eq!(app.command.edit_state.as_ref().unwrap().lines.len(), 3);
 
         // Second d deletes line
         handle_event(&mut app, &event);
-        assert_eq!(app.edit_state.as_ref().unwrap().lines.len(), 2);
-        assert_eq!(app.edit_state.as_ref().unwrap().lines[0], "line2");
+        assert_eq!(app.command.edit_state.as_ref().unwrap().lines.len(), 2);
+        assert_eq!(app.command.edit_state.as_ref().unwrap().lines[0], "line2");
     }
 
     // --- File list dialog search/filter/sort event tests ---
@@ -1035,7 +1035,7 @@ mod tests {
             Dialog, FileListFilter, FileListMode, FileListSort, FileListState, InputMode,
         };
         let mut app = App::new();
-        app.active_dialog = Some(Dialog::FileList(FileListState {
+        app.command.active_dialog = Some(Dialog::FileList(FileListState {
             selected_index: 0,
             filtered_indices: vec![0, 1, 2],
             mode: FileListMode::Navigate,
@@ -1043,7 +1043,7 @@ mod tests {
             sort: FileListSort::default(),
             filter: FileListFilter::default(),
         }));
-        app.input_mode = InputMode::Dialog;
+        app.command.input_mode = InputMode::Dialog;
         app
     }
 
