@@ -49,7 +49,7 @@ AST suggestions appear in the result pane. Review the merged result before accep
 weavr --headless --strategy ast
 ```
 
-In headless mode, AST merge is attempted for each hunk. Hunks that can't be structurally merged fall back to the configured fallback strategy (defaults to `left`).
+In headless mode, AST merge is attempted for each hunk. Hunks that can't be structurally merged are automatically resolved by accepting the `left` side.
 
 ## Supported merge operations
 

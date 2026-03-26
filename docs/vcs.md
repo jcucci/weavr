@@ -101,7 +101,7 @@ weavr --no-stage
 
 ```toml
 [git]
-auto_stage = false    # Auto-stage without prompting
+auto_stage = false    # Do not auto-stage; rely on prompt or manual staging (default)
 stage_prompt = true   # Prompt to stage (default)
 ```
 

@@ -27,8 +27,8 @@ Add an `[ai]` section to your config file:
 [ai]
 enabled = true
 provider = "claude"
-timeout = 30
-min_confidence = 0.7
+timeout = "30s"
+min_confidence = 70
 auto_suggest = false
 ```
 
@@ -36,9 +36,11 @@ auto_suggest = false
 |-------|------|---------|-------------|
 | `enabled` | bool | — | Enable AI suggestions |
 | `provider` | string | — | `claude`, `openai`, or `local` |
-| `timeout` | int | — | Request timeout in seconds |
-| `min_confidence` | float | — | Minimum confidence threshold (0.0–1.0) |
+| `timeout` | string (duration) | `"30s"` | Request timeout as a human-readable duration (e.g. `"30s"`, `"5m"`) |
+| `min_confidence` | int (0–100) | `70` | Minimum confidence threshold as a percentage |
 | `auto_suggest` | bool | — | Automatically suggest when focusing an unresolved hunk |
+
+Provider-specific options are configured in nested tables: `[ai.claude]`, `[ai.openai]`, or `[ai.local]`, depending on the selected provider.
 
 ## Provider setup
 
@@ -47,6 +49,8 @@ auto_suggest = false
 ```toml
 [ai]
 provider = "claude"
+
+[ai.claude]
 api_key_env = "ANTHROPIC_API_KEY"
 model = "claude-sonnet-4-20250514"
 max_tokens = 4096
@@ -63,6 +67,8 @@ export ANTHROPIC_API_KEY="sk-ant-..."
 ```toml
 [ai]
 provider = "openai"
+
+[ai.openai]
 api_key_env = "OPENAI_API_KEY"
 model = "gpt-4o"
 max_tokens = 4096
@@ -73,6 +79,8 @@ max_tokens = 4096
 ```toml
 [ai]
 provider = "local"
+
+[ai.local]
 endpoint = "http://localhost:11434"
 model = "codellama"
 ```
@@ -99,7 +107,7 @@ Use `--strategy ai` in headless mode:
 weavr --headless --strategy ai --fallback-strategy left
 ```
 
-When AI declines a suggestion (confidence below threshold) or errors, the `--fallback-strategy` determines what happens. Without a fallback, the hunk remains unresolved.
+When AI declines a suggestion (confidence below threshold) or errors, the `--fallback-strategy` determines what happens. Without a fallback, the CLI defaults to accepting `left` (unless `--fail-on-ambiguous` is set, in which case it exits with the hunk unresolved).
 
 ## Philosophy
 

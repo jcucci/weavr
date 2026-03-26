@@ -5,10 +5,12 @@
 Configuration is loaded from multiple sources, with later sources overriding earlier ones:
 
 1. **Compiled defaults** — built into the binary
-2. **User config** — `~/.config/weavr/config.toml` (XDG base directory)
+2. **User config** — OS config directory (XDG on Linux, e.g. `~/.config/weavr/config.toml`)
 3. **Project config** — `.weavr.toml` in the current working directory
-4. **`--config PATH`** — explicit config file (replaces project config)
+4. **`--config PATH`** — explicit config file (loaded in addition to project config; its fields override project config)
 5. **CLI flags** — highest priority
+
+Note: Supplying `--config PATH` does *not* ignore `.weavr.toml`; the project config is still loaded and then merged beneath the explicit config file.
 
 Most sections use **field-level merging**: a higher-priority layer only overrides the specific fields it sets. Exceptions are noted below.
 
@@ -20,7 +22,7 @@ name = "dark"                # Built-in theme name (see docs/themes.md)
 # custom = { ... }           # OR inline custom theme (mutually exclusive with name)
 
 [strategies]
-default = "left"             # Default resolution: left, right, both, ast
+default = "left"             # Default resolution: left, right, both, ast, ai
 deduplicate = false          # Deduplicate when using accept-both
 
 [headless]
@@ -44,8 +46,8 @@ squash_after_resolve = false # Run jj squash after all hunks resolved
 [ai]
 enabled = true
 provider = "claude"          # claude, openai, or local
-timeout = 30
-min_confidence = 0.7
+timeout = "30s"
+min_confidence = 70
 auto_suggest = false
 
 # Requires ast feature
@@ -70,7 +72,7 @@ auto_suggest = false
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
-| `default` | string | `"left"` | Default resolution strategy: `left`, `right`, `both`, `ast` |
+| `default` | string | `"left"` | Default resolution strategy: `left`, `right`, `both`, `ast`, `ai` (`ai` requires the ai feature) |
 | `deduplicate` | bool | `false` | Deduplicate lines when using accept-both |
 
 ### `[headless]`
@@ -121,9 +123,11 @@ See [TUI usage](tui.md) for the full list of default bindings and action names.
 |-------|------|---------|-------------|
 | `enabled` | bool | — | Enable AI suggestions |
 | `provider` | string | — | Provider: `claude`, `openai`, or `local` |
-| `timeout` | int | — | Request timeout in seconds |
-| `min_confidence` | float | — | Minimum confidence threshold |
+| `timeout` | string (duration) | `"30s"` | Request timeout as a human-readable duration (e.g. `"30s"`, `"5m"`) |
+| `min_confidence` | int (0–100) | `70` | Minimum confidence threshold as a percentage |
 | `auto_suggest` | bool | — | Automatically suggest on hunk focus |
+
+Provider-specific options are configured in nested tables: `[ai.claude]`, `[ai.openai]`, or `[ai.local]`. See [AI integration](ai.md) for provider-specific fields.
 
 ### `[ast]`
 
