@@ -6,7 +6,7 @@ use std::process::Command;
 use weavr_vcs::{ConflictKind, ConflictedFile, VcsBackend, VcsError, VcsOperation};
 
 use crate::error::JjError;
-use crate::status::parse_jj_status;
+use crate::status::{parse_jj_modified, parse_jj_status};
 
 /// A handle to a Jujutsu repository.
 #[derive(Debug, Clone)]
@@ -126,5 +126,10 @@ impl VcsBackend for JjRepo {
         } else {
             Ok(VcsOperation::Other)
         }
+    }
+
+    fn modified_files(&self) -> Result<Vec<PathBuf>, VcsError> {
+        let output = self.run_jj(&["status"]).map_err(VcsError::from)?;
+        Ok(parse_jj_modified(&output))
     }
 }
