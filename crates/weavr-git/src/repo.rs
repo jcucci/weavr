@@ -6,7 +6,7 @@ use std::process::Command;
 use weavr_vcs::{ConflictedFile, VcsBackend, VcsError, VcsOperation};
 
 use crate::error::GitError;
-use crate::porcelain::{parse_porcelain_v1, ConflictEntry};
+use crate::porcelain::{parse_modified_v1, parse_porcelain_v1, ConflictEntry};
 use crate::state::GitOperation;
 
 /// A handle to a Git repository.
@@ -122,6 +122,21 @@ impl GitRepo {
         Ok(parse_porcelain_v1(&output))
     }
 
+    /// Returns paths of all modified (dirty) files in the working tree.
+    ///
+    /// Uses `git status --porcelain=v1` to detect dirty paths that are not in an
+    /// unmerged state, including modified, added, deleted, renamed, copied,
+    /// type-changed, and untracked files.
+    ///
+    /// # Errors
+    ///
+    /// Returns `GitError::CommandFailed` if the git command fails to execute.
+    /// Returns `GitError::CommandError` if git returns a non-zero exit status.
+    pub fn modified_files(&self) -> Result<Vec<PathBuf>, GitError> {
+        let output = self.run_git(&["status", "--porcelain=v1"])?;
+        Ok(parse_modified_v1(&output))
+    }
+
     /// Stages a resolved file.
     ///
     /// # Errors
@@ -218,5 +233,9 @@ impl VcsBackend for GitRepo {
 
     fn current_operation(&self) -> Result<VcsOperation, VcsError> {
         Ok(GitRepo::current_operation(self).into())
+    }
+
+    fn modified_files(&self) -> Result<Vec<PathBuf>, VcsError> {
+        GitRepo::modified_files(self).map_err(VcsError::from)
     }
 }

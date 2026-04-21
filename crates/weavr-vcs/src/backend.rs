@@ -2,6 +2,8 @@
 
 use std::path::Path;
 
+use std::path::PathBuf;
+
 use crate::error::VcsError;
 use crate::types::{ConflictedFile, VcsOperation};
 
@@ -43,4 +45,16 @@ pub trait VcsBackend: Send + Sync {
     ///
     /// Returns [`VcsError`] if the backend cannot determine the current operation.
     fn current_operation(&self) -> Result<VcsOperation, VcsError>;
+
+    /// Returns paths of all modified (dirty) files in the working tree,
+    /// relative to [`root()`](Self::root).
+    ///
+    /// These are files that have been changed but are not necessarily in an
+    /// unmerged state. Used as candidates for conflict-marker scanning when
+    /// no unmerged files are reported by the VCS.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`VcsError`] if the backend cannot determine modified files.
+    fn modified_files(&self) -> Result<Vec<PathBuf>, VcsError>;
 }

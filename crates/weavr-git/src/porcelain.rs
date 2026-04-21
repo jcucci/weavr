@@ -150,6 +150,38 @@ fn unquote_path(s: &str) -> String {
     result
 }
 
+/// Parses `git status --porcelain=v1` output and extracts modified (non-unmerged) file paths.
+///
+/// Returns paths for entries with status codes like ` M`, `M `, `MM`, `A `, `??`, etc. —
+/// anything that represents a dirty file but is NOT an unmerged conflict entry.
+#[must_use]
+pub fn parse_modified_v1(output: &str) -> Vec<PathBuf> {
+    output
+        .lines()
+        .filter_map(|line| {
+            if line.len() < 4 {
+                return None;
+            }
+
+            let xy = &line[0..2];
+            // Skip unmerged entries — those are handled by parse_porcelain_v1
+            if is_unmerged(xy).is_some() {
+                return None;
+            }
+
+            // Skip entries with no status (shouldn't happen, but be safe)
+            if xy == "  " {
+                return None;
+            }
+
+            let raw_path = &line[3..];
+            // For rename/copy entries, path contains " -> new_path"; use the new path
+            let path_str = raw_path.split(" -> ").last().unwrap_or(raw_path);
+            Some(PathBuf::from(unquote_path(path_str)))
+        })
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -338,5 +370,74 @@ mod tests {
             ConflictKind::from(ConflictType::AddedByThemDeletedByUs),
             ConflictKind::DeleteAdd
         );
+    }
+
+    #[test]
+    fn modified_empty_output() {
+        let result = parse_modified_v1("");
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn modified_picks_up_worktree_modified() {
+        let output = " M src/modified.rs\n";
+        let result = parse_modified_v1(output);
+        assert_eq!(result, vec![PathBuf::from("src/modified.rs")]);
+    }
+
+    #[test]
+    fn modified_picks_up_index_modified() {
+        let output = "M  src/staged.rs\n";
+        let result = parse_modified_v1(output);
+        assert_eq!(result, vec![PathBuf::from("src/staged.rs")]);
+    }
+
+    #[test]
+    fn modified_picks_up_both_modified() {
+        let output = "MM src/both.rs\n";
+        let result = parse_modified_v1(output);
+        assert_eq!(result, vec![PathBuf::from("src/both.rs")]);
+    }
+
+    #[test]
+    fn modified_picks_up_added() {
+        let output = "A  src/new.rs\n";
+        let result = parse_modified_v1(output);
+        assert_eq!(result, vec![PathBuf::from("src/new.rs")]);
+    }
+
+    #[test]
+    fn modified_picks_up_untracked() {
+        let output = "?? untracked.txt\n";
+        let result = parse_modified_v1(output);
+        assert_eq!(result, vec![PathBuf::from("untracked.txt")]);
+    }
+
+    #[test]
+    fn modified_skips_unmerged_entries() {
+        let output = "UU conflict.rs\n M modified.rs\nAA both_added.rs\n";
+        let result = parse_modified_v1(output);
+        assert_eq!(result, vec![PathBuf::from("modified.rs")]);
+    }
+
+    #[test]
+    fn modified_mixed_entries() {
+        let output = " M modified.rs\nUU conflict.rs\n?? untracked.rs\nA  staged.rs\n";
+        let result = parse_modified_v1(output);
+        assert_eq!(
+            result,
+            vec![
+                PathBuf::from("modified.rs"),
+                PathBuf::from("untracked.rs"),
+                PathBuf::from("staged.rs"),
+            ]
+        );
+    }
+
+    #[test]
+    fn modified_handles_rename() {
+        let output = "R  old_name.rs -> new_name.rs\n";
+        let result = parse_modified_v1(output);
+        assert_eq!(result, vec![PathBuf::from("new_name.rs")]);
     }
 }

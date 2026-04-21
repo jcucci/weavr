@@ -45,9 +45,29 @@ fn try_jj() -> Option<Box<dyn VcsBackend>> {
 }
 
 /// Discovers files with merge conflicts using the given VCS backend.
+///
+/// First checks for files reported as unmerged by the VCS. If none are found,
+/// falls back to scanning modified files for conflict markers — this catches
+/// leftover markers when the merge operation has already been completed or aborted.
 pub fn discover_conflicted_files(backend: &dyn VcsBackend) -> Result<Vec<PathBuf>, CliError> {
     let files = backend.conflicted_files()?;
-    Ok(files.into_iter().map(|f| f.path).collect())
+    if !files.is_empty() {
+        return Ok(files.into_iter().map(|f| f.path).collect());
+    }
+
+    // Fallback: scan modified files for leftover conflict markers
+    let root = backend.root();
+    let modified = backend.modified_files()?;
+    let mut with_markers = Vec::new();
+    for rel_path in modified {
+        let abs_path = root.join(&rel_path);
+        if abs_path.is_file() {
+            if let Ok(true) = has_conflict_markers(&abs_path) {
+                with_markers.push(rel_path);
+            }
+        }
+    }
+    Ok(with_markers)
 }
 
 /// Checks if a file contains conflict markers.
