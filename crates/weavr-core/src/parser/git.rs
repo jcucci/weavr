@@ -32,25 +32,36 @@ enum Marker {
 
 /// Detects if a line is a conflict marker.
 ///
-/// Markers must be at the start of the line:
+/// Markers must be at the start of the line and consist of **exactly** 7 repeated
+/// characters. Lines with 8+ repeated characters (e.g. `<<<<<<<<<`) are nested
+/// markers from Git's recursive merge strategy and are treated as content.
+///
 /// - `<<<<<<<` - 7 less-than signs, optionally followed by space and label
 /// - `|||||||` - 7 pipe signs, optionally followed by space and label
 /// - `=======` - Exactly 7 equals signs (nothing after except whitespace)
 /// - `>>>>>>>` - 7 greater-than signs, optionally followed by space and label
 fn detect_marker(line: &str) -> Option<Marker> {
-    if line.starts_with("<<<<<<<") {
+    if starts_with_exactly(line, '<', 7) {
         Some(Marker::Start)
-    } else if line.starts_with("|||||||") {
+    } else if starts_with_exactly(line, '|', 7) {
         Some(Marker::Base)
-    } else if line == "======="
-        || line.starts_with("=======") && line[7..].chars().all(char::is_whitespace)
-    {
+    } else if starts_with_exactly(line, '=', 7) && line[7..].chars().all(char::is_whitespace) {
         Some(Marker::Separator)
-    } else if line.starts_with(">>>>>>>") {
+    } else if starts_with_exactly(line, '>', 7) {
         Some(Marker::End)
     } else {
         None
     }
+}
+
+/// Returns true if `line` starts with exactly `count` copies of `ch`,
+/// followed by either end-of-string or a different character.
+fn starts_with_exactly(line: &str, ch: char, count: usize) -> bool {
+    let bytes = line.as_bytes();
+    let b = ch as u8;
+    bytes.len() >= count
+        && bytes[..count].iter().all(|&c| c == b)
+        && (bytes.len() == count || bytes[count] != b)
 }
 
 /// Parses Git-style conflict markers.
@@ -630,6 +641,54 @@ after";
         let content = "just normal content";
         let result = parse_conflict_markers(content).unwrap();
         assert_eq!(result.format, None);
+    }
+
+    #[test]
+    fn parse_recursive_merge_nested_markers_as_content() {
+        // Git's recursive merge strategy produces inner markers with 9+ characters
+        // when merging temporary merge branches. These should be treated as content.
+        let content = "\
+<<<<<<< HEAD
+left content
+||||||| merged common ancestors
+base line 1
+||||||||| d275ae64
+inner base
+=========
+>>>>>>>>> Temporary merge branch 2
+=======
+right content
+>>>>>>> features/uf-13004";
+
+        let result = parse_conflict_markers(content).unwrap();
+        assert_eq!(result.hunks.len(), 1);
+        assert_eq!(result.hunks[0].left.text, "left content");
+        assert_eq!(result.hunks[0].right.text, "right content");
+        let base = result.hunks[0].base.as_ref().unwrap();
+        assert!(base.text.contains("||||||||| d275ae64"));
+        assert!(base.text.contains("========="));
+        assert!(base.text.contains(">>>>>>>>> Temporary merge branch 2"));
+    }
+
+    #[test]
+    fn nine_char_start_marker_not_detected() {
+        // 9-char start marker inside a conflict should be content, not a nested start
+        let content = "\
+<<<<<<< HEAD
+left
+||||||| base
+<<<<<<<<< Temporary merge branch 1
+inner left
+=========
+>>>>>>>>> Temporary merge branch 1
+=======
+right
+>>>>>>> feature";
+
+        let result = parse_conflict_markers(content).unwrap();
+        assert_eq!(result.hunks.len(), 1);
+        let base = result.hunks[0].base.as_ref().unwrap();
+        assert!(base.text.contains("<<<<<<<<< Temporary merge branch 1"));
     }
 
     use crate::ParseError;
