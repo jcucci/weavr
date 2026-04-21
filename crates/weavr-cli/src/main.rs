@@ -345,12 +345,16 @@ fn run(cli: &Cli) -> Result<i32, CliError> {
             }
         } else {
             any_unresolved = true;
-            eprintln!(
-                "{}: exited with {}/{} hunks unresolved",
-                result.path.display(),
-                result.total_hunks - result.hunks_resolved,
-                result.total_hunks
-            );
+            let unresolved = result.total_hunks - result.hunks_resolved;
+            if unresolved == 0 {
+                eprintln!("{}: quit without saving", result.path.display());
+            } else {
+                eprintln!(
+                    "{}: exited with {unresolved}/{} hunks unresolved",
+                    result.path.display(),
+                    result.total_hunks
+                );
+            }
         }
     }
 

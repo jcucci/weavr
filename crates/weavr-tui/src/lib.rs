@@ -109,6 +109,8 @@ pub struct App {
     pub(crate) workspace: Option<workspace::Workspace>,
     /// Whether a partial write was requested (single-file mode).
     pub(crate) partial_write: bool,
+    /// Whether the user explicitly requested a write (`:w`, `:wq`, `:wa`, or `:q` when resolved).
+    pub(crate) write_requested: bool,
 }
 
 impl App {
@@ -135,6 +137,7 @@ impl App {
             stage_prompt: false,
             workspace: None,
             partial_write: false,
+            write_requested: false,
         }
     }
 
@@ -164,6 +167,7 @@ impl App {
             stage_prompt: false,
             workspace: None,
             partial_write: false,
+            write_requested: false,
         }
     }
 
@@ -592,6 +596,7 @@ impl App {
             self.mark_current_written();
             self.set_status_message("Saved. Use :n to continue.");
         } else {
+            self.write_requested = true;
             self.quit();
         }
     }
@@ -605,6 +610,7 @@ impl App {
             self.stage_current_file();
             self.complete_current_and_advance();
         } else {
+            self.write_requested = true;
             self.stage_requested = true;
             self.quit();
         }
@@ -622,8 +628,10 @@ impl App {
                 self.complete_current_and_advance();
             }
         } else if self.stage_prompt {
+            self.write_requested = true;
             dialog::show_staging_prompt(self);
         } else {
+            self.write_requested = true;
             self.quit();
         }
     }
@@ -683,6 +691,7 @@ impl App {
             let count = self.unresolved_count();
             self.set_status_message(&format!("{count} unresolved hunks. Use :q! to force quit"));
         } else {
+            self.write_requested = true;
             self.quit();
         }
     }
@@ -725,6 +734,12 @@ impl App {
     #[must_use]
     pub fn partial_write_requested(&self) -> bool {
         self.partial_write
+    }
+
+    /// Returns whether the user explicitly requested a write.
+    #[must_use]
+    pub fn write_requested(&self) -> bool {
+        self.write_requested
     }
 
     /// Sets whether to show the staging prompt on `:wq`.
@@ -1628,5 +1643,50 @@ mod tests {
         assert!(app.status_message().is_some());
         let msg = &app.status_message().unwrap().0;
         assert!(msg.contains("No other files"));
+    }
+
+    #[test]
+    fn write_requested_false_by_default() {
+        let app = App::new();
+        assert!(!app.write_requested());
+    }
+
+    #[test]
+    fn force_quit_does_not_set_write_requested() {
+        let mut app = App::new();
+        app.quit();
+        assert!(app.should_quit());
+        assert!(!app.write_requested());
+    }
+
+    #[test]
+    fn try_quit_sets_write_requested_when_no_unresolved_hunks() {
+        use std::path::PathBuf;
+
+        // Session with no hunks (clean file) — try_quit should set write_requested
+        let content = "no conflicts here";
+        let session =
+            weavr_core::MergeSession::from_conflicted(content, PathBuf::from("clean.rs")).unwrap();
+        let mut app = App::new();
+        app.set_session(session);
+
+        app.try_quit();
+        assert!(app.should_quit());
+        assert!(app.write_requested());
+    }
+
+    #[test]
+    fn try_quit_does_not_set_write_requested_when_unresolved() {
+        use std::path::PathBuf;
+
+        let content = "<<<<<<< HEAD\nleft\n=======\nright\n>>>>>>> branch\n";
+        let session =
+            weavr_core::MergeSession::from_conflicted(content, PathBuf::from("test.rs")).unwrap();
+        let mut app = App::new();
+        app.set_session(session);
+
+        app.try_quit();
+        assert!(!app.should_quit()); // warns instead of quitting
+        assert!(!app.write_requested());
     }
 }

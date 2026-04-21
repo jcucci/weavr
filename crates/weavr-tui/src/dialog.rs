@@ -86,12 +86,15 @@ pub fn confirm_staging(app: &mut App) {
 }
 
 /// Denies staging in the staging prompt dialog.
+///
+/// The user still intends to write — they're only declining the stage step.
 pub fn deny_staging(app: &mut App) {
     let multi = app.is_multi_file();
     close_dialog(app);
     if multi {
         app.complete_current_and_advance();
     } else {
+        app.write_requested = true;
         app.quit();
     }
 }
