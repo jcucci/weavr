@@ -1396,4 +1396,49 @@ mod tests {
         let msg = &app.status_message().unwrap().0;
         assert!(msg.contains("No other files"));
     }
+
+    #[test]
+    fn write_requested_false_by_default() {
+        let app = App::new();
+        assert!(!app.write_requested());
+    }
+
+    #[test]
+    fn force_quit_does_not_set_write_requested() {
+        let mut app = App::new();
+        app.quit();
+        assert!(app.should_quit());
+        assert!(!app.write_requested());
+    }
+
+    #[test]
+    fn try_quit_sets_write_requested_when_no_unresolved_hunks() {
+        use std::path::PathBuf;
+
+        // Session with no hunks (clean file) — try_quit should set write_requested
+        let content = "no conflicts here";
+        let session =
+            weavr_core::MergeSession::from_conflicted(content, PathBuf::from("clean.rs")).unwrap();
+        let mut app = App::new();
+        app.set_session(session);
+
+        app.try_quit();
+        assert!(app.should_quit());
+        assert!(app.write_requested());
+    }
+
+    #[test]
+    fn try_quit_does_not_set_write_requested_when_unresolved() {
+        use std::path::PathBuf;
+
+        let content = "<<<<<<< HEAD\nleft\n=======\nright\n>>>>>>> branch\n";
+        let session =
+            weavr_core::MergeSession::from_conflicted(content, PathBuf::from("test.rs")).unwrap();
+        let mut app = App::new();
+        app.set_session(session);
+
+        app.try_quit();
+        assert!(!app.should_quit()); // warns instead of quitting
+        assert!(!app.write_requested());
+    }
 }
