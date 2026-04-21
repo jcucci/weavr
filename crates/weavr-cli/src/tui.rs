@@ -92,6 +92,7 @@ pub fn process_file(
     // Extract preferences before taking session
     let stage_requested = app.stage_requested();
     let partial_write = app.partial_write_requested();
+    let write_requested = app.write_requested();
 
     // Extract session and check resolution state
     let session = app
@@ -103,7 +104,7 @@ pub fn process_file(
         .filter(|h| matches!(h.state, weavr_core::HunkState::Resolved(_)))
         .count();
 
-    if session.is_fully_resolved() {
+    if session.is_fully_resolved() && write_requested {
         // Complete the lifecycle to get the merged content
         let mut session = session;
         session.apply()?;

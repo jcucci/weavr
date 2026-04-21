@@ -124,6 +124,8 @@ pub struct App {
     pub(crate) workspace: Option<workspace::Workspace>,
     /// Whether a partial write was requested (single-file mode).
     pub(crate) partial_write: bool,
+    /// Whether the user explicitly requested a write (`:w`, `:wq`, `:wa`, or `:q` when resolved).
+    pub(crate) write_requested: bool,
 }
 
 impl App {
@@ -160,6 +162,7 @@ impl App {
             stage_prompt: false,
             workspace: None,
             partial_write: false,
+            write_requested: false,
         }
     }
 
@@ -196,6 +199,7 @@ impl App {
             stage_prompt: false,
             workspace: None,
             partial_write: false,
+            write_requested: false,
         }
     }
 
@@ -474,6 +478,7 @@ impl App {
             self.mark_current_written();
             self.set_status_message("Saved. Use :n to continue.");
         } else {
+            self.write_requested = true;
             self.quit();
         }
     }
@@ -487,6 +492,7 @@ impl App {
             self.stage_current_file();
             self.complete_current_and_advance();
         } else {
+            self.write_requested = true;
             self.stage_requested = true;
             self.quit();
         }
@@ -504,8 +510,10 @@ impl App {
                 self.complete_current_and_advance();
             }
         } else if self.stage_prompt {
+            self.write_requested = true;
             dialog::show_staging_prompt(self);
         } else {
+            self.write_requested = true;
             self.quit();
         }
     }
@@ -565,6 +573,7 @@ impl App {
             let count = self.unresolved_count();
             self.set_status_message(&format!("{count} unresolved hunks. Use :q! to force quit"));
         } else {
+            self.write_requested = true;
             self.quit();
         }
     }
@@ -607,6 +616,12 @@ impl App {
     #[must_use]
     pub fn partial_write_requested(&self) -> bool {
         self.partial_write
+    }
+
+    /// Returns whether the user explicitly requested a write.
+    #[must_use]
+    pub fn write_requested(&self) -> bool {
+        self.write_requested
     }
 
     /// Sets whether to show the staging prompt on `:wq`.
