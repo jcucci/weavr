@@ -124,8 +124,9 @@ impl GitRepo {
 
     /// Returns paths of all modified (dirty) files in the working tree.
     ///
-    /// Uses `git status --porcelain=v1` to detect modified, added, and untracked files
-    /// that are not in an unmerged state.
+    /// Uses `git status --porcelain=v1` to detect dirty paths that are not in an
+    /// unmerged state, including modified, added, deleted, renamed, copied,
+    /// type-changed, and untracked files.
     ///
     /// # Errors
     ///

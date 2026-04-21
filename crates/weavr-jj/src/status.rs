@@ -177,4 +177,11 @@ C another_conflict.rs
         let result = parse_jj_modified(output);
         assert_eq!(result, vec![PathBuf::from("removed.rs")]);
     }
+
+    #[test]
+    fn modified_picks_up_renamed() {
+        let output = "R old_name.rs\n";
+        let result = parse_jj_modified(output);
+        assert_eq!(result, vec![PathBuf::from("old_name.rs")]);
+    }
 }

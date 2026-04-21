@@ -176,10 +176,7 @@ pub fn parse_modified_v1(output: &str) -> Vec<PathBuf> {
 
             let raw_path = &line[3..];
             // For rename/copy entries, path contains " -> new_path"; use the new path
-            let path_str = raw_path
-                .split(" -> ")
-                .last()
-                .unwrap_or(raw_path);
+            let path_str = raw_path.split(" -> ").last().unwrap_or(raw_path);
             Some(PathBuf::from(unquote_path(path_str)))
         })
         .collect()
